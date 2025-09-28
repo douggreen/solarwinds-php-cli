@@ -1,0 +1,313 @@
+# SolarWinds Log Analysis Tools
+
+Professional SolarWinds log analysis tools built with Symfony Console, migrated from a collection of shell scripts to provide better maintainability and extensibility.
+
+## Project Overview
+
+This project provides a modern PHP/Symfony Console application for comprehensive SolarWinds log analysis and monitoring. The system offers powerful log analysis capabilities through a clean command-line interface with support for flexible querying, custom site configurations, and configurable command aliases.
+
+## Installation
+
+### Prerequisites
+- PHP 8.1 or higher
+- Composer
+- SolarWinds API access
+
+### Install Dependencies
+```bash
+composer install
+```
+
+### Configuration
+Create a configuration file at `~/.solarwinds.yml`:
+
+```yaml
+# Required: Your SolarWinds API token
+token: "your-solarwinds-api-token"
+
+# Required: SolarWinds API endpoint (region-specific)
+base_url: "https://api.na-01.cloud.solarwinds.com"
+
+# Optional: Default behavior settings
+progress: true    # Show progress bars during API calls
+debug: false      # Enable debug output
+validate: false   # Enable result validation
+```
+
+### Common Base URLs by Region
+
+**North America (most common):**
+```yaml
+base_url: "https://api.na-01.cloud.solarwinds.com"
+```
+
+**Europe:**
+```yaml
+base_url: "https://api.eu-01.cloud.solarwinds.com"
+```
+
+## Site Configuration
+
+This project supports configurable site mappings, allowing you to define organization-specific hostnames and aliases in your `~/.solarwinds.yml` file. Once configured, these sites become available as command-line options (e.g., `--main`, `--blog`) for filtering log analysis to specific hosts.
+
+### Configuring Sites
+
+Add a `sites:` section to your configuration file:
+
+```yaml
+# ~/.solarwinds.yml
+token: "your-api-token"
+base_url: "https://api.na-01.cloud.solarwinds.com"
+debug: false
+progress: true
+
+# Site mappings (customize for your organization)
+sites:
+  example.com:
+    name: main
+    label: Main Site
+  blog.example.com:
+    name: blog
+    label: Company Blog
+  app.example.com:
+    name: app
+    label: Web App
+  api.example.com:
+    name: api
+    label: API Server
+  docs.example.com:
+    name: docs
+    label: Documentation
+```
+
+### Site Configuration Structure
+
+Each site entry has the following structure:
+
+- **Hostname (key)**: The actual hostname to filter on in logs (e.g., `example.com`)
+- **`name`**: Short alias used for command line options (e.g., `main` → `--main` flag)
+- **`label`**: Human-readable display name for output and descriptions
+
+### How Site Configuration Works
+
+1. **Command Line Options**: Each site generates a command option based on the `name` field:
+   ```bash
+   bin/solarwinds 5xx --main --blog  # Filters to main site and blog
+   ```
+
+1. **Log Filtering**: Uses the hostname (key) to filter SolarWinds logs:
+   ```
+   { json.orig_host:example.com } OR { json.orig_host:blog.example.com }
+   ```
+
+1. **Display Shortening**: Output uses the `label` for shortened, colorized display:
+   ```
+   Host: Main Site (instead of example.com)
+   ```
+
+### Usage Examples
+
+```bash
+# Filter to specific sites
+bin/solarwinds 5xx --main --api           # Main site and API server only
+bin/solarwinds 5xx --blog --status       # Blog site with status codes
+bin/solarwinds 5xx --docs --country --1h  # Documentation site by country (1 hour)
+```
+
+### Adding Your Own Sites
+
+To add sites for your organization:
+
+1. Edit `~/.solarwinds.yml`
+1. Add entries under the `sites:` section
+1. Choose meaningful `name` values (used for --flags)
+1. Set descriptive `label` values (shown in output)
+
+Example for a different organization:
+```yaml
+sites:
+  mycompany.com:
+    name: main
+    label: Main Site
+  blog.mycompany.com:
+    name: blog
+    label: Company Blog
+  app.mycompany.com:
+    name: app
+    label: Web App
+```
+
+This generates `--main`, `--blog`, and `--app` command options that filter logs for the respective hostnames.
+
+### Benefits of Configurable Sites
+
+- **Organization-specific**: Customize for your infrastructure
+- **No code changes**: Add/remove sites through configuration only
+- **Consistent filtering**: Uses actual hostnames from your logs
+- **Clean output**: Shortened labels improve readability
+- **Command completion**: All sites become available as command options
+
+## Command Aliases
+
+This project supports configurable command aliases that allow you to create custom shortcuts and replace some built-in commands with more flexible alternatives. Aliases are defined in your `~/.solarwinds.yml` file and appear as real commands in the application.
+
+### Core Commands
+
+The application includes 3 core commands that provide the foundation for all log analysis:
+
+- **`bot`** - Analyze bot and crawler traffic with dynamic user agent filtering
+- **`search`** - General-purpose log search with flexible query syntax
+- **`status`** - HTTP status code analysis with built-in shortcuts
+
+### Configuring Aliases
+
+Add aliases to your `~/.solarwinds.yml` file under the `aliases:` section:
+
+```yaml
+aliases:
+  errors: search "error" --status --1h
+  quickbot: bot --1h --ua
+  404s: status --404 --host --path
+  mysite: search --query="{ json.orig_host:example.com }" --host --status
+```
+
+### Recommended Aliases
+
+These aliases provide the same functionality as commands from the original shell scripts:
+
+```yaml
+aliases:
+  # HTTP error analysis
+  5xx: status --5 --1d --host --path
+  500image: search --query="{ json.resp_status:500 } /sites/default/files" --host --path --day
+
+  # Request analysis
+  posts: search --query="{ json.req_method:POST } { json.resp_status:200 } -/sites/default/files" --host --path --day
+  login: search "Login attempt failed" --ip --day
+
+  # Geographic analysis
+  country: search --query="{ json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 } -/sites/default/files" --country --15m
+
+  # Security and blocking analysis
+  ban: status --403 --host --ip --day
+  banip: search "blocked" --ip --status --day
+
+
+  # Convenience shortcuts
+  errors: search "error" --status --1h
+  quickbot: bot --1h
+  404s: status --404 --host --path
+```
+
+### How Aliases Work
+
+1. **Alias arguments come first**: `errors: search "error" --status --1h`
+1. **User arguments are appended**: `solarwinds errors --host` becomes `search "error" --status --1h --host`
+1. **Validation applies**: The target command's validation prevents conflicting options
+1. **No override protection**: Aliases cannot replace built-in commands (`bot`, `search`, `status`)
+
+### Alias Examples
+
+```bash
+# Using recommended aliases
+solarwinds 5xx --2h                    # HTTP 5xx errors (last 2 hours)
+solarwinds posts --country             # POST requests by country
+solarwinds login --1h                  # Failed logins (last hour)
+
+# Custom aliases
+solarwinds errors --country            # Error patterns by country
+solarwinds quickbot --country          # Bot traffic by country
+solarwinds 404s --day                  # 404 errors (last day)
+```
+
+### Make Binary Executable
+```bash
+chmod +x bin/solarwinds
+```
+
+## Usage
+
+### List Available Commands
+```bash
+bin/solarwinds list
+```
+
+### Get Help for a Command
+```bash
+bin/solarwinds status --help
+```
+
+### Examples (Core Commands)
+
+```bash
+# Status code analysis
+bin/solarwinds status                  # All status codes (last day)
+bin/solarwinds status --404 --15m     # 404 errors from last hour
+bin/solarwinds status --5 --country   # 5xx errors by country
+
+# General search
+bin/solarwinds search "error"         # Text search for "error"
+bin/solarwinds search --query="{ json.resp_status:404 }" --host # JSON query
+
+# Bot analysis
+bin/solarwinds bot                     # Bot traffic (last 15m)
+bin/solarwinds bot crawler --host     # Crawler traffic by host
+```
+
+### Examples (Using Aliases)
+
+```bash
+# Using recommended aliases (if configured)
+bin/solarwinds 5xx --2h               # HTTP 5xx errors (last 2 hours)
+bin/solarwinds posts --country        # POST requests by country
+bin/solarwinds login --1h             # Failed logins (last hour)
+```
+
+## Features
+
+### Time Options
+Supports comprehensive time range options:
+- Relative: `--5m`, `--1h`, `--1d`, `--1w`, etc.
+- Specific days: `--yesterday`, `--2D` (2 days ago), through `--14D`
+- Custom ranges: `--since="2 hours ago" --until="now"`
+
+### Display Options
+- `--status` - Show HTTP status codes with color coding
+- `--host` - Show originating hosts (with shortening)
+- `--path[=N]` - Show request paths (optionally truncated to N segments)
+- `--ua` - Show user agents (with bot highlighting)
+- `--ip` - Show IP addresses
+- `--country` - Show country information
+- And more...
+
+### Caching System
+- Automatic caching for queries taking >60 seconds
+- Time-based expiration (10% of query time range by default)
+- Configurable cache duration: `--cached=5m`, `--cached=2h`
+- Infinite cache mode: `--cached=0`
+
+## Documentation
+
+- **README.md** (this file) - Project overview and usage for developers
+- **docs/CASE_STUDY.md** - Lessons learned about AI-assisted development
+- **docs/NOTES-FOR-AI.md** - Context and guidelines for AI development sessions
+
+## Original Shell Scripts
+
+The original shell scripts are preserved in the project for reference and comparison during migration. These provide the authoritative specification for behavior, validation, and output formatting.
+
+## Attribution
+
+**Architecture and Direction:** Doug Green (douggreen@douggreenconsulting.com)
+**Implementation:** Developed collaboratively using Claude AI assistance
+
+## Benefits of the Architecture
+
+- **Professional CLI experience** with Symfony Console
+- **Real-time progress bars** during API calls
+- **Robust HTTP client** with Guzzle (retries, timeouts, etc.)
+- **YAML configuration** parsing and site mapping
+- **Type safety** and comprehensive error handling
+- **Extensible architecture** for new commands and aliases
+- **Composer dependency management**
+- **Reduced code duplication** through abstract base class inheritance

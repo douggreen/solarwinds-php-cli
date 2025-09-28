@@ -1,0 +1,21 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * SolarWinds Log Analysis Tools - Command Line Interface
+ *
+ * This executable bootstraps the Symfony Console application with unlimited
+ * memory for processing large log datasets.
+ */
+
+// Set unlimited memory for CLI usage - prevents memory limit errors with large datasets
+ini_set('memory_limit', -1);
+
+// Require Composer autoloader
+require_once __DIR__ . '/../vendor/autoload.php';
+
+// Bootstrap the application
+use SolarWinds\Application\SolarWindsApplication;
+
+$application = new SolarWindsApplication();
+$application->run();

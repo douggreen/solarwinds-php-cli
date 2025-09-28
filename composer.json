@@ -1,0 +1,47 @@
+{
+    "name": "douggreen/solarwinds-scripts",
+    "description": "SolarWinds log analysis tools built with Symfony Console",
+    "type": "project",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Doug Green",
+            "email": "douggreen@douggreenconsulting.com"
+        }
+    ],
+    "require": {
+        "php": "^8.1",
+        "symfony/console": "^6.0",
+        "symfony/yaml": "^6.0",
+        "guzzlehttp/guzzle": "^7.0",
+        "symfony/dependency-injection": "^6.0",
+        "symfony/config": "^6.0"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SolarWinds\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "SolarWinds\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/solarwinds"
+    ],
+    "scripts": {
+        "post-install-cmd": [
+            "@php bin/solarwinds list"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "composer/installers": true
+        }
+    }
+}
