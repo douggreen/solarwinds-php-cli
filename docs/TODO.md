@@ -5,7 +5,9 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. Complete documentation cleanup ✅ (completed)
+1. Complete documentation cleanup :white_check_mark: (completed)
+2. Manual code cleanup phase (current)
+3. Implement remaining commands
 2. Improve code documentation and comments
 3. Research and implement testing framework
 4. Begin Phase 1 command implementations

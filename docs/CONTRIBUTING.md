@@ -2,6 +2,21 @@
 
 This document provides guidelines for developers working on the SolarWinds Log Analysis Tools codebase.
 
+
+## Quick Start for New Contributors (AI or Human)
+
+When starting work on this project, follow this sequence to get properly oriented:
+
+1. **Read [README.md](README.md) first** - Understand the project overview and basic usage
+2. **Follow all documentation links from [README.md](README.md)** - Especially [CLAUDE-MUST-READ-FIRST.md](CLAUDE-MUST-READ-FIRST.md) for AI behavioral context
+3. **Read the code** - Familiarize yourself with the architecture, particularly:
+   - `BaseSolarWindsCommand.php` - Template method pattern
+   - The three core commands: `StatusCommand.php`, `SearchCommand.php`, `BotCommand.php`
+   - Service layer: `ConfigurationService.php`, `ApiService.php`, `DisplayService.php`, `CacheService.php`
+4. **Read [TODO.md](TODO.md)** - Understand current priorities and remaining work
+5. **Ask clarifying questions** - Before starting implementation work
+
+This orientation sequence ensures you understand both the technical architecture and the collaborative patterns that have proven effective for this project.
 ## Project Architecture
 
 ### Overview
