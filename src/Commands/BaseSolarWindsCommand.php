@@ -72,171 +72,123 @@
  * @see DisplayService For result formatting and display
  * @see TimeSpecifications For time parsing specifications
  *
- * @note This class automatically handles signal registration for graceful
- *       interruption
- * @warning Child classes should not override execute() - use the abstract
- *          methods instead
- */
- * - ** Signal Handling ** : Graceful interruption handling (Ctrl + C)
- * - ** Progress Reporting ** : Real - time progress bars for long - running queries
- * - ** Input Validation ** : Comprehensive argument validation and error handling
- *
- * @section architecture Command Architecture
- *
- * The command execution flow follows this pattern:
- * 1. Parse common arguments (time, site, display options)
- * 2. Call parseScriptSpecificOptions() for command - specific parsing
- * 3. Call buildSearchQuery() to construct the query
- * 4. Call validateQuery() for command - specific validation
- * 5. Execute query through ApiService with caching
- * 6. Format and display results through DisplayService
- *
- * @section example Implementation Example
- * @code{.php}
- * class MyCommand extends BaseSolarWindsCommand
- * {
-  * protected string $defaultTime = '1h';
-  * protected array $defaultDisplayOptions = ['host'];
-  *
-  * protected function buildSearchQuery(array $options): string
-  * {
-    * return "{ json.field:value }";
-    * }
-  *
-  * protected function parseScriptSpecificOptions(InputInterface $input): array
-  * {
-    * return ['custom_arg' => $input->getArgument('custom_arg')];
-    * }
-  *
-  * protected function validateQuery(string $query, array $options): void
-  * {
-    * // Command-specific validation logic
-    * }
-  * }
- * @endcode
- *
- * @see ConfigurationService for site mapping and configuration
- * @see ApiService for SolarWinds API integration
- * @see DisplayService for result formatting and display
- * @see TimeSpecifications for time parsing specifications
- *
  * @note This class automatically handles signal registration for graceful interruption
  * @warning Child classes should not override execute() - use the template methods instead
- * /
+ */
 
- namespace SolarWinds\Commands;
+namespace SolarWinds\Commands;
 
- use GuzzleHttp\Client;
- use GuzzleHttp\Exception\GuzzleException;
- use Symfony\Component\Console\Command\Command;
- use Symfony\Component\Console\Helper\ProgressBar;
- use Symfony\Component\Console\Input\InputInterface;
- use Symfony\Component\Console\Input\InputOption;
- use Symfony\Component\Console\Output\OutputInterface;
- use Symfony\Component\Console\Style\SymfonyStyle;
- use Symfony\Component\Yaml\Yaml;
- use SolarWinds\Services\ConfigurationService;
- use SolarWinds\Services\ApiService;
- use SolarWinds\Services\DisplayService;
- use SolarWinds\Services\CacheService;
- use SolarWinds\Services\TimeSpecifications;
+use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Helper\ProgressBar;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Yaml\Yaml;
+use SolarWinds\Services\ConfigurationService;
+use SolarWinds\Services\ApiService;
+use SolarWinds\Services\DisplayService;
+use SolarWinds\Services\CacheService;
+use SolarWinds\Services\TimeSpecifications;
 
- /**
-  * Base class for all SolarWinds commands
-  *
-  * Provides common functionality including argument parsing, API integration,
-  * configuration management, and display formatting.
-  */
- abstract class BaseSolarWindsCommand extends Command
- {
-   protected ConfigurationService $config;
-   protected ApiService $apiService;
-   protected DisplayService $displayService;
-   protected CacheService $cacheService;
-   protected SymfonyStyle $io;
+/**
+ * Base class for all SolarWinds commands
+ *
+ * Provides common functionality including argument parsing, API integration,
+ * configuration management, and display formatting.
+ */
+abstract class BaseSolarWindsCommand extends Command
+{
+  protected ConfigurationService $config;
+  protected ApiService $apiService;
+  protected DisplayService $displayService;
+  protected CacheService $cacheService;
+  protected SymfonyStyle $io;
 
-   // Default values that child classes can override.
-   protected string $defaultTime = '1h';
-   protected array $defaultDisplayOptions = [];
+  // Default values that child classes can override.
+  protected string $defaultTime = '1h';
+  protected array $defaultDisplayOptions = [];
 
-   // Site mapping loaded dynamically from configuration.
-   protected array $siteHosts = [];
+  // Site mapping loaded dynamically from configuration.
+  protected array $siteHosts = [];
 
-   // Time mapping for user-friendly time options (dynamically generated).
-   protected static ?array $timeMappings = NULL;
+  // Time mapping for user-friendly time options (dynamically generated).
+  protected static ?array $timeMappings = NULL;
 
-   // Signal handling for graceful interruption.
-   protected static bool $interrupted = FALSE;
+  // Signal handling for graceful interruption.
+  protected static bool $interrupted = FALSE;
 
-   /**
-    */
-   protected static function getTimeMappings(): array
-   {
-     if (self::$timeMappings === NULL) {
-       self::$timeMappings = [];
+  /**
+   */
+  protected static function getTimeMappings(): array
+  {
+    if (self::$timeMappings === NULL) {
+      self::$timeMappings = [];
 
-       // Get all available time options from centralized specifications.
-       $allTimeOptions = TimeSpecifications::getAllTimeOptions();
+      // Get all available time options from centralized specifications.
+      $allTimeOptions = TimeSpecifications::getAllTimeOptions();
 
-       // Generate mappings for each option.
-       foreach ($allTimeOptions as $timeOption) {
-         $mapping = TimeSpecifications::convertToTimeRange($timeOption);
-         if ($mapping !== NULL) {
-           self::$timeMappings[$timeOption] = $mapping;
-         }
-       }
-     }
+      // Generate mappings for each option.
+      foreach ($allTimeOptions as $timeOption) {
+        $mapping = TimeSpecifications::convertToTimeRange($timeOption);
+        if ($mapping !== NULL) {
+          self::$timeMappings[$timeOption] = $mapping;
+        }
+      }
+    }
 
-     return self::$timeMappings;
-   }
+    return self::$timeMappings;
+  }
 
-   public function __construct()
-   {
-     // Initialize config FIRST, before parent constructor which calls configure().
-     $this->config = new ConfigurationService();
+  public function __construct()
+  {
+    // Initialize config FIRST, before parent constructor which calls configure().
+    $this->config = new ConfigurationService();
 
-     parent::__construct();
+    parent::__construct();
 
-     $this->apiService = new ApiService($this->config);
-     $this->displayService = new DisplayService($this->config);
-     $this->cacheService = new CacheService();
-   }
+    $this->apiService = new ApiService($this->config);
+    $this->displayService = new DisplayService($this->config);
+    $this->cacheService = new CacheService();
+  }
 
-   /**
-    * Configure common options for all SolarWinds commands
-    */
-   protected function configure(): void
-   {
-     // Load site mappings from configuration (must happen here after config is initialized).
-     $this->siteHosts = $this->config->getSiteHostMappings();
+  /**
+   * Configure common options for all SolarWinds commands
+   */
+  protected function configure(): void
+  {
+    // Load site mappings from configuration (must happen here after config is initialized).
+    $this->siteHosts = $this->config->getSiteHostMappings();
 
-     // Get dynamic time mappings.
-     $timeMappings = self::getTimeMappings();
+    // Get dynamic time mappings.
+    $timeMappings = self::getTimeMappings();
 
-     // Add all time options dynamically.
-     foreach ($timeMappings as $timeKey => $timeValue) {
-       [$start, $end] = $timeValue;
+    // Add all time options dynamically.
+    foreach ($timeMappings as $timeKey => $timeValue) {
+      [$start, $end] = $timeValue;
 
-       // Create appropriate descriptions.
-       if (str_ends_with($timeKey, 'D')) {
-         if ($timeKey === '1D' || $timeKey === 'yesterday') {
-           $description = 'Yesterday (full day)';
-         }
-         else {
-           $days = str_replace('D', '', $timeKey);
-           $description = "$days days ago (full day)";
-         }
-       } elseif ($timeKey === 'hour' || $timeKey === 'day' || $timeKey === 'week') {
-         $description = "Last 1 " . $timeKey;
-       }
-       else {
-         $description = "Last $timeKey";
-       }
+      // Create appropriate descriptions.
+      if (str_ends_with($timeKey, 'D')) {
+        if ($timeKey === '1D' || $timeKey === 'yesterday') {
+          $description = 'Yesterday (full day)';
+        }
+        else {
+          $days = str_replace('D', '', $timeKey);
+          $description = "$days days ago (full day)";
+        }
+      } elseif ($timeKey === 'hour' || $timeKey === 'day' || $timeKey === 'week') {
+        $description = "Last 1 " . $timeKey;
+      }
+      else {
+        $description = "Last $timeKey";
+      }
 
-       $this->addOption($timeKey, NULL, InputOption::VALUE_NONE, $description);
-     }
+      $this->addOption($timeKey, NULL, InputOption::VALUE_NONE, $description);
+    }
 
-     $this
+    $this
       // Alternative time specification.
       ->addOption('time', 't', InputOption::VALUE_REQUIRED,
         'Time range (alternative to --1h, --1d flags)', NULL)
@@ -246,13 +198,13 @@
         'End time (e.g., "now")', 'now')
 
       // Site options.
-     ;
-     foreach ($this->siteHosts as $option => $siteData) {
-       $this->addOption($option, NULL, InputOption::VALUE_NONE, $siteData['description']);
-     }
+    ;
+    foreach ($this->siteHosts as $option => $siteData) {
+      $this->addOption($option, NULL, InputOption::VALUE_NONE, $siteData['description']);
+    }
 
-     // Display options.
-     $displayOptions = [
+    // Display options.
+    $displayOptions = [
       'status' => 'Show HTTP status codes',
       'host' => 'Show originating hosts',
       'ua' => 'Show user agents',
@@ -260,12 +212,12 @@
       'country' => 'Show country information',
       'region' => 'Show region information',
       'cache' => 'Show cache status'
-     ];
-     foreach ($displayOptions as $option => $description) {
-       $this->addOption($option, NULL, InputOption::VALUE_NONE, $description);
-     }
+    ];
+    foreach ($displayOptions as $option => $description) {
+      $this->addOption($option, NULL, InputOption::VALUE_NONE, $description);
+    }
 
-     $this
+    $this
       ->addOption('path', NULL, InputOption::VALUE_OPTIONAL, 'Show request paths (optionally specify segments)', FALSE)
 
       // Other options.
@@ -285,180 +237,180 @@
       // Shortcuts for common filter options.
       ->addOption('status-code', NULL, InputOption::VALUE_REQUIRED, 'Shortcut for --status-code-filter')
       ->addOption('code', NULL, InputOption::VALUE_REQUIRED, 'Shortcut for --status-code-filter')
-     ;
-   }
+    ;
+  }
 
-   /**
-    * Execute the command - template method that child classes customize
-    */
-   protected function execute(InputInterface $input, OutputInterface $output): int
-   {
-     $this->io = new SymfonyStyle($input, $output);
+  /**
+   * Execute the command - template method that child classes customize
+   */
+  protected function execute(InputInterface $input, OutputInterface $output): int
+  {
+    $this->io = new SymfonyStyle($input, $output);
 
-     try {
-       // Parse and validate arguments.
-       $queryOptions = $this->parseArguments($input);
+    try {
+      // Parse and validate arguments.
+      $queryOptions = $this->parseArguments($input);
 
-       // Build the search query (implemented by child classes).
-       $query = $this->buildSearchQuery($queryOptions);
+      // Build the search query (implemented by child classes).
+      $query = $this->buildSearchQuery($queryOptions);
 
-       // Apply site filtering automatically (base class handles this).
-       $query = $this->applySiteFiltering($query, $queryOptions);
+      // Apply site filtering automatically (base class handles this).
+      $query = $this->applySiteFiltering($query, $queryOptions);
 
-       // Validate the query and options.
-       $this->validateQuery($query, $queryOptions);
+      // Validate the query and options.
+      $this->validateQuery($query, $queryOptions);
 
-       // Execute the search and display results.
-       return $this->executeSearch($query, $queryOptions);
+      // Execute the search and display results.
+      return $this->executeSearch($query, $queryOptions);
 
-     }
-     catch (\Exception $e) {
-       $this->io->error($e->getMessage());
-       return Command::FAILURE;
-     }
-   }
+    }
+    catch (\Exception $e) {
+      $this->io->error($e->getMessage());
+      return Command::FAILURE;
+    }
+  }
 
-   /**
-    * Parse all input arguments and options into a structured array
-    */
-   protected function parseArguments(InputInterface $input): array
-   {
-     $options = [
+  /**
+   * Parse all input arguments and options into a structured array
+   */
+  protected function parseArguments(InputInterface $input): array
+  {
+    $options = [
       'time' => $this->parseTimeOptions($input),
       'sites' => $this->parseSiteOptions($input),
       'display' => $this->parseDisplayOptions($input),
       'filters' => $this->parseFilterOptions($input),
       'script_specific' => $this->parseScriptSpecificOptions($input),
-     ];
+    ];
 
-     return $options;
-   }
+    return $options;
+  }
 
-   /**
-    * Parse time-related options
-    */
-   protected function parseTimeOptions(InputInterface $input): array
-   {
-     $since = $input->getOption('since');
-     $until = $input->getOption('until');
-     $timeOption = $input->getOption('time');
+  /**
+   * Parse time-related options
+   */
+  protected function parseTimeOptions(InputInterface $input): array
+  {
+    $since = $input->getOption('since');
+    $until = $input->getOption('until');
+    $timeOption = $input->getOption('time');
 
-     // Check for custom since/until first.
-     if ($since) {
-       return [
+    // Check for custom since/until first.
+    if ($since) {
+      return [
         'start_time' => $since,
         'end_time' => $until,
         'human_readable' => "$since to $until"
-       ];
-     }
+      ];
+    }
 
-     // Check for individual time flags using dynamic mappings.
-     $timeMappings = self::getTimeMappings();
+    // Check for individual time flags using dynamic mappings.
+    $timeMappings = self::getTimeMappings();
 
-     foreach ($timeMappings as $flag => $times) {
-       if ($input->getOption($flag)) {
-         [$start, $end] = $times;
-         return [
+    foreach ($timeMappings as $flag => $times) {
+      if ($input->getOption($flag)) {
+        [$start, $end] = $times;
+        return [
           'start_time' => $start,
           'end_time' => $end,
           'human_readable' => "last $flag"
-         ];
-       }
-     }
+        ];
+      }
+    }
 
-     // Fall back to --time option if provided.
-     if ($timeOption && isset($timeMappings[$timeOption])) {
-       [$start, $end] = $timeMappings[$timeOption];
-       return [
+    // Fall back to --time option if provided.
+    if ($timeOption && isset($timeMappings[$timeOption])) {
+      [$start, $end] = $timeMappings[$timeOption];
+      return [
         'start_time' => $start,
         'end_time' => $end,
         'human_readable' => "last $timeOption"
-       ];
-     }
+      ];
+    }
 
-     // Use default time if nothing specified.
-     $defaultFlag = $this->defaultTime;
-     if (isset($timeMappings[$defaultFlag])) {
-       [$start, $end] = $timeMappings[$defaultFlag];
-       return [
+    // Use default time if nothing specified.
+    $defaultFlag = $this->defaultTime;
+    if (isset($timeMappings[$defaultFlag])) {
+      [$start, $end] = $timeMappings[$defaultFlag];
+      return [
         'start_time' => $start,
         'end_time' => $end,
         'human_readable' => "last $defaultFlag (default)"
-       ];
-     }
+      ];
+    }
 
-     throw new \InvalidArgumentException("No valid time option specified");
-   }
+    throw new \InvalidArgumentException("No valid time option specified");
+  }
 
-   /**
-    * Parse site filtering options
-    */
-   protected function parseSiteOptions(InputInterface $input): array
-   {
-     $sites = [];
-     foreach (array_keys($this->siteHosts) as $site) {
-       if ($input->getOption($site)) {
-         $sites[] = $site;
-       }
-     }
-     return $sites;
-   }
+  /**
+   * Parse site filtering options
+   */
+  protected function parseSiteOptions(InputInterface $input): array
+  {
+    $sites = [];
+    foreach (array_keys($this->siteHosts) as $site) {
+      if ($input->getOption($site)) {
+        $sites[] = $site;
+      }
+    }
+    return $sites;
+  }
 
-   /**
-    * Parse display formatting options
-    */
-   protected function parseDisplayOptions(InputInterface $input): array
-   {
-     $display = [];
-     $explicitOptions = []; // Track which options were explicitly set by user.
+  /**
+   * Parse display formatting options
+   */
+  protected function parseDisplayOptions(InputInterface $input): array
+  {
+    $display = [];
+    $explicitOptions = []; // Track which options were explicitly set by user.
 
-     // Apply default display options first.
-     foreach ($this->defaultDisplayOptions as $option) {
-       $display[$option] = TRUE;
-     }
+    // Apply default display options first.
+    foreach ($this->defaultDisplayOptions as $option) {
+      $display[$option] = TRUE;
+    }
 
-     // Then check for explicit options and track them.
-     $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'cache'];
-     foreach ($displayFlags as $flag) {
-       if ($input->getOption($flag)) {
-         $display[$flag] = TRUE;
-         $explicitOptions[$flag] = TRUE;
-       }
-     }
+    // Then check for explicit options and track them.
+    $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'cache'];
+    foreach ($displayFlags as $flag) {
+      if ($input->getOption($flag)) {
+        $display[$flag] = TRUE;
+        $explicitOptions[$flag] = TRUE;
+      }
+    }
 
-     // Handle path option (can have a value).
-     $pathOption = $input->getOption('path');
-     if ($pathOption !== FALSE) {
-       $display['path'] = $pathOption === NULL ? 1 : (int) $pathOption;
-       $explicitOptions['path'] = TRUE;
-     }
+    // Handle path option (can have a value).
+    $pathOption = $input->getOption('path');
+    if ($pathOption !== FALSE) {
+      $display['path'] = $pathOption === NULL ? 1 : (int) $pathOption;
+      $explicitOptions['path'] = TRUE;
+    }
 
-     // Add tracking of explicit options to the display array.
-     $display['_explicit'] = $explicitOptions;
+    // Add tracking of explicit options to the display array.
+    $display['_explicit'] = $explicitOptions;
 
-     return $display;
-   }
+    return $display;
+  }
 
-   /**
-    * Parse filtering and other options
-    */
-   protected function parseFilterOptions(InputInterface $input): array
-   {
-     $cachedOption = $input->getOption('cached');
-     $useCached = $cachedOption !== FALSE;
-     $cacheOptions = ['infinite' => FALSE, 'seconds' => NULL];
+  /**
+   * Parse filtering and other options
+   */
+  protected function parseFilterOptions(InputInterface $input): array
+  {
+    $cachedOption = $input->getOption('cached');
+    $useCached = $cachedOption !== FALSE;
+    $cacheOptions = ['infinite' => FALSE, 'seconds' => NULL];
 
-     if ($useCached && $cachedOption !== NULL) {
-       // Parse cache value using CacheService.
-       try {
-         $cacheOptions = $this->cacheService->parseCacheOptions((string) $cachedOption);
-       }
-       catch (\InvalidArgumentException $e) {
-         throw new \InvalidArgumentException("Cache option error: " . $e->getMessage());
-       }
-     }
+    if ($useCached && $cachedOption !== NULL) {
+      // Parse cache value using CacheService.
+      try {
+        $cacheOptions = $this->cacheService->parseCacheOptions((string) $cachedOption);
+      }
+      catch (\InvalidArgumentException $e) {
+        throw new \InvalidArgumentException("Cache option error: " . $e->getMessage());
+      }
+    }
 
-     return [
+    return [
       'min_count' => (int) $input->getOption('min-count'),
       'use_cached' => $useCached,
       'cache_infinite' => $cacheOptions['infinite'],
@@ -471,201 +423,201 @@
       'user_agent_filter' => $input->getOption('user-agent-filter'),
       'path_filter' => $input->getOption('path-filter') !== FALSE ? ($input->getOption('path-filter') ?: '/') : NULL,
       'ip_filter' => $input->getOption('ip-filter'),
-     ];
-   }
+    ];
+  }
 
-   /**
-    * Apply site filtering to query automatically (base class handles this)
-    */
-   protected function applySiteFiltering(string $query, array $options): string
-   {
-     if (!empty($options['sites'])) {
-       $siteConditions = [];
-       foreach ($options['sites'] as $site) {
-         $host = $this->siteHosts[$site]['host'];
-         $siteConditions[] = "{ json.orig_host:$host }";
-       }
-       $siteFilter = '( ' . implode(' OR ', $siteConditions) . ' )';
-       $query = "($query) AND $siteFilter";
-     }
-     return $query;
-   }
+  /**
+   * Apply site filtering to query automatically (base class handles this)
+   */
+  protected function applySiteFiltering(string $query, array $options): string
+  {
+    if (!empty($options['sites'])) {
+      $siteConditions = [];
+      foreach ($options['sites'] as $site) {
+        $host = $this->siteHosts[$site]['host'];
+        $siteConditions[] = "{ json.orig_host:$host }";
+      }
+      $siteFilter = '( ' . implode(' OR ', $siteConditions) . ' )';
+      $query = "($query) AND $siteFilter";
+    }
+    return $query;
+  }
 
-   /**
-    * Apply global filter options to a query
-    */
-   protected function applyGlobalFilters(string $baseQuery, array $options, array $excludeFilters = []): string
-   {
-     $query = $baseQuery;
+  /**
+   * Apply global filter options to a query
+   */
+  protected function applyGlobalFilters(string $baseQuery, array $options, array $excludeFilters = []): string
+  {
+    $query = $baseQuery;
 
-     // Apply country filter.
-     if (!in_array('country', $excludeFilters) && !empty($options['filters']['country_filter'])) {
-       $country = $options['filters']['country_filter'];
-       $query .= " { json.geoip.country_code2:$country }";
-     }
+    // Apply country filter.
+    if (!in_array('country', $excludeFilters) && !empty($options['filters']['country_filter'])) {
+      $country = $options['filters']['country_filter'];
+      $query .= " { json.geoip.country_code2:$country }";
+    }
 
-     // Apply city filter.
-     if (!in_array('city', $excludeFilters) && !empty($options['filters']['city_filter'])) {
-       $city = $options['filters']['city_filter'];
-       $query .= " { json.geoip.city_name:$city }";
-     }
+    // Apply city filter.
+    if (!in_array('city', $excludeFilters) && !empty($options['filters']['city_filter'])) {
+      $city = $options['filters']['city_filter'];
+      $query .= " { json.geoip.city_name:$city }";
+    }
 
-     // Apply status code filter.
-     if (!in_array('status', $excludeFilters) && !empty($options['filters']['status_code_filter'])) {
-       $statusCode = $options['filters']['status_code_filter'];
-       $query .= " { json.resp_status:$statusCode }";
-     }
+    // Apply status code filter.
+    if (!in_array('status', $excludeFilters) && !empty($options['filters']['status_code_filter'])) {
+      $statusCode = $options['filters']['status_code_filter'];
+      $query .= " { json.resp_status:$statusCode }";
+    }
 
-     // Apply user agent filter.
-     if (!in_array('user_agent', $excludeFilters) && !empty($options['filters']['user_agent_filter'])) {
-       $agent = $options['filters']['user_agent_filter'];
-       $query .= " { json.req_user_agent:$agent }";
-     }
+    // Apply user agent filter.
+    if (!in_array('user_agent', $excludeFilters) && !empty($options['filters']['user_agent_filter'])) {
+      $agent = $options['filters']['user_agent_filter'];
+      $query .= " { json.req_user_agent:$agent }";
+    }
 
-     // Apply path filter with correct Papertrail JSON syntax.
-     if (!in_array('path', $excludeFilters) && !empty($options['filters']['path_filter'])) {
-       $path = $options['filters']['path_filter'];
-       if ($path === '/') {
-         // Exact match for root path only.
-         $query .= ' { json.req_uri:"/" }';
-       }
-       else {
-         // Substring match (without quotes) for other paths.
-         $query .= " { json.req_uri:$path }";
-       }
-     }
+    // Apply path filter with correct Papertrail JSON syntax.
+    if (!in_array('path', $excludeFilters) && !empty($options['filters']['path_filter'])) {
+      $path = $options['filters']['path_filter'];
+      if ($path === '/') {
+        // Exact match for root path only.
+        $query .= ' { json.req_uri:"/" }';
+      }
+      else {
+        // Substring match (without quotes) for other paths.
+        $query .= " { json.req_uri:$path }";
+      }
+    }
 
-     // Apply IP filter.
-     if (!in_array('ip', $excludeFilters) && !empty($options['filters']['ip_filter'])) {
-       $ipFilter = $options['filters']['ip_filter'];
-       // Handle multiple IPs separated by commas or spaces.
-       if (preg_match('/[, ]/', $ipFilter)) {
-         // Convert various separators to OR syntax for SolarWinds API.
-         $ipQuery = preg_replace('/[, ]+/', ' OR ', $ipFilter);
-         $query .= " { json.client_ip:$ipQuery }";
-       }
-       else {
-         // Single IP.
-         $query .= " { json.client_ip:$ipFilter }";
-       }
-     }
+    // Apply IP filter.
+    if (!in_array('ip', $excludeFilters) && !empty($options['filters']['ip_filter'])) {
+      $ipFilter = $options['filters']['ip_filter'];
+      // Handle multiple IPs separated by commas or spaces.
+      if (preg_match('/[, ]/', $ipFilter)) {
+        // Convert various separators to OR syntax for SolarWinds API.
+        $ipQuery = preg_replace('/[, ]+/', ' OR ', $ipFilter);
+        $query .= " { json.client_ip:$ipQuery }";
+      }
+      else {
+        // Single IP.
+        $query .= " { json.client_ip:$ipFilter }";
+      }
+    }
 
-     return $query;
-   }
+    return $query;
+  }
 
-   /**
-    * Format applied filters for display
-    */
-   protected function formatAppliedFilters(array $options): string
-   {
-     $appliedFilters = [];
+  /**
+   * Format applied filters for display
+   */
+  protected function formatAppliedFilters(array $options): string
+  {
+    $appliedFilters = [];
 
-     if (!empty($options['filters']['country_filter'])) {
-       $appliedFilters[] = "--country-filter=" . $options['filters']['country_filter'];
-     }
+    if (!empty($options['filters']['country_filter'])) {
+      $appliedFilters[] = "--country-filter=" . $options['filters']['country_filter'];
+    }
 
-     if (!empty($options['filters']['city_filter'])) {
-       $appliedFilters[] = "--city-filter=" . $options['filters']['city_filter'];
-     }
+    if (!empty($options['filters']['city_filter'])) {
+      $appliedFilters[] = "--city-filter=" . $options['filters']['city_filter'];
+    }
 
-     if (!empty($options['filters']['status_code_filter'])) {
-       $appliedFilters[] = "--status-code-filter=" . $options['filters']['status_code_filter'];
-     }
+    if (!empty($options['filters']['status_code_filter'])) {
+      $appliedFilters[] = "--status-code-filter=" . $options['filters']['status_code_filter'];
+    }
 
-     if (!empty($options['filters']['user_agent_filter'])) {
-       $appliedFilters[] = "--user-agent-filter=" . $options['filters']['user_agent_filter'];
-     }
+    if (!empty($options['filters']['user_agent_filter'])) {
+      $appliedFilters[] = "--user-agent-filter=" . $options['filters']['user_agent_filter'];
+    }
 
-     if (!empty($options['filters']['path_filter'])) {
-       $appliedFilters[] = "--path-filter=" . $options['filters']['path_filter'];
-     }
+    if (!empty($options['filters']['path_filter'])) {
+      $appliedFilters[] = "--path-filter=" . $options['filters']['path_filter'];
+    }
 
-     if (!empty($options['filters']['ip_filter'])) {
-       $appliedFilters[] = "--ip-filter=" . $options['filters']['ip_filter'];
-     }
+    if (!empty($options['filters']['ip_filter'])) {
+      $appliedFilters[] = "--ip-filter=" . $options['filters']['ip_filter'];
+    }
 
-     return empty($appliedFilters) ? '' : implode(' ', $appliedFilters);
-   }
+    return empty($appliedFilters) ? '' : implode(' ', $appliedFilters);
+  }
 
-   /**
-    * Execute the search with progress feedback
-    */
-   protected function executeSearch(string $query, array $options): int
-   {
-     // Register signal handlers for graceful interruption.
-     $this->registerSignalHandlers();
+  /**
+   * Execute the search with progress feedback
+   */
+  protected function executeSearch(string $query, array $options): int
+  {
+    // Register signal handlers for graceful interruption.
+    $this->registerSignalHandlers();
 
-     // Check if debug is enabled via config or command line.
-     $debugMode = $options['filters']['debug'] || $this->config->isDebugEnabled();
-     $progressMode = $this->config->isProgressEnabled();
+    // Check if debug is enabled via config or command line.
+    $debugMode = $options['filters']['debug'] || $this->config->isDebugEnabled();
+    $progressMode = $this->config->isProgressEnabled();
 
-     // Generate cache key for this query.
-     $scriptName = $this->getName() ?? 'unknown';
-     $timeArg = $options['time']['human_readable'];
-     $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-     $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+    // Generate cache key for this query.
+    $scriptName = $this->getName() ?? 'unknown';
+    $timeArg = $options['time']['human_readable'];
+    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
 
-     if ($debugMode) {
-       $this->io->section('Debug Information');
-       $this->io->text("Query: $query");
-       $this->io->text("Time range: {$options['time']['human_readable']}");
-       $this->io->text("Start time: {$options['time']['start_time']}");
-       $this->io->text("End time: {$options['time']['end_time']}");
-       $this->io->text("API Base URL: " . $this->config->getApiBaseUrl());
-       $this->io->text("Progress mode: " . ($progressMode ? 'enabled' : 'disabled'));
-       $this->io->text("Cache key: $cacheKey");
-       $this->io->text("Use cached: " . ($options['filters']['use_cached'] ? 'yes' : 'no'));
-       $this->io->newLine();
-     }
+    if ($debugMode) {
+      $this->io->section('Debug Information');
+      $this->io->text("Query: $query");
+      $this->io->text("Time range: {$options['time']['human_readable']}");
+      $this->io->text("Start time: {$options['time']['start_time']}");
+      $this->io->text("End time: {$options['time']['end_time']}");
+      $this->io->text("API Base URL: " . $this->config->getApiBaseUrl());
+      $this->io->text("Progress mode: " . ($progressMode ? 'enabled' : 'disabled'));
+      $this->io->text("Cache key: $cacheKey");
+      $this->io->text("Use cached: " . ($options['filters']['use_cached'] ? 'yes' : 'no'));
+      $this->io->newLine();
+    }
 
-     // Check cache if requested.
-     if ($options['filters']['use_cached']) {
-       $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
+    // Check cache if requested.
+    if ($options['filters']['use_cached']) {
+      $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
 
-       if ($this->cacheService->isCacheFresh(
+      if ($this->cacheService->isCacheFresh(
         $cacheKey,
         $currentTimeArg,
         $options['filters']['cache_infinite'],
         $options['filters']['cache_seconds']
-       )) {
-         $this->io->note('Using cached results...');
-         $cachedResults = $this->cacheService->loadFromCache($cacheKey);
+      )) {
+        $this->io->note('Using cached results...');
+        $cachedResults = $this->cacheService->loadFromCache($cacheKey);
 
-         if ($cachedResults !== NULL) {
-           // Extract search term for highlighting.
-           $searchTerm = $this->extractSearchTerm($options);
-           $this->displayService->displayResults($cachedResults, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
-           $this->io->success("Found " . count($cachedResults) . " results (from cache)");
-           return Command::SUCCESS;
-         }
-       }
-     }
+        if ($cachedResults !== NULL) {
+          // Extract search term for highlighting.
+          $searchTerm = $this->extractSearchTerm($options);
+          $this->displayService->displayResults($cachedResults, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
+          $this->io->success("Found " . count($cachedResults) . " results (from cache)");
+          return Command::SUCCESS;
+        }
+      }
+    }
 
-     $this->io->section('Searching SolarWinds Logs');
-     $this->io->text("Time range: {$options['time']['human_readable']}");
-     $this->io->text("Query: $query");
+    $this->io->section('Searching SolarWinds Logs');
+    $this->io->text("Time range: {$options['time']['human_readable']}");
+    $this->io->text("Query: $query");
 
-     // Display applied filters if any.
-     $appliedFilters = $this->formatAppliedFilters($options);
-     if (!empty($appliedFilters)) {
-       $this->io->text("Applied filters: $appliedFilters");
-     }
+    // Display applied filters if any.
+    $appliedFilters = $this->formatAppliedFilters($options);
+    if (!empty($appliedFilters)) {
+      $this->io->text("Applied filters: $appliedFilters");
+    }
 
-     // Create progress bar only if progress is enabled.
-     // Show progress if enabled.
-     $progressBar = NULL;
-     if ($progressMode) {
-       $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
-       $progressBar = new ProgressBar($this->io, $totalSeconds);
-       $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s% %message%');
-       $progressBar->setMessage('');
-       $progressBar->start();
-     }
-     try {
-       $searchStartTime = time();
+    // Create progress bar only if progress is enabled.
+    // Show progress if enabled.
+    $progressBar = NULL;
+    if ($progressMode) {
+      $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
+      $progressBar = new ProgressBar($this->io, $totalSeconds);
+      $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s% %message%');
+      $progressBar->setMessage('');
+      $progressBar->start();
+    }
+    try {
+      $searchStartTime = time();
 
-       // Execute API search with enhanced progress updates.
-       $results = $this->apiService->searchLogs(
+      // Execute API search with enhanced progress updates.
+      $results = $this->apiService->searchLogs(
         $query,
         $options['time']['start_time'],
         $options['time']['end_time'],
@@ -707,149 +659,149 @@
         $debugMode ? function(string $message) {
           $this->io->text($message);
         } : NULL
-       );
+      );
 
-       $searchDuration = time() - $searchStartTime;
+      $searchDuration = time() - $searchStartTime;
 
-       // Check if search was interrupted.
-       if (self::isInterrupted()) {
-         if ($progressBar) {
-           $progressBar->finish();
-           $this->io->newLine(2);
-         }
-         $this->io->error("Search interrupted by user. Displaying partial results (" . count($results) . " found so far).");
-         // Continue to display results and return success - we got some data.
-       }
+      // Check if search was interrupted.
+      if (self::isInterrupted()) {
+        if ($progressBar) {
+          $progressBar->finish();
+          $this->io->newLine(2);
+        }
+        $this->io->error("Search interrupted by user. Displaying partial results (" . count($results) . " found so far).");
+        // Continue to display results and return success - we got some data.
+      }
 
-       // Clear progress display if it was shown.
-       if ($progressBar) {
-         $progressBar->finish();
-         $this->io->newLine(2);
-       }
+      // Clear progress display if it was shown.
+      if ($progressBar) {
+        $progressBar->finish();
+        $this->io->newLine(2);
+      }
 
-       // Save to cache if conditions are met (query took >60 seconds).
-       if ($searchDuration >= 60) {
-         $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
+      // Save to cache if conditions are met (query took >60 seconds).
+      if ($searchDuration >= 60) {
+        $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
 
-         if ($this->cacheService->saveToCache($cacheKey, $results, $searchDuration)) {
-           $this->io->note("Results cached (query took {$searchDuration}s)");
-         }
-       }
+        if ($this->cacheService->saveToCache($cacheKey, $results, $searchDuration)) {
+          $this->io->note("Results cached (query took {$searchDuration}s)");
+        }
+      }
 
-       // Extract search term for highlighting.
-       $searchTerm = $this->extractSearchTerm($options);
+      // Extract search term for highlighting.
+      $searchTerm = $this->extractSearchTerm($options);
 
-       // Display results.
-       $this->displayService->displayResults($results, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
+      // Display results.
+      $this->displayService->displayResults($results, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
 
-       $this->io->success("Found " . count($results) . " results");
-       return Command::SUCCESS;
+      $this->io->success("Found " . count($results) . " results");
+      return Command::SUCCESS;
 
-     }
-     catch (GuzzleException $e) {
-       if ($progressBar) {
-         $progressBar->finish();
-         $this->io->newLine();
-       }
-       $this->io->error("API request failed: " . $e->getMessage());
-       return Command::FAILURE;
-     }
-   }
+    }
+    catch (GuzzleException $e) {
+      if ($progressBar) {
+        $progressBar->finish();
+        $this->io->newLine();
+      }
+      $this->io->error("API request failed: " . $e->getMessage());
+      return Command::FAILURE;
+    }
+  }
 
-   /**
-    * Extract time argument from human readable string for cache key generation
-    */
-   protected function extractTimeArgFromHumanReadable(string $humanReadable): string
-   {
-     // Extract the time part from strings like "last 1h", "last 1d (default)", etc.
-     if (preg_match('/last (\w+)/', $humanReadable, $matches)) {
-       return $matches[1];
-     }
+  /**
+   * Extract time argument from human readable string for cache key generation
+   */
+  protected function extractTimeArgFromHumanReadable(string $humanReadable): string
+  {
+    // Extract the time part from strings like "last 1h", "last 1d (default)", etc.
+    if (preg_match('/last (\w+)/', $humanReadable, $matches)) {
+      return $matches[1];
+    }
 
-     return '1d'; // Default fallback.
-   }
+    return '1d'; // Default fallback.
+  }
 
-   /**
-    * Handle interrupt signals (SIGINT/SIGTERM)
-    */
-   public static function handleSignal(int $signo): void
-   {
-     if (self::$interrupted) {
-       // Second signal - force exit immediately.
-       exit(1);
-     }
-     self::$interrupted = TRUE;
-   }
+  /**
+   * Handle interrupt signals (SIGINT/SIGTERM)
+   */
+  public static function handleSignal(int $signo): void
+  {
+    if (self::$interrupted) {
+      // Second signal - force exit immediately.
+      exit(1);
+    }
+    self::$interrupted = TRUE;
+  }
 
-   /**
-    * Check if execution has been interrupted
-    */
-   public static function isInterrupted(): bool
-   {
-     // Process any pending signals.
-     if (function_exists('pcntl_signal_dispatch')) {
-       pcntl_signal_dispatch();
-     }
-     return self::$interrupted;
-   }
+  /**
+   * Check if execution has been interrupted
+   */
+  public static function isInterrupted(): bool
+  {
+    // Process any pending signals.
+    if (function_exists('pcntl_signal_dispatch')) {
+      pcntl_signal_dispatch();
+    }
+    return self::$interrupted;
+  }
 
-   /**
-    * Register signal handlers for graceful interruption
-    */
-   protected function registerSignalHandlers(): void
-   {
-     if (function_exists('pcntl_signal')) {
-       pcntl_signal(SIGINT, [self::class, 'handleSignal']);
-       pcntl_signal(SIGTERM, [self::class, 'handleSignal']);
-     }
-   }
+  /**
+   * Register signal handlers for graceful interruption
+   */
+  protected function registerSignalHandlers(): void
+  {
+    if (function_exists('pcntl_signal')) {
+      pcntl_signal(SIGINT, [self::class, 'handleSignal']);
+      pcntl_signal(SIGTERM, [self::class, 'handleSignal']);
+    }
+  }
 
-   /**
-    * Build the search query (must be implemented by child classes)
-    */
-   abstract protected function buildSearchQuery(array $options): string;
+  /**
+   * Build the search query (must be implemented by child classes)
+   */
+  abstract protected function buildSearchQuery(array $options): string;
 
-   /**
-    * Parse script-specific options (default implementation returns empty array)
-    */
-   protected function parseScriptSpecificOptions(InputInterface $input): array
-   {
-     return [];
-   }
+  /**
+   * Parse script-specific options (default implementation returns empty array)
+   */
+  protected function parseScriptSpecificOptions(InputInterface $input): array
+  {
+    return [];
+  }
 
-   /**
-    * Validate the query and options (default implementation does no validation)
-    */
-   protected function validateQuery(string $query, array $options): void
-   {
-     // Default implementation performs no additional validation.
-   }
+  /**
+   * Validate the query and options (default implementation does no validation)
+   */
+  protected function validateQuery(string $query, array $options): void
+  {
+    // Default implementation performs no additional validation.
+  }
 
-   /**
-    * Extract search term from command options for highlighting
-    */
-   protected function extractSearchTerm(array $options): ?string
-   {
-     $scriptSpecific = $options['script_specific'] ?? [];
+  /**
+   * Extract search term from command options for highlighting
+   */
+  protected function extractSearchTerm(array $options): ?string
+  {
+    $scriptSpecific = $options['script_specific'] ?? [];
 
-     // BotCommand: use the agent argument
-     if (isset($scriptSpecific['agent'])) {
-       return $scriptSpecific['agent'];
-     }
+    // BotCommand: use the agent argument
+    if (isset($scriptSpecific['agent'])) {
+      return $scriptSpecific['agent'];
+    }
 
-     // SearchCommand: use the query if it's simple text (not JSON)
-     if (isset($scriptSpecific['query'])) {
-       $query = $scriptSpecific['query'];
+    // SearchCommand: use the query if it's simple text (not JSON)
+    if (isset($scriptSpecific['query'])) {
+      $query = $scriptSpecific['query'];
 
-       // Skip highlighting for complex JSON queries
-       if (strpos($query, '{') !== FALSE || strpos($query, '}') !== FALSE) {
-         return NULL;
-       }
+      // Skip highlighting for complex JSON queries
+      if (strpos($query, '{') !== FALSE || strpos($query, '}') !== FALSE) {
+        return NULL;
+      }
 
-       // Return simple text queries for highlighting
-       return $query;
-     }
+      // Return simple text queries for highlighting
+      return $query;
+    }
 
-     return NULL;
-   }
- }
+    return NULL;
+  }
+}

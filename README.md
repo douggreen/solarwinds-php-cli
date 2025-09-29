@@ -289,8 +289,10 @@ Supports comprehensive time range options:
 ## Documentation
 
 - **README.md** (this file) - Project overview and usage for developers
-- **docs/CASE_STUDY.md** - Lessons learned about AI-assisted development
-- **docs/NOTES-FOR-AI.md** - Context and guidelines for AI development sessions
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Developer guidelines and architecture
+- **[TODO.md](TODO.md)** - Remaining features and development roadmap
+- **[CASE_STUDY.md](CASE_STUDY.md)** - Lessons learned about AI-assisted development
+- **[CLAUDE-MUST-READ-FIRST.md](CLAUDE-MUST-READ-FIRST.md)** - AI behavioral guide and development context
 
 ## Original Shell Scripts
 
