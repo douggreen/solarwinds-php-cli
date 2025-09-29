@@ -153,6 +153,12 @@ class DisplayService
       return;
     }
 
+    // Special handling for Drupal/PHP error format.
+    if (!empty($displayOptions['drupal'])) {
+      $this->displayDrupalErrors($logs, $displayOptions, $io, $filters, $searchTerm);
+      return;
+    }
+
     // Group and format based on display options.
     $grouped = $this->groupResults($logs, $displayOptions);
 
@@ -674,6 +680,127 @@ class DisplayService
 
     // Different days, show full range.
     return "$first - $last";
+  }
+
+  /**
+   * Display Drupal/PHP watchdog errors with file:line grouping
+   */
+  protected function displayDrupalErrors(array $logs, array $displayOptions, SymfonyStyle $io, array $filters = [], ?string $searchTerm = NULL): void
+  {
+    $grouped = [];
+    $minCount = $filters['min_count'] ?? 1;
+
+    foreach ($logs as $log) {
+      // Parse the log message to get the JSON structure.
+      $parsedLog = $this->parseLogMessage($log);
+
+      // Extract Drupal watchdog specific fields.
+      $severity = $parsedLog['severity'] ?? 'Unknown';
+      $variables = $parsedLog['variables'] ?? [];
+
+      // Extract file and line from variables.
+      $file = $variables['%file'] ?? 'Unknown';
+      $line = $variables['%line'] ?? 0;
+      $type = $variables['%type'] ?? $severity;
+      $message = $variables['@message'] ?? $parsedLog['message'] ?? 'No message';
+      $function = $variables['%function'] ?? 'Unknown';
+
+      // Extract just the filename from the full path.
+      $filename = basename($file);
+
+      // Create grouping key: file:line.
+      $key = "$filename:$line";
+
+      if (!isset($grouped[$key])) {
+        $grouped[$key] = [
+          'count' => 0,
+          'severity' => $severity,
+          'type' => $type,
+          'file' => $filename,
+          'line' => $line,
+          'function' => $function,
+          'message' => $message,
+          'first_seen' => $log['time'] ?? 'unknown',
+          'last_seen' => $log['time'] ?? 'unknown',
+        ];
+      }
+
+      $grouped[$key]['count']++;
+      $grouped[$key]['last_seen'] = $log['time'] ?? 'unknown';
+    }
+
+    // Sort by count (descending).
+    uasort($grouped, function($a, $b) {
+      return $b['count'] <=> $a['count'];
+    });
+
+    // Build table with Drupal-specific columns.
+    $headers = ['Count', 'Severity', 'File:Line', 'Function', 'Message', 'Time Range'];
+    $rows = [];
+
+    foreach ($grouped as $key => $data) {
+      // Apply min_count filter.
+      if ($data['count'] < $minCount) {
+        continue;
+      }
+
+      // Colorize severity like status codes.
+      $severityDisplay = $this->colorizeDrupalSeverity($data['severity']);
+
+      // Truncate long messages and functions for readability.
+      $message = $data['message'];
+      if (strlen($message) > 80) {
+        $message = substr($message, 0, 77) . '...';
+      }
+
+      $function = $data['function'];
+      if (strlen($function) > 40) {
+        $function = '...' . substr($function, -37);
+      }
+
+      $rows[] = [
+        $data['count'],
+        $severityDisplay,
+        $data['file'] . ':' . $data['line'],
+        $function,
+        $message,
+        $this->formatTimeRange($data['first_seen'], $data['last_seen'])
+      ];
+    }
+
+    if (empty($rows)) {
+      $io->warning('No Drupal errors found matching criteria.');
+      return;
+    }
+
+    $io->table($headers, $rows);
+  }
+
+  /**
+   * Colorize Drupal severity levels
+   */
+  protected function colorizeDrupalSeverity(string $severity): string
+  {
+    // Drupal severity levels: Emergency, Alert, Critical, Error, Warning, Notice, Info, Debug.
+    $lower = strtolower($severity);
+
+    if (in_array($lower, ['emergency', 'alert', 'critical'])) {
+      return "<fg=red>$severity</fg=red>";           // Red for critical issues.
+    }
+    elseif ($lower === 'error') {
+      return "<fg=bright-red>$severity</fg=bright-red>"; // Bright red for errors.
+    }
+    elseif ($lower === 'warning') {
+      return "<fg=yellow>$severity</fg=yellow>";     // Yellow for warnings.
+    }
+    elseif (in_array($lower, ['notice', 'info'])) {
+      return "<fg=cyan>$severity</fg=cyan>";         // Cyan for informational.
+    }
+    elseif ($lower === 'debug') {
+      return "<fg=gray>$severity</fg=gray>";         // Gray for debug.
+    }
+
+    return $severity;
   }
 
 }

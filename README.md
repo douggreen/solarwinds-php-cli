@@ -200,6 +200,11 @@ aliases:
   ban: status --403 --host --ip --day
   banip: search "blocked" --ip --status --day
 
+  # Drupal/PHP error analysis
+  drupal: search "{ json.type:php }" --drupal --1d
+  drupal-error: search "{ json.type:php } { json.severity:Error }" --drupal --1d
+  drupal-warning: search "{ json.type:php } { json.severity:Warning }" --drupal --1d
+  drupal-notice: search "{ json.type:php } { json.severity:Notice }" --drupal --1d
 
   # Convenience shortcuts
   errors: search "error" --status --1h
@@ -221,6 +226,12 @@ aliases:
 solarwinds 5xx --2h                    # HTTP 5xx errors (last 2 hours)
 solarwinds posts --country             # POST requests by country
 solarwinds login --1h                  # Failed logins (last hour)
+
+# Drupal/PHP error analysis
+solarwinds drupal --2h                 # All PHP errors (last 2 hours)
+solarwinds drupal-error --1d           # PHP errors only (last day)
+solarwinds drupal-warning --1h         # PHP warnings (last hour)
+solarwinds drupal-notice --day         # PHP notices (last day)
 
 # Custom aliases
 solarwinds errors --country            # Error patterns by country
@@ -286,6 +297,7 @@ Supports comprehensive time range options:
 - `--ua` - Show user agents (with bot highlighting)
 - `--ip` - Show IP addresses
 - `--country` - Show country information
+- `--drupal` - Format PHP/Drupal watchdog errors with file:line grouping
 - And more...
 
 ### Caching System

@@ -37,29 +37,21 @@ The following commands require new core implementations as they cannot be effect
 - **Country Mode**: `--country` flag for geographic analysis
 - **Example Usage**: `pentest --day`, `pentest --1h --country`
 
-### **4. php-error (PhpErrorCommand)**
-- **Purpose**: PHP error analysis from structured error logs
-- **Query Pattern**: `{ json.type:php } -NotAcceptableHttpException`
-- **Data Structure**: Uses different log structure than standard web logs
-- **Default Display**: files-by-line-recent format
-- **Default Time**: 1 day
-- **Example Usage**: `php-error --day`, `php-error --1h --host`
-
-### **5. pingdom (PingdomCommand)**
+### **4. pingdom (PingdomCommand)**
 - **Purpose**: Pingdom monitoring service error analysis
 - **Query Pattern**: `json.req_user_agent:pingdom AND -json.resp_status:200 AND -json.resp_status:301 AND -json.resp_status:304`
 - **Focus**: Non-successful responses from Pingdom monitoring
 - **Default Display**: Custom format with host,status,uri,timestamp
 - **Example Usage**: `pingdom --day`, `pingdom --1h --status`
 
-### **6. importer (ImporterCommand)**
+### **5. importer (ImporterCommand)**
 - **Purpose**: Content import activity analysis
 - **Query Pattern**: `{ json.type:mtc_importer } { json.severity:Info }`
 - **Default Display**: ips-only format (IP address analysis)
 - **Default Time**: 1 day
 - **Example Usage**: `importer --1h`, `importer --day --status`
 
-### **7. antibot (AntibotCommand)**
+### **6. antibot (AntibotCommand)**
 - **Purpose**: Anti-bot measure effectiveness analysis
 - **Query Pattern**: `{ json.resp_status:429 } OR { json.resp_status:503 }`
 - **Focus**: Rate limiting and bot blocking responses
@@ -77,8 +69,7 @@ The following commands require new core implementations as they cannot be effect
 - Require custom output formatting
 - More complex query logic
 
-**Phase 3 (Complex):** php-error
-- Different data structure requiring specialized handling
+**Note:** php-error was implemented via the `--drupal` display flag and aliases rather than as a separate command.
 
 ## Code Quality Improvements
 

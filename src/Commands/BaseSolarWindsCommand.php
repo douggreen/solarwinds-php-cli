@@ -211,7 +211,8 @@ abstract class BaseSolarWindsCommand extends Command
       'ip' => 'Show IP addresses',
       'country' => 'Show country information',
       'region' => 'Show region information',
-      'cache' => 'Show cache status'
+      'cache' => 'Show cache status',
+      'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping'
     ];
     foreach ($displayOptions as $option => $description) {
       $this->addOption($option, NULL, InputOption::VALUE_NONE, $description);
@@ -371,7 +372,7 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     // Then check for explicit options and track them.
-    $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'cache'];
+    $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'cache', 'drupal'];
     foreach ($displayFlags as $flag) {
       if ($input->getOption($flag)) {
         $display[$flag] = TRUE;
