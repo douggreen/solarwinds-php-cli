@@ -174,14 +174,15 @@ class CacheService
   }
 
   /**
-   * Save results to cache (only if query took more than 60 seconds like original)
+   * Save results to cache
+   *
+   * Note: Caching decision is made by caller based on:
+   * - Query duration >= 5 seconds
+   * - Time range >= 1 hour
+   * - --cached flag used
    */
   public function saveToCache(string $cacheKey, array $results, int $queryDurationSeconds): bool
   {
-    if ($queryDurationSeconds < 60) {
-      return FALSE;
-    }
-
     $cacheFile = $this->getCacheFilePath($cacheKey);
     $cacheMetaFile = $this->getCacheMetaFilePath($cacheKey);
 

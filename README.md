@@ -301,10 +301,25 @@ Supports comprehensive time range options:
 - And more...
 
 ### Caching System
-- Automatic caching for queries taking >60 seconds
-- Time-based expiration (10% of query time range by default)
-- Configurable cache duration: `--cached=5m`, `--cached=2h`
-- Infinite cache mode: `--cached=0`
+
+**Automatic Caching** - Results are cached when any of these conditions are met:
+- Query takes ≥ 5 seconds to execute
+- Time range is ≥ 1 hour (--1h, --1d, --week, etc.)
+- `--cached` flag is used (forces cache creation)
+
+**Cache Usage** - Cached results are automatically used when fresh (10% of query time range by default)
+
+**Cache Control Options:**
+- `--cached` - Force cache creation, or specify max age: `--cached=5m`, `--cached=2h`
+- `--cached=0` - Accept any cached results regardless of age
+- `--no-cache` - Skip cache and force fresh query
+
+**Example:**
+```bash
+solarwinds drupal-warning --1d     # Creates cache (query takes time)
+solarwinds drupal-warning          # Uses cache automatically
+solarwinds drupal-warning --no-cache  # Forces fresh query
+```
 
 ## Original Shell Scripts
 

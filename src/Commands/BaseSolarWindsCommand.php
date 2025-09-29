@@ -224,6 +224,7 @@ abstract class BaseSolarWindsCommand extends Command
       // Other options.
       ->addOption('min-count', NULL, InputOption::VALUE_REQUIRED, 'Minimum count threshold', 1)
       ->addOption('cached', NULL, InputOption::VALUE_OPTIONAL, 'Use cached results (optionally specify max age)', FALSE)
+      ->addOption('no-cache', NULL, InputOption::VALUE_NONE, 'Skip cache and force fresh query')
       ->addOption('limit', NULL, InputOption::VALUE_REQUIRED, 'Maximum number of results', 1000)
       ->addOption('debug', NULL, InputOption::VALUE_NONE, 'Enable debug output')
       ->addOption('no-group', NULL, InputOption::VALUE_NONE, 'Disable automatic time-based regrouping for single result groups')
@@ -420,6 +421,7 @@ abstract class BaseSolarWindsCommand extends Command
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
       'no_group' => $input->getOption('no-group'),
+      'no_cache' => $input->getOption('no-cache'),
       'country_filter' => $input->getOption('country-filter'),
       'city_filter' => $input->getOption('city-filter'),
       'status_code_filter' => $input->getOption('status-code-filter') ?: $input->getOption('status-code') ?: $input->getOption('code'),
@@ -573,17 +575,18 @@ abstract class BaseSolarWindsCommand extends Command
       $this->io->newLine();
     }
 
-    // Check cache if requested.
-    if ($options['filters']['use_cached']) {
+    // Always check for fresh cache first (unless --no-cache is used).
+    if (!$options['filters']['no_cache']) {
       $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
 
+      // If --cached flag is used, it modifies freshness checking behavior.
       if ($this->cacheService->isCacheFresh(
         $cacheKey,
         $currentTimeArg,
         $options['filters']['cache_infinite'],
         $options['filters']['cache_seconds']
       )) {
-        $this->io->note('Using cached results...');
+        $this->io->note('Using cached results... (use --no-cache to force fresh query)');
         $cachedResults = $this->cacheService->loadFromCache($cacheKey);
 
         if ($cachedResults !== NULL) {
@@ -682,12 +685,39 @@ abstract class BaseSolarWindsCommand extends Command
         $this->io->newLine(2);
       }
 
-      // Save to cache if conditions are met (query took >60 seconds).
-      if ($searchDuration >= 60) {
-        $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
+      // Determine if we should save to cache based on new rules:
+      // 1. Query took >= 5 seconds (lowered from 60)
+      // 2. Time range >= 1 hour (always cache longer queries)
+      // 3. --cached flag was used (explicit user request)
+      $shouldCache = FALSE;
+      $cacheReason = '';
 
+      if ($searchDuration >= 5) {
+        $shouldCache = TRUE;
+        $cacheReason = "query took {$searchDuration}s";
+      }
+
+      // Check if time range is >= 1 hour (3600 seconds)
+      $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
+      $timeRangeSeconds = TimeSpecifications::convertToSeconds($currentTimeArg);
+      if ($timeRangeSeconds >= 3600) {
+        $shouldCache = TRUE;
+        if (!$cacheReason) {
+          $cacheReason = "time range >= 1h";
+        }
+      }
+
+      // Always cache if --cached flag was used
+      if ($options['filters']['use_cached']) {
+        $shouldCache = TRUE;
+        if (!$cacheReason) {
+          $cacheReason = "--cached flag used";
+        }
+      }
+
+      if ($shouldCache) {
         if ($this->cacheService->saveToCache($cacheKey, $results, $searchDuration)) {
-          $this->io->note("Results cached (query took {$searchDuration}s)");
+          $this->io->note("Results cached ($cacheReason)");
         }
       }
 
