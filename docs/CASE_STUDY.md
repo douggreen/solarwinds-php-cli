@@ -21,7 +21,7 @@
 
 This case study examines the lessons learned from using AI assistance to migrate roughly 20 original shell scripts into a modern PHP/Symfony Console application. The original scripts were highly duplicative in both functionality and code structure, making them difficult to maintain and improve. Rather than focusing on technical implementation, this document analyzes AI behavior patterns, collaboration strategies, and critical failure modes that emerged during the development process.
 
-**Key Collaboration Discovery:** Critical success patterns included allowing the AI to maintain its own behavioral documentation (`CLAUDE-MUST-READ-FIRST.md`) and an active TODO document with explicit permission to modify these documents without asking. This created living repositories of lessons learned, behavioral constraints, and project status that significantly improved collaboration effectiveness across conversation boundaries.
+**Key Collaboration Discovery:** Critical success patterns included allowing the AI to maintain its own behavioral documentation [CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md) and an active TODO document with explicit permission to modify these documents without asking. This created living repositories of lessons learned, behavioral constraints, and project status that significantly improved collaboration effectiveness across conversation boundaries.
 
 **Key Insights About AI-Assisted Development:**
 - AI excels at implementing solutions but struggles with architectural decision-making
@@ -295,7 +295,7 @@ AI migration approaches in order of complexity:
 
   ### 3.2 Comprehensive Instruction Documentation: Living Behavioral Contracts
 
-**Context:** After multiple sessions where AI repeatedly forgot key patterns and made the same mistakes, the human created a comprehensive `CLAUDE-MUST-READ-FIRST.md` document with 35 specific behavioral patterns.
+**Context:** After multiple sessions where AI repeatedly forgot key patterns and made the same mistakes, the human created a comprehensive [CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md) document with 35 specific behavioral patterns.
 
 **Document Evolution:** The instruction document grew organically from session to session, capturing:
 - Specific AI failure patterns observed in practice
@@ -322,7 +322,7 @@ AI migration approaches in order of complexity:
 
 **Contrast with Previous Sessions:** Earlier development sessions showed AI repeatedly forgetting key patterns, making the same mistakes, and requiring re-education on project standards. The comprehensive instruction document eliminated these repetitive cycles.
 
-**Recommendation:** Maintaining evolving `CLAUDE-MUST-READ-FIRST.md` documents is essential for complex, multi-session AI-assisted development projects. The document should be treated as a living behavioral contract that grows with project learnings.
+**Recommendation:** Maintaining evolving [CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md) documents is essential for complex, multi-session AI-assisted development projects. The document should be treated as a living behavioral contract that grows with project learnings.
 
 ## 4. Post-Development Collaboration
 
@@ -344,7 +344,7 @@ AI migration approaches in order of complexity:
 
   ### 5.1 The Documentation-First Recovery Strategy
 
-**Key Collaboration Discovery:** Successful patterns that emerged included allowing the AI to maintain its own behavioral documentation (`CLAUDE-MUST-READ-FIRST.md`) and active project status tracking (`TODO.md`) with permission to modify these documents without asking. This created living repositories of lessons learned, behavioral constraints, and project status that helped bridge conversation boundaries.
+**Key Collaboration Discovery:** Successful patterns that emerged included allowing the AI to maintain its own behavioral documentation [CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md) and active project status tracking (`TODO.md`) with permission to modify these documents without asking. This created living repositories of lessons learned, behavioral constraints, and project status that helped bridge conversation boundaries.
 
 **The Documentation Problem:** As development progressed, both the codebase and documentation became increasingly meandering and complex. The AI required human assistance even with maintaining its own guidance document, suggesting that the complexity had exceeded manageable bounds.
 

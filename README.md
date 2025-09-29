@@ -2,6 +2,14 @@
 
 Professional SolarWinds log analysis tools built with Symfony Console, migrated from a collection of shell scripts to provide better maintainability and extensibility.
 
+## Documentation
+
+- **README.md** (this file) - Project overview and usage for developers
+- **[CONTRIBUTING.md](docs/CONTRIBUTING.md)** - Developer guidelines and architecture
+- **[TODO.md](docs/TODO.md)** - Remaining features and development roadmap
+- **[CASE_STUDY.md](docs/CASE_STUDY.md)** - Lessons learned about AI-assisted development
+- **[CLAUDE-MUST-READ-FIRST.md](docs/CLAUDE-MUST-READ-FIRST.md)** - AI behavioral guide and development context
+
 ## Project Overview
 
 This project provides a modern PHP/Symfony Console application for comprehensive SolarWinds log analysis and monitoring. The system offers powerful log analysis capabilities through a clean command-line interface with support for flexible querying, custom site configurations, and configurable command aliases.
@@ -285,14 +293,6 @@ Supports comprehensive time range options:
 - Time-based expiration (10% of query time range by default)
 - Configurable cache duration: `--cached=5m`, `--cached=2h`
 - Infinite cache mode: `--cached=0`
-
-## Documentation
-
-- **README.md** (this file) - Project overview and usage for developers
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Developer guidelines and architecture
-- **[TODO.md](TODO.md)** - Remaining features and development roadmap
-- **[CASE_STUDY.md](CASE_STUDY.md)** - Lessons learned about AI-assisted development
-- **[CLAUDE-MUST-READ-FIRST.md](CLAUDE-MUST-READ-FIRST.md)** - AI behavioral guide and development context
 
 ## Original Shell Scripts
 

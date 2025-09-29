@@ -251,9 +251,9 @@ The original shell scripts are preserved for reference and provide authoritative
 
 ### Development Context
 
-- **docs/CASE_STUDY.md** - Lessons learned about AI-assisted development
-- **docs/CLAUDE-MUST-READ-FIRST.md** - AI development context and behavioral patterns
-- **docs/TODO.md** - Additional planned features and improvements
+- **[CASE STUDY](CASE_STUDY.md)** - Lessons learned about AI-assisted development
+- **[CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md)** - AI development context and behavioral patterns
+- **[TODO](TODO.md)** - Additional planned features and improvements
 
 ## Troubleshooting Development Issues
 
