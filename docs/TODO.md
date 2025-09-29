@@ -5,12 +5,8 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. Complete documentation cleanup :white_check_mark: (completed)
-2. Manual code cleanup phase (current)
-3. Implement remaining commands
-2. Improve code documentation and comments
-3. Research and implement testing framework
-4. Begin Phase 1 command implementations
+1. Implement remaining commands
+2. Research and implement testing framework
 
 ## Remaining Command Implementations
 
@@ -88,31 +84,16 @@ The following commands require new core implementations as they cannot be effect
 
 ### High Priority Tasks
 
-1. **Better Document Code Architecture**
-   - Add comprehensive header comments to all classes including architectural details
-   - Improve method documentation with parameter/return type descriptions
-   - Add inline comments explaining complex logic and design decisions
-   - Document the template method pattern implementation
-   - Explain service layer interactions and dependencies
-
-2. **Research and Implement Testing Framework**
+1. **Research and Implement Testing Framework**
    - Evaluate PHPUnit vs other PHP testing frameworks
    - Design test strategy for command classes and services
    - Create integration tests comparing output with original shell scripts
    - Implement automated validation of backward compatibility
    - Set up continuous integration testing pipeline
 
-3. **Improve README User Documentation**
-   - Remove project status and architectural details
-   - Focus on installation, configuration, and usage examples
-   - Expand configuration documentation with comprehensive examples
-   - Add troubleshooting section for common issues
-   - Improve command reference and alias examples
-
 ### Display and Output Improvements
 
-4. **No-Grouping Option**: Add `--no-group` flag to show individual log entries instead of grouped summaries
-5. **Query Display Control**: Only show query output when debug mode is enabled
+2. **Query Display Control**: Only show query output when debug mode is enabled
 
 ### Code Refactoring
 

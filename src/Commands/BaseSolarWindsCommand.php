@@ -225,6 +225,7 @@ abstract class BaseSolarWindsCommand extends Command
       ->addOption('cached', NULL, InputOption::VALUE_OPTIONAL, 'Use cached results (optionally specify max age)', FALSE)
       ->addOption('limit', NULL, InputOption::VALUE_REQUIRED, 'Maximum number of results', 1000)
       ->addOption('debug', NULL, InputOption::VALUE_NONE, 'Enable debug output')
+      ->addOption('no-group', NULL, InputOption::VALUE_NONE, 'Disable automatic time-based regrouping for single result groups')
 
       // Global filter options.
       ->addOption('country-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by country code (e.g., US, GB, FR)')
@@ -417,6 +418,7 @@ abstract class BaseSolarWindsCommand extends Command
       'cache_seconds' => $cacheOptions['seconds'],
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
+      'no_group' => $input->getOption('no-group'),
       'country_filter' => $input->getOption('country-filter'),
       'city_filter' => $input->getOption('city-filter'),
       'status_code_filter' => $input->getOption('status-code-filter') ?: $input->getOption('status-code') ?: $input->getOption('code'),

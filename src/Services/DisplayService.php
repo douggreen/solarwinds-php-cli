@@ -156,8 +156,8 @@ class DisplayService
     // Group and format based on display options.
     $grouped = $this->groupResults($logs, $displayOptions);
 
-    // Smart auto-regrouping: if only one group, regroup by time buckets.
-    if (count($grouped) === 1) {
+    // Smart auto-regrouping: if only one group, regroup by time buckets (unless disabled).
+    if (count($grouped) === 1 && empty($filters['no_group'])) {
       $groupKey = array_keys($grouped)[0];
       $groupData = array_values($grouped)[0];
       $this->handleAutoTimeRegrouping($logs, $displayOptions, $io, $groupData, $groupKey, $filters, $searchTerm);
