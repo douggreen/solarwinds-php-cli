@@ -147,7 +147,7 @@ use Symfony\Component\Console\Input\InputOption;
 class StatusCommand extends BaseSolarWindsCommand
 {
   protected string $defaultTime = '1d';
-  protected array $defaultDisplayOptions = ['host', 'path', 'status'];
+  protected array $defaultDisplayOptions = ['host', 'status'];
 
   protected function configure(): void
   {
