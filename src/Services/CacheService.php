@@ -177,7 +177,7 @@ class CacheService
   /**
    * Save results to cache.
    *
-   * Note: Caching decision is made by caller based on:
+   * Note: Caching decision is made by caller based on:.
    * - Query duration >= 5 seconds
    * - Time range >= 1 hour
    * - --cached flag used

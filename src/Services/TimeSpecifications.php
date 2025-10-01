@@ -95,7 +95,7 @@ namespace SolarWinds\Services;
 class TimeSpecifications
 {
   /**
-   * Get all time option categories and their values
+   * Get all time option categories and their values.
    */
   public static function getTimeOptions(): array
   {
@@ -115,7 +115,7 @@ class TimeSpecifications
   }
 
   /**
-   * Convert time argument to seconds for cache staleness calculation
+   * Convert time argument to seconds for cache staleness calculation.
    */
   public static function convertToSeconds(string $timeArg): int
   {
@@ -166,7 +166,7 @@ class TimeSpecifications
   }
 
   /**
-   * Convert time argument to human-readable time range
+   * Convert time argument to human-readable time range.
    */
   public static function convertToTimeRange(string $timeArg): ?array
   {
@@ -223,7 +223,7 @@ class TimeSpecifications
   }
 
   /**
-   * Get all available time options as a flat array for command configuration
+   * Get all available time options as a flat array for command configuration.
    */
   public static function getAllTimeOptions(): array
   {

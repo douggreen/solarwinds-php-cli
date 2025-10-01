@@ -161,7 +161,7 @@ class AliasCommand extends Command
   }
 
   /**
-   * Copy target command's definition after application is available
+   * Copy target command's definition after application is available.
    */
   public function setApplication($application = NULL): void
   {

@@ -133,7 +133,7 @@ class SolarWindsApplication extends Application
   }
 
   /**
-   * Register aliases from configuration
+   * Register aliases from configuration.
    */
   protected function registerAliases(): void
   {
@@ -151,7 +151,7 @@ class SolarWindsApplication extends Application
   }
 
   /**
-   * Create and register an alias command
+   * Create and register an alias command.
    */
   protected function createAliasCommand(string $aliasName, string $aliasDefinition): void
   {
@@ -180,7 +180,7 @@ class SolarWindsApplication extends Application
   }
 
   /**
-   * Parse alias definition into command and arguments
+   * Parse alias definition into command and arguments.
    */
   protected function parseAliasDefinition(string $definition): array
   {

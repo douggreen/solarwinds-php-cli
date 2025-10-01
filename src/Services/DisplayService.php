@@ -89,7 +89,7 @@ class DisplayService
   }
 
   /**
-   * Colorize unknown/missing data values in red for consistent styling
+   * Colorize unknown/missing data values in red for consistent styling.
    */
   protected function colorizeUnknownValue(string $value): string
   {
@@ -102,7 +102,7 @@ class DisplayService
     return $value;
   }
   /**
-   * Display results based on display options
+   * Display results based on display options.
    */
   public function displayResults(array $logs, array $displayOptions, SymfonyStyle $io, bool $debugMode = FALSE, array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -174,7 +174,7 @@ class DisplayService
   }
 
   /**
-   * Check if we're getting unknown fields for the requested display options
+   * Check if we're getting unknown fields for the requested display options.
    */
   protected function hasUnknownFields(array $log, array $displayOptions): bool
   {
@@ -197,7 +197,7 @@ class DisplayService
   }
 
   /**
-   * Display raw JSON output
+   * Display raw JSON output.
    */
   protected function displayRawJson(array $logs, SymfonyStyle $io): void
   {
@@ -207,7 +207,7 @@ class DisplayService
   }
 
   /**
-   * Group results based on display options
+   * Group results based on display options.
    */
   protected function groupResults(array $logs, array $displayOptions): array
   {
@@ -239,7 +239,7 @@ class DisplayService
   }
 
   /**
-   * Parse the log message field if it contains JSON data
+   * Parse the log message field if it contains JSON data.
    */
   protected function parseLogMessage(array $log): array
   {
@@ -257,7 +257,7 @@ class DisplayService
   }
 
   /**
-   * Build grouping key based on display options
+   * Build grouping key based on display options.
    */
   protected function buildGroupingKey(array $log, array $displayOptions): string
   {
@@ -331,7 +331,7 @@ class DisplayService
   }
 
   /**
-   * Display grouped results in a table format
+   * Display grouped results in a table format.
    */
   protected function displayGroupedResults(array $grouped, array $displayOptions, SymfonyStyle $io, array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -428,7 +428,7 @@ class DisplayService
   }
 
   /**
-   * Handle automatic time-based regrouping when only one group is found
+   * Handle automatic time-based regrouping when only one group is found.
    */
   protected function handleAutoTimeRegrouping(array $logs, array $displayOptions, SymfonyStyle $io, array $singleGroup, string $groupKey = 'all', array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -502,7 +502,7 @@ class DisplayService
   }
 
   /**
-   * Extract day from timestamp in YYYY-MM-DD format
+   * Extract day from timestamp in YYYY-MM-DD format.
    */
   protected function extractDayFromTimestamp(string $timestamp): string
   {
@@ -526,7 +526,7 @@ class DisplayService
   }
 
   /**
-   * Extract hour from timestamp in HH:00 format
+   * Extract hour from timestamp in HH:00 format.
    */
   protected function extractHourFromTimestamp(string $timestamp): string
   {
@@ -548,7 +548,7 @@ class DisplayService
   }
 
   /**
-   * Extract minute from timestamp in HH:MM format
+   * Extract minute from timestamp in HH:MM format.
    */
   protected function extractMinuteFromTimestamp(string $timestamp): string
   {
@@ -617,7 +617,7 @@ class DisplayService
   }
 
   /**
-   * Highlight search term in user agent strings
+   * Highlight search term in user agent strings.
    */
   protected function highlightSearchTermInUserAgent(string $ua, ?string $searchTerm = NULL): string
   {
@@ -639,7 +639,7 @@ class DisplayService
   }
 
   /**
-   * Format timestamp for display using compact m-d H:i:s format
+   * Format timestamp for display using compact m-d H:i:s format.
    */
   protected function formatTimestamp(string $timestamp): string
   {
@@ -653,7 +653,7 @@ class DisplayService
   }
 
   /**
-   * Format time range for display (combines first and last seen)
+   * Format time range for display (combines first and last seen).
    */
   protected function formatTimeRange(string $firstSeen, string $lastSeen): string
   {
@@ -683,7 +683,7 @@ class DisplayService
   }
 
   /**
-   * Display Drupal/PHP watchdog errors with file:line grouping
+   * Display Drupal/PHP watchdog errors with file:line grouping.
    */
   protected function displayDrupalErrors(array $logs, array $displayOptions, SymfonyStyle $io, array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -777,7 +777,7 @@ class DisplayService
   }
 
   /**
-   * Colorize Drupal severity levels
+   * Colorize Drupal severity levels.
    */
   protected function colorizeDrupalSeverity(string $severity): string
   {

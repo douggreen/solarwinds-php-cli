@@ -94,7 +94,7 @@ class ConfigurationService
   }
 
   /**
-   * Load configuration from YAML file
+   * Load configuration from YAML file.
    */
   protected function loadConfiguration(): void
   {
@@ -132,7 +132,7 @@ class ConfigurationService
   }
 
   /**
-   * Get API token (backward compatible with original 'token' key)
+   * Get API token (backward compatible with original 'token' key).
    */
   public function getApiToken(): string
   {
@@ -156,7 +156,7 @@ class ConfigurationService
   }
 
   /**
-   * Get API base URL
+   * Get API base URL.
    */
   public function getApiBaseUrl(): string
   {
@@ -178,7 +178,7 @@ class ConfigurationService
   }
 
   /**
-   * Get debug mode setting
+   * Get debug mode setting.
    */
   public function isDebugEnabled(): bool
   {
@@ -186,7 +186,7 @@ class ConfigurationService
   }
 
   /**
-   * Get validation mode setting
+   * Get validation mode setting.
    */
   public function isValidationEnabled(): bool
   {
@@ -194,7 +194,7 @@ class ConfigurationService
   }
 
   /**
-   * Get progress mode setting
+   * Get progress mode setting.
    */
   public function isProgressEnabled(): bool
   {
@@ -202,7 +202,7 @@ class ConfigurationService
   }
 
   /**
-   * Helper to convert various boolean representations to actual boolean
+   * Helper to convert various boolean representations to actual boolean.
    */
   protected function getBooleanValue(string $key): bool
   {
@@ -225,7 +225,7 @@ class ConfigurationService
   }
 
   /**
-   * Get site configurations from YAML
+   * Get site configurations from YAML.
    */
   public function getSites(): array
   {
@@ -233,7 +233,7 @@ class ConfigurationService
   }
 
   /**
-   * Get site host mappings for command option generation
+   * Get site host mappings for command option generation.
    */
   public function getSiteHostMappings(): array
   {
@@ -256,7 +256,7 @@ class ConfigurationService
   }
 
   /**
-   * Get hostname to display label mappings for output shortening
+   * Get hostname to display label mappings for output shortening.
    */
   public function getHostDisplayMappings(): array
   {
@@ -275,7 +275,7 @@ class ConfigurationService
   }
 
   /**
-   * Get full configuration array
+   * Get full configuration array.
    */
   public function getConfig(): array
   {
@@ -283,7 +283,7 @@ class ConfigurationService
   }
 
   /**
-   * Get a specific configuration value
+   * Get a specific configuration value.
    */
   public function get(string $key, mixed $default = NULL): mixed
   {
@@ -291,7 +291,7 @@ class ConfigurationService
   }
 
   /**
-   * Get configured aliases
+   * Get configured aliases.
    */
   public function getAliases(): array
   {

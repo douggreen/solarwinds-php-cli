@@ -157,7 +157,7 @@ class SearchCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Parse script-specific options for search
+   * Parse script-specific options for search.
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
@@ -181,7 +181,7 @@ class SearchCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Build the search query for general log search
+   * Build the search query for general log search.
    */
   protected function buildSearchQuery(array $options): string
   {
@@ -210,7 +210,7 @@ class SearchCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Validate the query and options for search
+   * Validate the query and options for search.
    */
   protected function validateQuery(string $query, array $options): void
   {

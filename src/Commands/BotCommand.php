@@ -138,7 +138,7 @@ class BotCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Parse script-specific options for bot
+   * Parse script-specific options for bot.
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
@@ -151,7 +151,7 @@ class BotCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Build the search query for bot traffic analysis
+   * Build the search query for bot traffic analysis.
    */
   protected function buildSearchQuery(array $options): string
   {
@@ -162,7 +162,7 @@ class BotCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Validate the query and options for bot
+   * Validate the query and options for bot.
    */
   protected function validateQuery(string $query, array $options): void
   {

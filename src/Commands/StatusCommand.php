@@ -189,7 +189,7 @@ class StatusCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Parse script-specific options for status
+   * Parse script-specific options for status.
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
@@ -230,7 +230,7 @@ class StatusCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Build the search query for status code analysis
+   * Build the search query for status code analysis.
    */
   protected function buildSearchQuery(array $options): string
   {
@@ -268,7 +268,7 @@ class StatusCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Validate the query and options for status
+   * Validate the query and options for status.
    */
   protected function validateQuery(string $query, array $options): void
   {

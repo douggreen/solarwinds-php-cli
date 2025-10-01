@@ -115,7 +115,7 @@ class ApiService
   }
 
   /**
-   * Search logs with pagination - exact port from working bash script
+   * Search logs with pagination - exact port from working bash script.
    *
    * @param string $query The search query
    * @param string $startTime Start time (human readable)
@@ -297,7 +297,7 @@ class ApiService
   }
 
   /**
-   * Convert human-readable time to ISO-8601 format
+   * Convert human-readable time to ISO-8601 format.
    */
   protected function convertToIsoTime(string $timeString): string
   {
@@ -310,7 +310,7 @@ class ApiService
   }
 
   /**
-   * Test API connectivity
+   * Test API connectivity.
    */
   public function testConnection(): bool
   {

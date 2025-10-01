@@ -155,7 +155,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Configure common options for all SolarWinds commands
+   * Configure common options for all SolarWinds commands.
    */
   protected function configure(): void
   {
@@ -244,7 +244,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Execute the command - template method that child classes customize
+   * Execute the command - template method that child classes customize.
    */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
@@ -274,7 +274,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Parse all input arguments and options into a structured array
+   * Parse all input arguments and options into a structured array.
    */
   protected function parseArguments(InputInterface $input): array
   {
@@ -290,7 +290,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Parse time-related options
+   * Parse time-related options.
    */
   protected function parseTimeOptions(InputInterface $input): array
   {
@@ -346,7 +346,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Parse site filtering options
+   * Parse site filtering options.
    */
   protected function parseSiteOptions(InputInterface $input): array
   {
@@ -360,7 +360,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Parse display formatting options
+   * Parse display formatting options.
    */
   protected function parseDisplayOptions(InputInterface $input): array
   {
@@ -395,7 +395,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Parse filtering and other options
+   * Parse filtering and other options.
    */
   protected function parseFilterOptions(InputInterface $input): array
   {
@@ -432,7 +432,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Apply site filtering to query automatically (base class handles this)
+   * Apply site filtering to query automatically (base class handles this).
    */
   protected function applySiteFiltering(string $query, array $options): string
   {
@@ -449,7 +449,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Apply global filter options to a query
+   * Apply global filter options to a query.
    */
   protected function applyGlobalFilters(string $baseQuery, array $options, array $excludeFilters = []): string
   {
@@ -511,7 +511,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Format applied filters for display
+   * Format applied filters for display.
    */
   protected function formatAppliedFilters(array $options): string
   {
@@ -545,7 +545,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Execute the search with progress feedback
+   * Execute the search with progress feedback.
    */
   protected function executeSearch(string $query, array $options): int
   {
@@ -744,7 +744,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Extract time argument from human readable string for cache key generation
+   * Extract time argument from human readable string for cache key generation.
    */
   protected function extractTimeArgFromHumanReadable(string $humanReadable): string
   {
@@ -757,7 +757,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Handle interrupt signals (SIGINT/SIGTERM)
+   * Handle interrupt signals (SIGINT/SIGTERM).
    */
   public static function handleSignal(int $signo): void
   {
@@ -769,7 +769,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Check if execution has been interrupted
+   * Check if execution has been interrupted.
    */
   public static function isInterrupted(): bool
   {
@@ -781,7 +781,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Register signal handlers for graceful interruption
+   * Register signal handlers for graceful interruption.
    */
   protected function registerSignalHandlers(): void
   {
@@ -792,12 +792,12 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Build the search query (must be implemented by child classes)
+   * Build the search query (must be implemented by child classes).
    */
   abstract protected function buildSearchQuery(array $options): string;
 
   /**
-   * Parse script-specific options (default implementation returns empty array)
+   * Parse script-specific options (default implementation returns empty array).
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
@@ -805,7 +805,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Validate the query and options (default implementation does no validation)
+   * Validate the query and options (default implementation does no validation).
    */
   protected function validateQuery(string $query, array $options): void
   {
@@ -813,7 +813,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Extract search term from command options for highlighting
+   * Extract search term from command options for highlighting.
    */
   protected function extractSearchTerm(array $options): ?string
   {
