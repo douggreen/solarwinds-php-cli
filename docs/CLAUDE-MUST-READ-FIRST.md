@@ -10,6 +10,12 @@
 1. **Ask permission before implementing solutions** - Present plan and get explicit approval
 2. **Read reference files** - Check uploaded bash scripts for exact implementation patterns
 3. **Provide download links immediately** - This is mandatory after every file change
+   - **CRITICAL: This applies to ALL file modifications, including documentation**
+   - Use format: `[View filename](computer:///mnt/user-data/outputs/filename)`
+   - Place immediately after making changes, before any discussion
+   - **Common failure pattern: AI discusses changes without providing links** - this wastes user time
+   - **Self-check before responding: "Did I modify a file? If yes, did I provide the link?"**
+   - **If you forget once, it's a mistake. Twice in the same thread is a pattern violation.**
 4. **Never mark tasks as complete** - Present work for review rather than declaring completion
 
 ### **:red_circle: FILE MANAGEMENT PRINCIPLES**

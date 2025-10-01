@@ -23,15 +23,21 @@ This case study examines the lessons learned from using AI assistance to migrate
 
 **Key Collaboration Discovery:** Critical success patterns included allowing the AI to maintain its own behavioral documentation [CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md) and an active TODO document with explicit permission to modify these documents without asking. This created living repositories of lessons learned, behavioral constraints, and project status that significantly improved collaboration effectiveness across conversation boundaries.
 
+**Critical Failure Pattern:** A key point of failure was AI hitting conversation limits and having to start over in new threads. While the behavioral documentation helped each continuation thread, after approximately half a dozen threads, the documentation itself became meandering and required cleanup. The project reached that point where both documentation and codebase required human reorganization.
+
+**Documentation Maturity Achievement:** After multiple cycles of cleanup and refinement, the project reached a critical milestone: the documentation became comprehensive enough that new AI collaboration sessions can begin productively by simply uploading the project files. This represents successful resolution of the conversation-boundary problem—the behavioral documentation, architectural guides, and active TODO now provide sufficient context for effective collaboration without extensive re-prompting. This demonstrates that the strategic investment in comprehensive, living documentation ultimately succeeded in creating a self-contained collaboration foundation.
+
+**Task-Focused Thread Strategy:** Once documentation reached maturity, adopting a new-thread-per-task approach proved highly effective. By starting fresh threads for each discrete implementation task, the AI avoided memory limits, maintained sharp focus on the specific goal, and reduced context drift. Combined with comprehensive documentation, this strategy enabled consistent, productive collaboration without the cognitive overhead that plagued earlier multi-task threads.
+
 **Key Insights About AI-Assisted Development:**
 - AI excels at implementing solutions but struggles with architectural decision-making
+- **Strategic documentation investment pays off:** Comprehensive behavioral documentation (CLAUDE-MUST-READ-FIRST.md) and active project status tracking (TODO.md) can reach sufficient maturity to enable productive collaboration across conversation boundaries with minimal additional prompting
+- **One thread per task is optimal:** With mature documentation, starting new threads for each discrete task prevents memory limits, maintains focus, and leverages the documentation investment without accumulating conversational baggage
 - AI has systematic blind spots for practical validation and edge cases
 - AI makes assumptions rather than following specifications exactly
 - AI consistently underestimates project complexity and overestimates completion status
 - Human oversight is essential for validation, testing, and specification compliance
 - AI self-documentation with modification permissions works well for incremental learning but requires human intervention for major reorganization
-
-**Critical Failure Pattern:** A key point of failure was AI hitting conversation limits and having to start over in new threads. While the behavioral documentation helped each continuation thread, after approximately half a dozen threads, the documentation itself became meandering and required cleanup. The project has now reached that point where the documentation and codebase both need human reorganization before determining if the collaborative process can continue effectively.
 
 ## 2. AI Collaboration Patterns & Failures
 
