@@ -570,6 +570,7 @@ class DisplayService
   }
 
   /**
+   * Shorten hostname using configured display mappings and colorize.
    */
   protected function shortenHostname(string $host): string
   {
@@ -593,6 +594,7 @@ class DisplayService
   }
 
   /**
+   * Colorize HTTP status codes based on response type.
    */
   protected function colorizeStatus(string $status): string
   {
