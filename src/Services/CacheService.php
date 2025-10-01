@@ -106,6 +106,7 @@ class CacheService
   }
 
   /**
+   * Generate a cache key.
    */
   public function generateCacheKey(string $scriptName, string $query, string $timeArgs, string $siteArgs = ''): string
   {
@@ -115,7 +116,7 @@ class CacheService
   }
 
   /**
-   * Check if cache exists and is fresh based on cache options
+   * Check if cache exists and is fresh based on cache options.
    */
   public function isCacheFresh(
     string $cacheKey,
@@ -154,7 +155,7 @@ class CacheService
   }
 
   /**
-   * Load results from cache if available
+   * Load results from cache if available.
    */
   public function loadFromCache(string $cacheKey): ?array
   {
@@ -174,7 +175,7 @@ class CacheService
   }
 
   /**
-   * Save results to cache
+   * Save results to cache.
    *
    * Note: Caching decision is made by caller based on:
    * - Query duration >= 5 seconds
@@ -201,6 +202,7 @@ class CacheService
   }
 
   /**
+   * Parse the cache options.
    */
   public function parseCacheOptions(string $cachedValue): array
   {
@@ -240,7 +242,7 @@ class CacheService
   }
 
   /**
-   * Calculate time range in seconds for cache staleness detection
+   * Calculate time range in seconds for cache staleness detection.
    */
   protected function getTimeRangeSeconds(string $timeArg): int
   {
@@ -248,7 +250,43 @@ class CacheService
   }
 
   /**
-   * Get full path to cache file
+   * Get human-readable cache age string.
+   *
+   * @param string $cacheKey Cache key to check
+   * @return string|null Human-readable age like "5 minutes" or "2 hours", or NULL if cache doesn't exist
+   */
+  public function getCacheAge(string $cacheKey): ?string
+  {
+    $cacheMetaFile = $this->getCacheMetaFilePath($cacheKey);
+
+    if (!file_exists($cacheMetaFile)) {
+      return NULL;
+    }
+
+    $cacheTime = (int) file_get_contents($cacheMetaFile);
+    $currentTime = time();
+    $ageSeconds = $currentTime - $cacheTime;
+
+    // Format age in human-readable format.
+    if ($ageSeconds < 60) {
+      return $ageSeconds . ' second' . ($ageSeconds !== 1 ? 's' : '');
+    }
+    elseif ($ageSeconds < 3600) {
+      $minutes = (int) ($ageSeconds / 60);
+      return $minutes . ' minute' . ($minutes !== 1 ? 's' : '');
+    }
+    elseif ($ageSeconds < 86400) {
+      $hours = (int) ($ageSeconds / 3600);
+      return $hours . ' hour' . ($hours !== 1 ? 's' : '');
+    }
+    else {
+      $days = (int) ($ageSeconds / 86400);
+      return $days . ' day' . ($days !== 1 ? 's' : '');
+    }
+  }
+
+  /**
+   * Get full path to cache file.
    */
   protected function getCacheFilePath(string $cacheKey): string
   {
@@ -256,7 +294,7 @@ class CacheService
   }
 
   /**
-   * Get full path to cache metadata file
+   * Get full path to cache metadata file.
    */
   protected function getCacheMetaFilePath(string $cacheKey): string
   {
@@ -264,7 +302,7 @@ class CacheService
   }
 
   /**
-   * Ensure cache directory exists
+   * Ensure cache directory exists.
    */
   protected function ensureCacheDirectoryExists(): void
   {

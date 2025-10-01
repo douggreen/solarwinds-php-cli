@@ -586,7 +586,9 @@ abstract class BaseSolarWindsCommand extends Command
         $options['filters']['cache_infinite'],
         $options['filters']['cache_seconds']
       )) {
-        $this->io->note('Using cached results... (use --no-cache to force fresh query)');
+        $cacheAge = $this->cacheService->getCacheAge($cacheKey);
+        $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";
+        $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
         $cachedResults = $this->cacheService->loadFromCache($cacheKey);
 
         if ($cachedResults !== NULL) {
@@ -717,7 +719,7 @@ abstract class BaseSolarWindsCommand extends Command
 
       if ($shouldCache) {
         if ($this->cacheService->saveToCache($cacheKey, $results, $searchDuration)) {
-          $this->io->note("Results cached ($cacheReason)");
+          $this->io->note("Results saved to cache ($cacheReason)");
         }
       }
 
