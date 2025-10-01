@@ -10,7 +10,7 @@ When starting work on this project, follow this sequence to get properly oriente
 1. **Read [README.md](README.md) first** - Understand the project overview and basic usage
 2. **Follow all documentation links from [README.md](README.md)** - Especially [CLAUDE-MUST-READ-FIRST.md](CLAUDE-MUST-READ-FIRST.md) for AI behavioral context
 3. **Read the code** - Familiarize yourself with the architecture, particularly:
-   - `BaseSolarWindsCommand.php` - Template method pattern
+   - `BaseSolarWindsCommand.php` - Abstract base class with shared functionality
    - The three core commands: `StatusCommand.php`, `SearchCommand.php`, `BotCommand.php`
    - Service layer: `ConfigurationService.php`, `ApiService.php`, `DisplayService.php`, `CacheService.php`
 4. **Read [TODO.md](TODO.md)** - Understand current priorities and remaining work
@@ -36,9 +36,9 @@ This project migrated from a collection of shell scripts to a modern PHP/Symfony
 - **`DisplayService`** - Output formatting, coloring, and display modes
 - **`CacheService`** - Intelligent caching with time-based expiration
 
-**Template Method Pattern:** `BaseSolarWindsCommand` provides common functionality while allowing command-specific implementations through abstract methods.
+**Base Class Inheritance:** `BaseSolarWindsCommand` provides common functionality while allowing command-specific implementations through abstract methods.
 
-### Template Method Implementation
+### Base Class Implementation
 
 All commands extend `BaseSolarWindsCommand` and implement three abstract methods:
 
@@ -195,11 +195,11 @@ sites:
 
 ### Architecture-Specific Guidelines
 
-**Template Method Pattern:**
+**Base Class Architecture:**
 - Keep abstract methods focused and single-purpose
 - Implement validation in child classes, not base class
 - Use protected methods for extension points
-- Document the template method contract clearly
+- Document the base class contract clearly
 
 **Service Layer:**
 - Services should be stateless where possible

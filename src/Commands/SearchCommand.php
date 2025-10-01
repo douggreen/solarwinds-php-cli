@@ -107,7 +107,7 @@
  * - User agent filtering: --user-agent-filter
  * - Path filtering: --path-filter
  *
- * @see BaseSolarWindsCommand For template method implementation
+ * @see BaseSolarWindsCommand For base class implementation
  * @see DisplayService For result formatting options
  * @see ConfigurationService For site filtering integration
  *

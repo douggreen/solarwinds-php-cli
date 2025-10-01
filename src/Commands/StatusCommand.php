@@ -125,7 +125,7 @@
  * - Geographic distribution for CDN/routing analysis
  * - Host-specific patterns for load balancing insights
  *
- * @see BaseSolarWindsCommand For template method implementation
+ * @see BaseSolarWindsCommand For base class implementation
  * @see DisplayService For color coding and formatting
  * @see TimeSpecifications For time range handling
  *

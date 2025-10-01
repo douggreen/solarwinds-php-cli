@@ -87,7 +87,7 @@
  * - Respects NO_COLOR environment variable
  * - Preserves original user agent string structure
  *
- * @see BaseSolarWindsCommand For template method implementation
+ * @see BaseSolarWindsCommand For base class implementation
  * @see DisplayService For bot highlighting logic
  * @see TimeSpecifications For 15-minute default time handling
  *

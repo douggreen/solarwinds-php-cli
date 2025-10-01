@@ -2,14 +2,14 @@
 
 /**
  * @file BaseSolarWindsCommand.php
- * @brief Abstract base command implementing inheritance pattern for SolarWinds
+ * @brief Abstract base command providing shared functionality for SolarWinds
  *        log analysis
  *
  * @class BaseSolarWindsCommand
  * @brief Abstract base class providing shared functionality for all SolarWinds
  *        commands
  *
- * This class implements abstract base class inheritance, providing common
+ * This base class provides common
  * functionality while requiring child classes to implement only 3 abstract
  * methods. This eliminates code duplication across commands.
  *
@@ -35,7 +35,7 @@
  *
  * @section architecture Command Architecture
  *
- * The command execution flow follows this pattern:
+ * The command execution flow:
  * 1. Parse common arguments (time, site, display options)
  * 2. Call parseScriptSpecificOptions() for command-specific parsing
  * 3. Call buildSearchQuery() to construct the query
@@ -73,7 +73,7 @@
  * @see TimeSpecifications For time parsing specifications
  *
  * @note This class automatically handles signal registration for graceful interruption
- * @warning Child classes should not override execute() - use the template methods instead
+ * @warning Child classes should not override execute() - use the abstract methods instead
  */
 
 namespace SolarWinds\Commands;
