@@ -13,14 +13,21 @@
 4. **Never mark tasks as complete** - Present work for review rather than declaring completion
 
 ### **🔴 FILE MANAGEMENT PRINCIPLES**
-4. **Check `/mnt/user-data/outputs/` for latest versions** - Don't revert to uploads
 5. **Clean trailing whitespace** - Run `sed -i 's/ *$//' filename` on ALL PHP files
-6. **Maintain shared state across sessions** - Work with current state in outputs
+6. **Work with uploaded files** - All current working files are in /mnt/user-data/uploads/
+
+### **🔴 DOCUMENTATION STYLE PRINCIPLES**
+7. **Never convert emoticon notation in ANY documentation** - All project documentation uses text-based emoticon notation like `:white_check_mark:`, `:x:`, `:arrow_right:`, and Unicode emojis like 🔴. NEVER convert between formats. Always preserve exactly as written:
+   - Keep `:white_check_mark:` as `:white_check_mark:` (never change to ✅)
+   - Keep `:x:` as `:x:` (never change to ❌)
+   - Keep `:arrow_right:` as `:arrow_right:` (never change to →)
+   - Keep 🔴 as 🔴 (never change to `:red_circle:`)
+   - This applies to ALL documentation files (CASE_STUDY.md, CONTRIBUTING.md, README.md, etc.)
 
 ### **🔴 CORE BEHAVIORAL CONSTRAINTS**
-7. **Use existing debugging tools** - Check for --debug options before adding custom debug code
-8. **Read error messages completely** - Don't skim; read full output including suggestions and context
-9. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints
+8. **Use existing debugging tools** - Check for --debug options before adding custom debug code
+9. **Read error messages completely** - Don't skim; read full output including suggestions and context
+10. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints
 
 ## SITUATIONAL PATTERNS (Specific Contexts)
 
