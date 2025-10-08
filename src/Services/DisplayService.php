@@ -101,6 +101,103 @@ class DisplayService
 
     return $value;
   }
+
+  /**
+   * Get all display column headers mapping.
+   */
+  protected function getDisplayColumnHeaders(): array
+  {
+    return [
+      'host' => 'Host',
+      'status' => 'Status',
+      'path' => 'Path',
+      'ip' => 'IP',
+      'ua' => 'User Agent',
+      'country' => 'Country',
+      'region' => 'Region',
+    ];
+  }
+
+  /**
+   * Get list of enabled display columns from display options.
+   */
+  protected function getEnabledDisplayColumns(array $displayOptions): array
+  {
+    $columns = [];
+
+    foreach (array_keys($this->getDisplayColumnHeaders()) as $column) {
+      if (!empty($displayOptions[$column])) {
+        $columns[] = $column;
+      }
+    }
+
+    return $columns;
+  }
+
+  /**
+   * Get display header name for a column.
+   */
+  protected function getDisplayColumnHeader(string $column): string
+  {
+    return $this->getDisplayColumnHeaders()[$column];
+  }
+
+  /**
+   * Extract and format display column value from log entry.
+   */
+  protected function extractDisplayColumnValue(string $column, array $log, array $displayOptions, ?string $searchTerm = NULL): string
+  {
+    switch ($column) {
+      case 'host':
+        $host = $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
+        return $this->shortenHostname($host);
+
+      case 'status':
+        $status = $log['resp_status'] ?? $log['status'] ?? $log['response_status'] ?? 'unknown';
+        return $this->colorizeStatus($status);
+
+      case 'path':
+        $uri = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? '/';
+        $segments = (int) $displayOptions['path'];
+        if ($segments > 1) {
+          $pathParts = array_slice(explode('/', trim($uri, '/')), 0, $segments);
+          $uri = '/' . implode('/', $pathParts);
+        }
+        if (strlen($uri) > 100) {
+          $uri = substr($uri, 0, 97) . '...';
+        }
+        return $uri;
+
+      case 'ip':
+        $ip = $log['client_ip'] ?? $log['remote_addr'] ?? $log['ip'] ?? $log['remote_ip'] ?? 'unknown';
+        return $this->colorizeUnknownValue($ip);
+
+      case 'ua':
+        $ua = $log['req_user_agent'] ?? $log['user_agent'] ?? $log['useragent'] ?? 'unknown';
+        if (strlen($ua) > 100) {
+          $ua = substr($ua, 0, 97) . '...';
+        }
+        return $this->highlightSearchTermInUserAgent($ua, $searchTerm);
+
+      case 'country':
+        $country = $log['geoip']['country_code2'] ??
+          $log['geoip']['country_name'] ??
+          $log['country'] ??
+          $log['geo']['country'] ??
+          'unknown';
+        return $this->colorizeUnknownValue($country);
+
+      case 'region':
+        $region = $log['geoip']['region_name'] ??
+          $log['region'] ??
+          $log['geo']['region'] ??
+          'unknown';
+        return $this->colorizeUnknownValue($region);
+
+      default:
+        return 'unknown';
+    }
+  }
   /**
    * Display results based on display options.
    */
@@ -336,15 +433,12 @@ class DisplayService
   protected function displayGroupedResults(array $grouped, array $displayOptions, SymfonyStyle $io, array $filters = [], ?string $searchTerm = NULL): void
   {
     $headers = ['Count'];
+    $enabledColumns = $this->getEnabledDisplayColumns($displayOptions);
 
-    // Add headers based on display options (timestamp moved to end).
-    if (!empty($displayOptions['host'])) $headers[] = 'Host';
-    if (!empty($displayOptions['status'])) $headers[] = 'Status';
-    if (!empty($displayOptions['path'])) $headers[] = 'Path';
-    if (!empty($displayOptions['ip'])) $headers[] = 'IP';
-    if (!empty($displayOptions['ua'])) $headers[] = 'User Agent';
-    if (!empty($displayOptions['country'])) $headers[] = 'Country';
-    if (!empty($displayOptions['region'])) $headers[] = 'Region';
+    // Add headers for enabled columns.
+    foreach ($enabledColumns as $column) {
+      $headers[] = $this->getDisplayColumnHeader($column);
+    }
 
     // Add combined timestamp column at the end.
     $headers[] = 'Time Range';
@@ -357,64 +451,13 @@ class DisplayService
       if ($data['count'] < $minCount) {
         continue;
       }
-      $row = [
-        $data['count']
-      ];
 
+      $row = [$data['count']];
       $log = $data['sample'];
 
-      if (!empty($displayOptions['host'])) {
-        $host = $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
-        $row[] = $this->shortenHostname($host);
-      }
-      if (!empty($displayOptions['status'])) {
-        $status = $log['resp_status'] ?? $log['status'] ?? $log['response_status'] ?? 'unknown';
-        $row[] = $this->colorizeStatus($status);
-      }
-      if (!empty($displayOptions['path'])) {
-        $uri = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? '/';
-        $segments = (int) $displayOptions['path'];
-        if ($segments > 1) {
-          $pathParts = array_slice(explode('/', trim($uri, '/')), 0, $segments);
-          $uri = '/' . implode('/', $pathParts);
-        }
-
-        // Truncate long paths at 100 characters for display.
-        if (strlen($uri) > 100) {
-          $uri = substr($uri, 0, 97) . '...';
-        }
-
-        $row[] = $uri;
-      }
-      if (!empty($displayOptions['ip'])) {
-        $ip = $log['client_ip'] ?? $log['remote_addr'] ?? $log['ip'] ?? $log['remote_ip'] ?? 'unknown';
-        $row[] = $this->colorizeUnknownValue($ip);
-      }
-      if (!empty($displayOptions['ua'])) {
-        $ua = $log['req_user_agent'] ?? $log['user_agent'] ?? $log['useragent'] ?? 'unknown';
-
-        // Truncate long user agents at 100 characters for display.
-        if (strlen($ua) > 100) {
-          $ua = substr($ua, 0, 97) . '...';
-        }
-
-        // Highlight search term in user agent strings.
-        $row[] = $this->highlightSearchTermInUserAgent($ua, $searchTerm);
-      }
-      if (!empty($displayOptions['country'])) {
-        $country = $log['geoip']['country_code2'] ??
-          $log['geoip']['country_name'] ?? // Fallback in case some logs have full names.
-          $log['country'] ??
-          $log['geo']['country'] ??
-          'unknown';
-        $row[] = $this->colorizeUnknownValue($country);
-      }
-      if (!empty($displayOptions['region'])) {
-        $region = $log['geoip']['region_name'] ??
-          $log['region'] ??
-          $log['geo']['region'] ??
-          'unknown';
-        $row[] = $this->colorizeUnknownValue($region);
+      // Add values for enabled columns.
+      foreach ($enabledColumns as $column) {
+        $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
       }
 
       // Add combined timestamp column at the end.
@@ -724,6 +767,7 @@ class DisplayService
           'message' => $message,
           'first_seen' => $log['time'] ?? 'unknown',
           'last_seen' => $log['time'] ?? 'unknown',
+          'sample' => $parsedLog,
         ];
       }
 
@@ -736,8 +780,18 @@ class DisplayService
       return $b['count'] <=> $a['count'];
     });
 
-    // Build table with Drupal-specific columns.
-    $headers = ['Count', 'Severity', 'File:Line', 'Function', 'Message', 'Time Range'];
+    // Build table headers with Drupal-specific columns plus optional display columns.
+    $headers = ['Count', 'Severity', 'File:Line', 'Function', 'Message'];
+
+    // Add optional display column headers.
+    $enabledColumns = $this->getEnabledDisplayColumns($displayOptions);
+    foreach ($enabledColumns as $column) {
+      $headers[] = $this->getDisplayColumnHeader($column);
+    }
+
+    // Time Range always comes last.
+    $headers[] = 'Time Range';
+
     $rows = [];
 
     foreach ($grouped as $key => $data) {
@@ -760,14 +814,24 @@ class DisplayService
         $function = '...' . substr($function, -37);
       }
 
-      $rows[] = [
+      $row = [
         $data['count'],
         $severityDisplay,
         $data['file'] . ':' . $data['line'],
         $function,
         $message,
-        $this->formatTimeRange($data['first_seen'], $data['last_seen'])
       ];
+
+      // Add optional display column values.
+      $log = $data['sample'];
+      foreach ($enabledColumns as $column) {
+        $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
+      }
+
+      // Time Range always comes last.
+      $row[] = $this->formatTimeRange($data['first_seen'], $data['last_seen']);
+
+      $rows[] = $row;
     }
 
     if (empty($rows)) {
