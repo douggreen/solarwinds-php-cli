@@ -457,15 +457,15 @@ class DisplayService
     // Determine bucket type and inform user with original group details.
     if ($isLessThanHour) {
       $bucketType = 'minute';
-      $io->note("Single result group detected: $groupDescription ({$singleGroup['count']} results). Auto-regrouping by minute for time range analysis.");
+      $io->note("Single result group detected: $groupDescription ({$singleGroup['count']} results). Auto-regrouping by minute for time range analysis. Use --no-group to see original results.");
     }
     elseif ($isLessThanDay) {
       $bucketType = 'hour';
-      $io->note("Single result group detected: $groupDescription ({$singleGroup['count']} results). Auto-regrouping by hour for time range analysis.");
+      $io->note("Single result group detected: $groupDescription ({$singleGroup['count']} results). Auto-regrouping by hour for time range analysis. Use --no-group to see original results.");
     }
     else {
       $bucketType = 'day';
-      $io->note("Single result group detected: $groupDescription ({$singleGroup['count']} results). Auto-regrouping by day for time range analysis.");
+      $io->note("Single result group detected: $groupDescription ({$singleGroup['count']} results). Auto-regrouping by day for time range analysis. Use --no-group to see original results.");
     }
 
     // Regroup by time buckets.
