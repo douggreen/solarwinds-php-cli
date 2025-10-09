@@ -218,9 +218,9 @@ class AliasCommand extends Command
           // Option with value: --query="value"
           [$optionName, $optionValue] = explode('=', $arg, 2);
           $optionName = ltrim($optionName, '-');
-          $mergedArgs[$optionName] = $optionValue;
+          $mergedArgs['--' . $optionName] = $optionValue;
           if ($input->getOption('debug')) {
-            $output->writeln("<comment>DEBUG [AliasCommand]: Added option '{$optionName}' = '{$optionValue}'</comment>");
+            $output->writeln("<comment>DEBUG [AliasCommand]: Added option '--{$optionName}' = '{$optionValue}'</comment>");
           }
         } else {
           // Boolean option: --host
@@ -251,6 +251,9 @@ class AliasCommand extends Command
       $output->writeln("<comment>DEBUG [AliasCommand]: Processing user input options...</comment>");
     }
 
+    // List of options where NULL is a valid "present but no value" indicator (VALUE_OPTIONAL options)
+    $nullableOptions = ['vars', 'path', 'cached', 'path-filter'];
+
     // Special handling: if we see option '28' = true, this is likely --500 being incorrectly mapped
     // Check if --500 was actually specified by the user
     $has500Option = FALSE;
@@ -268,14 +271,37 @@ class AliasCommand extends Command
         $output->writeln("<comment>DEBUG [AliasCommand]: User option '{$name}' = " . var_export($value, TRUE) . "</comment>");
       }
 
-      // Skip symfony built-in options and only include non-null values
-      // Also skip the problematic '28' option that seems to be incorrectly mapped from --500
-      if ($value !== NULL && $value !== FALSE &&
-          !in_array($name, ['help', 'quiet', 'verbose', 'version', 'ansi', 'no-ansi', 'no-interaction', '28'])) {
-        $mergedArgs['--' . $name] = $value;
+      // Skip symfony built-in options
+      if (in_array($name, ['help', 'quiet', 'verbose', 'version', 'ansi', 'no-ansi', 'no-interaction'])) {
+        continue;
+      }
+
+      // Skip the problematic '28' option that seems to be incorrectly mapped from --500
+      if ($name === '28') {
+        continue;
+      }
+
+      // For VALUE_OPTIONAL options (like --vars, --path), NULL means the flag was present without a value
+      // FALSE means the flag was not present at all
+      // We want to include NULL (flag present) but exclude FALSE (flag absent)
+      if ($value === FALSE) {
+        // Option not specified - skip it
+        continue;
+      }
+
+      // Skip NULL values unless it's an option that uses NULL to mean "present without value"
+      // This prevents passing --query=NULL which causes "option requires a value" errors
+      if ($value === NULL && !in_array($name, $nullableOptions)) {
         if ($input->getOption('debug')) {
-          $output->writeln("<comment>DEBUG [AliasCommand]: Added user option '--{$name}' = " . var_export($value, TRUE) . "</comment>");
+          $output->writeln("<comment>DEBUG [AliasCommand]: Skipping NULL value for non-nullable option '{$name}'</comment>");
         }
+        continue;
+      }
+
+      // Include all other values (NULL for nullable options, true, strings, numbers)
+      $mergedArgs['--' . $name] = $value;
+      if ($input->getOption('debug')) {
+        $output->writeln("<comment>DEBUG [AliasCommand]: Added user option '--{$name}' = " . var_export($value, TRUE) . "</comment>");
       }
     }
 

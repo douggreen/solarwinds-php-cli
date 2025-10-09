@@ -212,10 +212,16 @@ abstract class BaseSolarWindsCommand extends Command
       'country' => 'Show country information',
       'region' => 'Show region information',
       'cache' => 'Show cache status',
-      'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping'
+      'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping',
+      'vars' => 'Show variable replacements (all variables, or specify: file,line,function)'
     ];
     foreach ($displayOptions as $option => $description) {
-      $this->addOption($option, NULL, InputOption::VALUE_NONE, $description);
+      if ($option === 'vars') {
+        $this->addOption($option, NULL, InputOption::VALUE_OPTIONAL, $description, FALSE);
+      }
+      else {
+        $this->addOption($option, NULL, InputOption::VALUE_NONE, $description);
+      }
     }
 
     $this
@@ -388,6 +394,20 @@ abstract class BaseSolarWindsCommand extends Command
       $explicitOptions['path'] = TRUE;
     }
 
+    // Handle vars option (can have a value).
+    $varsOption = $input->getOption('vars');
+    if ($varsOption !== FALSE) {
+      if ($varsOption === NULL || $varsOption === '' || $varsOption === TRUE) {
+        // --vars with no value = show all variables
+        $display['vars'] = TRUE;
+      }
+      else {
+        // --vars=file,line,function = show specific variables as columns
+        $display['vars'] = array_map('trim', explode(',', $varsOption));
+      }
+      $explicitOptions['vars'] = TRUE;
+    }
+
     // Add tracking of explicit options to the display array.
     $display['_explicit'] = $explicitOptions;
 
@@ -440,7 +460,8 @@ abstract class BaseSolarWindsCommand extends Command
       $siteConditions = [];
       foreach ($options['sites'] as $site) {
         $host = $this->siteHosts[$site]['host'];
-        $siteConditions[] = "{ json.orig_host:$host }";
+        // Check both json.site and json.orig_host fields to support different log formats.
+        $siteConditions[] = "( { json.site:$host } OR { json.orig_host:$host } )";
       }
       $siteFilter = '( ' . implode(' OR ', $siteConditions) . ' )';
       $query = "($query) AND $siteFilter";

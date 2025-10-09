@@ -149,7 +149,7 @@ class DisplayService
   {
     switch ($column) {
       case 'host':
-        $host = $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
+        $host = $log['site'] ?? $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
         return $this->shortenHostname($host);
 
       case 'status':
@@ -361,8 +361,8 @@ class DisplayService
     $keyParts = [];
 
     if (!empty($displayOptions['host'])) {
-      // Use orig_host from parsed message data.
-      $host = $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
+      // Use site field first, then fall back to orig_host, hostname, or host.
+      $host = $log['site'] ?? $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
       $keyParts[] = 'host:' . $host;
     }
 
@@ -734,6 +734,14 @@ class DisplayService
   {
     $grouped = [];
     $minCount = $filters['min_count'] ?? 1;
+    $varsOption = $displayOptions['vars'] ?? FALSE;
+    $shouldTruncate = ($varsOption === FALSE);
+
+    // Debug vars option
+    $debugMode = $filters['debug'] ?? FALSE;
+    if ($debugMode) {
+      $io->text("DEBUG: vars option = " . var_export($varsOption, TRUE));
+    }
 
     foreach ($logs as $log) {
       // Parse the log message to get the JSON structure.
@@ -741,30 +749,22 @@ class DisplayService
 
       // Extract Drupal watchdog specific fields.
       $severity = $parsedLog['severity'] ?? 'Unknown';
+      $type = $parsedLog['type'] ?? 'Unknown';
       $variables = $parsedLog['variables'] ?? [];
 
-      // Extract file and line from variables.
-      $file = $variables['%file'] ?? 'Unknown';
-      $line = $variables['%line'] ?? 0;
-      $type = $variables['%type'] ?? $severity;
+      // Extract message - handle both @message and direct message.
       $message = $variables['@message'] ?? $parsedLog['message'] ?? 'No message';
-      $function = $variables['%function'] ?? 'Unknown';
 
-      // Extract just the filename from the full path.
-      $filename = basename($file);
-
-      // Create grouping key: file:line.
-      $key = "$filename:$line";
+      // Create grouping key based on type and message.
+      $key = "$type:" . md5($message);
 
       if (!isset($grouped[$key])) {
         $grouped[$key] = [
           'count' => 0,
           'severity' => $severity,
           'type' => $type,
-          'file' => $filename,
-          'line' => $line,
-          'function' => $function,
           'message' => $message,
+          'variables' => $variables,
           'first_seen' => $log['time'] ?? 'unknown',
           'last_seen' => $log['time'] ?? 'unknown',
           'sample' => $parsedLog,
@@ -780,10 +780,27 @@ class DisplayService
       return $b['count'] <=> $a['count'];
     });
 
-    // Build table headers with Drupal-specific columns plus optional display columns.
-    $headers = ['Count', 'Severity', 'File:Line', 'Function', 'Message'];
+    // Build table headers dynamically based on vars option.
+    $headers = ['Count', 'Severity', 'Type', 'Message'];
 
-    // Add optional display column headers.
+    // Determine which variable columns to show.
+    $varColumns = [];
+    if ($varsOption === TRUE) {
+      // --vars with no value: show all variables in one "Variables" column.
+      $headers[] = 'Variables';
+    }
+    elseif (is_array($varsOption)) {
+      // --vars=file,line,function: show specific variables as separate columns.
+      foreach ($varsOption as $varName) {
+        // Strip % and @ prefixes and capitalize.
+        $cleanName = ltrim($varName, '%@');
+        $headerName = ucfirst($cleanName);
+        $headers[] = $headerName;
+        $varColumns[] = $varName;
+      }
+    }
+
+    // Add optional display column headers (--host, --ip, etc.).
     $enabledColumns = $this->getEnabledDisplayColumns($displayOptions);
     foreach ($enabledColumns as $column) {
       $headers[] = $this->getDisplayColumnHeader($column);
@@ -803,26 +820,49 @@ class DisplayService
       // Colorize severity like status codes.
       $severityDisplay = $this->colorizeDrupalSeverity($data['severity']);
 
-      // Truncate long messages and functions for readability.
+      // Truncate long messages only if vars not specified.
       $message = $data['message'];
-      if (strlen($message) > 80) {
+      if ($shouldTruncate && strlen($message) > 80) {
         $message = substr($message, 0, 77) . '...';
-      }
-
-      $function = $data['function'];
-      if (strlen($function) > 40) {
-        $function = '...' . substr($function, -37);
       }
 
       $row = [
         $data['count'],
         $severityDisplay,
-        $data['file'] . ':' . $data['line'],
-        $function,
+        $data['type'],
         $message,
       ];
 
-      // Add optional display column values.
+      // Add variable columns.
+      if ($varsOption === TRUE) {
+        // Show all variables in one column (newline-separated).
+        $allVars = [];
+        if (!empty($data['variables'])) {
+          foreach ($data['variables'] as $varKey => $varValue) {
+            // Skip @message since it's already displayed in the Message column
+            if ($varKey === '@message') {
+              continue;
+            }
+            $cleanKey = ltrim($varKey, '%@');
+            $allVars[] = "$cleanKey: $varValue";
+          }
+        }
+        // If no variables found, show "-"
+        $row[] = !empty($allVars) ? implode("\n", $allVars) : '-';
+      }
+      elseif (is_array($varsOption)) {
+        // Show specific variables as separate columns.
+        foreach ($varColumns as $varName) {
+          // Try both % and @ prefixes.
+          $value = $data['variables']['%' . ltrim($varName, '%@')] ??
+                   $data['variables']['@' . ltrim($varName, '%@')] ??
+                   $data['variables'][$varName] ??
+                   '-';
+          $row[] = $value;
+        }
+      }
+
+      // Add optional display column values (--host, --ip, etc.).
       $log = $data['sample'];
       foreach ($enabledColumns as $column) {
         $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
