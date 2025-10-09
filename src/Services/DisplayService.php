@@ -755,6 +755,28 @@ class DisplayService
       // Extract message - handle both @message and direct message.
       $message = $variables['@message'] ?? $parsedLog['message'] ?? 'No message';
 
+      // Handle cases where message field contains nested JSON (e.g., "access denied" logs).
+      if (is_string($message) && strlen($message) > 0 && ($message[0] === '{' || $message[0] === '[')) {
+        $nestedData = json_decode($message, TRUE);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($nestedData)) {
+          // Successfully parsed nested JSON - extract or construct the actual message.
+          if (isset($nestedData['message'])) {
+            $message = $nestedData['message'];
+          }
+          elseif (isset($nestedData['msg'])) {
+            $message = $nestedData['msg'];
+          }
+          elseif (isset($nestedData['type'])) {
+            // No message field - use type as message (capitalize appropriately).
+            $message = ucwords(str_replace('_', ' ', $nestedData['type']));
+          }
+          else {
+            // Last resort: generic message.
+            $message = 'Log entry';
+          }
+        }
+      }
+
       // Create grouping key based on type and message.
       $key = "$type:" . md5($message);
 
