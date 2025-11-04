@@ -260,7 +260,7 @@ class DisplayService
     $grouped = $this->groupResults($logs, $displayOptions);
 
     // Smart auto-regrouping: if only one group, regroup by time buckets (unless disabled).
-    if (count($grouped) === 1 && empty($filters['no_group'])) {
+    if (count($grouped) === 1 && !$filters['no_group']) {
       $groupKey = array_keys($grouped)[0];
       $groupData = array_values($grouped)[0];
       $this->handleAutoTimeRegrouping($logs, $displayOptions, $io, $groupData, $groupKey, $filters, $searchTerm);
@@ -363,7 +363,9 @@ class DisplayService
     if (!empty($displayOptions['host'])) {
       // Use site field first, then fall back to orig_host, hostname, or host.
       $host = $log['site'] ?? $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
-      $keyParts[] = 'host:' . $host;
+      // Get the display label for this host so multiple hostnames (e.g., bayren.org, bayren2) group together.
+      $displayHost = $this->getDisplayLabelForHost($host);
+      $keyParts[] = 'host:' . $displayHost;
     }
 
     if (!empty($displayOptions['status'])) {
@@ -613,6 +615,30 @@ class DisplayService
   }
 
   /**
+   * Get display label for a hostname (for grouping purposes).
+   */
+  protected function getDisplayLabelForHost(string $host): string
+  {
+    // Handle unknown hosts first.
+    if ($host === 'unknown' || trim($host) === '') {
+      return 'unknown';
+    }
+
+    $cleanHost = preg_replace('/^www\./', '', $host);
+
+    // Get host mappings from configuration.
+    $hostMappings = $this->config->getHostDisplayMappings();
+
+    // If we have an exact match, return the display label.
+    if (isset($hostMappings[$cleanHost])) {
+      return $hostMappings[$cleanHost];
+    }
+
+    // No match - return original hostname.
+    return $host;
+  }
+
+  /**
    * Shorten hostname using configured display mappings and colorize.
    */
   protected function shortenHostname(string $host): string
@@ -778,7 +804,14 @@ class DisplayService
       }
 
       // Create grouping key based on type and message.
+      // If --host is specified, include host in grouping key so each site is grouped separately.
       $key = "$type:" . md5($message);
+
+      if (!empty($displayOptions['host'])) {
+        $host = $parsedLog['site'] ?? $parsedLog['orig_host'] ?? $parsedLog['hostname'] ?? $parsedLog['host'] ?? 'unknown';
+        $displayHost = $this->getDisplayLabelForHost($host);
+        $key .= ":host:$displayHost";
+      }
 
       if (!isset($grouped[$key])) {
         $grouped[$key] = [
