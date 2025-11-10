@@ -8,33 +8,24 @@
 
 ### **:red_circle: PERMISSION-BASED WORKFLOW**
 1. **Ask permission before implementing solutions** - Present plan and get explicit approval
-2. **Read reference files** - Check uploaded bash scripts for exact implementation patterns
-3. **Provide download links immediately** - This is mandatory after every file change
-   - **CRITICAL: This applies to ALL file modifications, including documentation**
-   - Use format: `[View filename](computer:///mnt/user-data/outputs/filename)`
-   - Place immediately after making changes, before any discussion
-   - **Common failure pattern: AI discusses changes without providing links** - this wastes user time
-   - **Self-check before responding: "Did I modify a file? If yes, did I provide the link?"**
-   - **If you forget once, it's a mistake. Twice in the same thread is a pattern violation.**
-4. **Never mark tasks as complete** - Present work for review rather than declaring completion
+2. **Never mark tasks as complete** - Present work for review rather than declaring completion
 
 ### **:red_circle: FILE MANAGEMENT PRINCIPLES**
-5. **Clean trailing whitespace** - Run `sed -i 's/ *$//' filename` on ALL PHP files
-6. **Work with uploaded files** - All current working files are in /mnt/user-data/uploads/
+3. **Clean trailing whitespace** - Run `sed -i 's/ *$//' filename` on ALL PHP files
 
 ### **:red_circle: DOCUMENTATION STYLE PRINCIPLES**
-7. **Always use text-based emoticon notation** - All project documentation should use text-based emoticon notation (`:name:` format) rather than Unicode emoji characters. This ensures consistency and readability across all platforms. Examples:
+4. **Always use text-based emoticon notation** - All project documentation should use text-based emoticon notation (`:name:` format) rather than Unicode emoji characters. This ensures consistency and readability across all platforms. Examples:
    - Use `:white_check_mark:` not ✅
    - Use `:x:` not ❌
    - Use `:arrow_right:` not →
    - Use `:red_circle:` not 🔴
    - NEVER convert between formats in either direction
-   - This applies to ALL documentation files (CLAUDE-MUST-READ-FIRST.md, CASE_STUDY.md, CONTRIBUTING.md, README.md, TODO.md, etc.)
+   - This applies to ALL documentation files (CLAUDE.md, CASE_STUDY.md, CONTRIBUTING.md, README.md, TODO.md, etc.)
 
 ### **:red_circle: CORE BEHAVIORAL CONSTRAINTS**
-8. **Use existing debugging tools** - Check for --debug options before adding custom debug code
-9. **Read error messages completely** - Don't skim; read full output including suggestions and context
-10. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints
+5. **Use existing debugging tools** - Check for --debug options before adding custom debug code
+6. **Read error messages completely** - Don't skim; read full output including suggestions and context
+7. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints
 
 ## SITUATIONAL PATTERNS (Specific Contexts)
 
@@ -60,15 +51,6 @@
 - **8+ YAML Aliases:** Specialized commands via configuration
 - **Template Pattern:** `BaseSolarWindsCommand` provides shared functionality
 - **Services:** `ConfigurationService`, `ApiService`, `DisplayService`, `CacheService`
-
-### Reference Files (ALWAYS REVIEW FIRST)
-- **`/mnt/user-data/uploads/solarwinds`** - Complete bash script (818 lines) - **AUTHORITATIVE REFERENCE**
-  - Exact API parameters: `filter`, `pageSize=1000`, `startTime`, `endTime`
-  - Proper pagination with `pageInfo.nextPage`
-  - Duplicate detection with `seen_ids`
-  - Error handling and response validation
-- **`/mnt/user-data/uploads/solarwinds-*`** - Supporting modules for formatting, parsing, display
-- **Original command scripts** - Individual p* scripts for exact specifications
 
 ### Template Method Implementation
 - **BaseSolarWindsCommand** - Provides common functionality
