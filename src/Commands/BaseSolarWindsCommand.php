@@ -120,6 +120,10 @@ abstract class BaseSolarWindsCommand extends Command
   // Signal handling for graceful interruption.
   protected static bool $interrupted = FALSE;
 
+  // JSON output mode.
+  protected bool $jsonMode = FALSE;
+  protected array $executionMetadata = [];
+
   /**
    */
   protected static function getTimeMappings(): array
@@ -233,6 +237,7 @@ abstract class BaseSolarWindsCommand extends Command
       ->addOption('no-cache', NULL, InputOption::VALUE_NONE, 'Skip cache and force fresh query')
       ->addOption('limit', NULL, InputOption::VALUE_REQUIRED, 'Maximum number of results', 1000)
       ->addOption('debug', NULL, InputOption::VALUE_NONE, 'Enable debug output')
+      ->addOption('json', NULL, InputOption::VALUE_NONE, 'Output results as JSON (suppresses progress and interactive messages)')
       ->addOption('no-group', NULL, InputOption::VALUE_NONE, 'Disable automatic time-based regrouping for single result groups')
 
       // Global filter options.
@@ -259,6 +264,7 @@ abstract class BaseSolarWindsCommand extends Command
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
     $this->io = new SymfonyStyle($input, $output);
+    $this->jsonMode = $input->getOption('json');
 
     try {
       // Parse and validate arguments.
@@ -278,7 +284,17 @@ abstract class BaseSolarWindsCommand extends Command
 
     }
     catch (\Exception $e) {
-      $this->io->error($e->getMessage());
+      if ($this->jsonMode) {
+        $this->outputJson('error', NULL, [
+          'error' => [
+            'message' => $e->getMessage(),
+            'type' => get_class($e),
+          ]
+        ]);
+      }
+      else {
+        $this->io->error($e->getMessage());
+      }
       return Command::FAILURE;
     }
   }
@@ -444,6 +460,7 @@ abstract class BaseSolarWindsCommand extends Command
       'cache_seconds' => $cacheOptions['seconds'],
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
+      'json' => $input->getOption('json'),
       'no_group' => $input->getOption('no-group'),
       'no_cache' => $input->getOption('no-cache'),
       'country_filter' => $input->getOption('country-filter'),
@@ -589,15 +606,16 @@ abstract class BaseSolarWindsCommand extends Command
     $debugMode = $options['filters']['debug'] ?? FALSE;
 
     if ($debugMode && !empty($filters)) {
-      $this->io->section('Client-Side Filtering');
-      $this->io->text("Applying filters:");
+      $this->debugOutput('');
+      $this->debugOutput('=== Client-Side Filtering ===');
+      $this->debugOutput("Applying filters:");
       foreach ($filters as $filter) {
-        $this->io->text("  - $filter");
+        $this->debugOutput("  - $filter");
       }
       if (!empty($logs)) {
-        $this->io->text("Sample log fields: " . implode(', ', array_keys($logs[0])));
+        $this->debugOutput("Sample log fields: " . implode(', ', array_keys($logs[0])));
       }
-      $this->io->newLine();
+      $this->debugOutput('');
     }
 
     foreach ($logs as $log) {
@@ -656,7 +674,7 @@ abstract class BaseSolarWindsCommand extends Command
           $messageData = isset($log['message']) ? json_decode($log['message'], TRUE) : [];
           $host = $messageData['orig_host'] ?? $log['hostname'] ?? 'unknown';
           $uri = $messageData['req_uri'] ?? 'unknown';
-          $this->io->text("<info>MATCHED:</info> $host - $uri");
+          $this->debugOutput("MATCHED: $host - $uri");
 
           // Show which field value matched for verification.
           foreach ($filters as $filter) {
@@ -672,20 +690,20 @@ abstract class BaseSolarWindsCommand extends Command
             }
 
             $decodedValue = urldecode($value);
-            $this->io->text("  Filter: $filter");
-            $this->io->text("  Value: " . substr($value, 0, 200));
+            $this->debugOutput("  Filter: $filter");
+            $this->debugOutput("  Value: " . substr($value, 0, 200));
             if ($decodedValue !== $value) {
-              $this->io->text("  Decoded: " . substr($decodedValue, 0, 200));
+              $this->debugOutput("  Decoded: " . substr($decodedValue, 0, 200));
             }
           }
-          $this->io->newLine();
+          $this->debugOutput('');
         }
       }
     }
 
     if ($debugMode && !empty($filters)) {
-      $this->io->text("Client-side filtering: " . count($logs) . " results -> " . count($filtered) . " results after filters");
-      $this->io->newLine();
+      $this->debugOutput("Client-side filtering: " . count($logs) . " results -> " . count($filtered) . " results after filters");
+      $this->debugOutput('');
     }
 
     return $filtered;
@@ -710,16 +728,17 @@ abstract class BaseSolarWindsCommand extends Command
     $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
 
     if ($debugMode) {
-      $this->io->section('Debug Information');
-      $this->io->text("Query: $query");
-      $this->io->text("Time range: {$options['time']['human_readable']}");
-      $this->io->text("Start time: {$options['time']['start_time']}");
-      $this->io->text("End time: {$options['time']['end_time']}");
-      $this->io->text("API Base URL: " . $this->config->getApiBaseUrl());
-      $this->io->text("Progress mode: " . ($progressMode ? 'enabled' : 'disabled'));
-      $this->io->text("Cache key: $cacheKey");
-      $this->io->text("Use cached: " . ($options['filters']['use_cached'] ? 'yes' : 'no'));
-      $this->io->newLine();
+      $this->debugOutput('');
+      $this->debugOutput('=== Debug Information ===');
+      $this->debugOutput("Query: $query");
+      $this->debugOutput("Time range: {$options['time']['human_readable']}");
+      $this->debugOutput("Start time: {$options['time']['start_time']}");
+      $this->debugOutput("End time: {$options['time']['end_time']}");
+      $this->debugOutput("API Base URL: " . $this->config->getApiBaseUrl());
+      $this->debugOutput("Progress mode: " . ($progressMode ? 'enabled' : 'disabled'));
+      $this->debugOutput("Cache key: $cacheKey");
+      $this->debugOutput("Use cached: " . ($options['filters']['use_cached'] ? 'yes' : 'no'));
+      $this->debugOutput('');
     }
 
     // Always check for fresh cache first (unless --no-cache is used).
@@ -735,7 +754,11 @@ abstract class BaseSolarWindsCommand extends Command
       )) {
         $cacheAge = $this->cacheService->getCacheAge($cacheKey);
         $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";
-        $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
+
+        if (!$this->jsonMode) {
+          $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
+        }
+
         $cachedResults = $this->cacheService->loadFromCache($cacheKey);
 
         if ($cachedResults !== NULL) {
@@ -746,34 +769,61 @@ abstract class BaseSolarWindsCommand extends Command
 
           // Extract search term for highlighting.
           $searchTerm = $this->extractSearchTerm($options);
-          $this->displayService->displayResults($cachedResults, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
 
-          // Show filtered count if filtering was applied.
-          if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
-            $this->io->success("Found $filteredCount results (filtered from $originalCount results, from cache)");
+          if ($this->jsonMode) {
+            // JSON output mode.
+            $formattedResults = $this->displayService->formatResultsForJson(
+              $cachedResults,
+              $options['display'],
+              $options['filters'],
+              $searchTerm
+            );
+            $this->outputJson('success', $formattedResults, [
+              'query' => $query,
+              'time_range' => $options['time'],
+              'cache' => [
+                'used' => TRUE,
+                'age' => $cacheAge,
+              ],
+              'filters' => [
+                'original_count' => $originalCount,
+                'filtered_count' => $filteredCount,
+              ]
+            ]);
           }
           else {
-            $this->io->success("Found $filteredCount results (from cache)");
+            // Regular display mode.
+            $this->displayService->displayResults($cachedResults, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
+
+            // Show filtered count if filtering was applied.
+            if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
+              $this->io->success("Found $filteredCount results (filtered from $originalCount results, from cache)");
+            }
+            else {
+              $this->io->success("Found $filteredCount results (from cache)");
+            }
           }
           return Command::SUCCESS;
         }
       }
     }
 
-    $this->io->section('Searching SolarWinds Logs');
-    $this->io->text("Time range: {$options['time']['human_readable']}");
-    $this->io->text("Query: $query");
+    // Suppress interactive output in JSON mode.
+    if (!$this->jsonMode) {
+      $this->io->section('Searching SolarWinds Logs');
+      $this->io->text("Time range: {$options['time']['human_readable']}");
+      $this->io->text("Query: $query");
 
-    // Display applied filters if any.
-    $appliedFilters = $this->formatAppliedFilters($options);
-    if (!empty($appliedFilters)) {
-      $this->io->text("Applied filters: $appliedFilters");
+      // Display applied filters if any.
+      $appliedFilters = $this->formatAppliedFilters($options);
+      if (!empty($appliedFilters)) {
+        $this->io->text("Applied filters: $appliedFilters");
+      }
     }
 
-    // Create progress bar only if progress is enabled.
-    // Show progress if enabled.
+    // Create progress bar only if progress is enabled and not in JSON mode.
     $progressBar = NULL;
-    if ($progressMode) {
+    if ($progressMode && !$this->jsonMode) {
       $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
       $progressBar = new ProgressBar($this->io, $totalSeconds);
       $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s% %message%');
@@ -791,16 +841,17 @@ abstract class BaseSolarWindsCommand extends Command
         function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $debugMode, $options, $query) {
           // Enhanced debug output for first page.
           if ($debugMode && $pageNum === 1) {
-            $this->io->section('API Call Debug');
-            $this->io->text("First page received: " . count($pageLogs) . " logs");
+            $this->debugOutput('');
+            $this->debugOutput('=== API Call Debug ===');
+            $this->debugOutput("First page received: " . count($pageLogs) . " logs");
             if (!empty($pageLogs)) {
-              $this->io->text("Sample log structure: " . json_encode(array_keys($pageLogs[0] ?? []), JSON_PRETTY_PRINT));
+              $this->debugOutput("Sample log structure: " . json_encode(array_keys($pageLogs[0] ?? []), JSON_PRETTY_PRINT));
             }
             else {
-              $this->io->text("No logs returned from API");
-              $this->io->text("This suggests the query may not match any data in the time range");
+              $this->debugOutput("No logs returned from API");
+              $this->debugOutput("This suggests the query may not match any data in the time range");
             }
-            $this->io->newLine();
+            $this->debugOutput('');
           }
 
           if ($progressBar) {
@@ -819,24 +870,27 @@ abstract class BaseSolarWindsCommand extends Command
             $progressBar->setMessage("($totalResults results)");
           }
           elseif ($debugMode) {
-            $this->io->text("Page $pageNum: Added $newLogsAdded new logs, found $duplicatesFound duplicates ($totalResults total unique)");
+            $this->debugOutput("Page $pageNum: Added $newLogsAdded new logs, found $duplicatesFound duplicates ($totalResults total unique)");
           }
         },
         // Add debug callback for detailed API logging.
         $debugMode ? function(string $message) {
-          $this->io->text($message);
+          $this->debugOutput($message);
         } : NULL
       );
 
       $searchDuration = time() - $searchStartTime;
 
       // Check if search was interrupted.
-      if (self::isInterrupted()) {
+      $interrupted = self::isInterrupted();
+      if ($interrupted) {
         if ($progressBar) {
           $progressBar->finish();
           $this->io->newLine(2);
         }
-        $this->io->error("Search interrupted by user. Displaying partial results (" . count($results) . " found so far).");
+        if (!$this->jsonMode) {
+          $this->io->error("Search interrupted by user. Displaying partial results (" . count($results) . " found so far).");
+        }
         // Continue to display results and return success - we got some data.
       }
 
@@ -878,7 +932,9 @@ abstract class BaseSolarWindsCommand extends Command
 
       if ($shouldCache) {
         if ($this->cacheService->saveToCache($cacheKey, $results, $searchDuration)) {
-          $this->io->note("Results saved to cache ($cacheReason)");
+          if (!$this->jsonMode) {
+            $this->io->note("Results saved to cache ($cacheReason)");
+          }
         }
       }
 
@@ -890,15 +946,43 @@ abstract class BaseSolarWindsCommand extends Command
       // Extract search term for highlighting.
       $searchTerm = $this->extractSearchTerm($options);
 
-      // Display results.
-      $this->displayService->displayResults($results, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
-
-      // Show filtered count if filtering was applied.
-      if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
-        $this->io->success("Found $filteredCount results (filtered from $originalCount results)");
+      if ($this->jsonMode) {
+        // JSON output mode.
+        $formattedResults = $this->displayService->formatResultsForJson(
+          $results,
+          $options['display'],
+          $options['filters'],
+          $searchTerm
+        );
+        $this->outputJson('success', $formattedResults, [
+          'query' => $query,
+          'time_range' => $options['time'],
+          'display_options' => array_keys(array_filter($options['display'])),
+          'cache' => [
+            'used' => FALSE,
+            'saved' => $shouldCache,
+            'reason' => $cacheReason ?: NULL,
+          ],
+          'filters' => [
+            'original_count' => $originalCount,
+            'filtered_count' => $filteredCount,
+            'client_side' => $options['filters']['client_side_filters'] ?: [],
+          ],
+          'execution_time' => $searchDuration,
+          'interrupted' => $interrupted,
+        ]);
       }
       else {
-        $this->io->success("Found $filteredCount results");
+        // Regular display mode.
+        $this->displayService->displayResults($results, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
+
+        // Show filtered count if filtering was applied.
+        if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
+          $this->io->success("Found $filteredCount results (filtered from $originalCount results)");
+        }
+        else {
+          $this->io->success("Found $filteredCount results");
+        }
       }
       return Command::SUCCESS;
 
@@ -911,7 +995,18 @@ abstract class BaseSolarWindsCommand extends Command
 
       // Provide user-friendly error messages based on error type.
       $errorMessage = $this->getErrorMessage($e);
-      $this->io->error($errorMessage);
+
+      if ($this->jsonMode) {
+        $this->outputJson('error', NULL, [
+          'error' => [
+            'message' => $errorMessage,
+            'type' => get_class($e),
+          ]
+        ]);
+      }
+      else {
+        $this->io->error($errorMessage);
+      }
       return Command::FAILURE;
     }
   }
@@ -1011,6 +1106,41 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     return NULL;
+  }
+
+  /**
+   * Output debug information to stderr.
+   *
+   * Debug output should always go to stderr to avoid polluting stdout,
+   * especially when using --json mode where stdout must be valid JSON.
+   */
+  protected function debugOutput(string $message): void
+  {
+    fwrite(STDERR, $message . "\n");
+  }
+
+  /**
+   * Output results as JSON to stdout.
+   *
+   * @param string $status Status: "success" or "error"
+   * @param mixed $data Data to output (for success) or NULL (for error)
+   * @param array $metadata Additional metadata including error info for failures
+   */
+  protected function outputJson(string $status, $data, array $metadata = []): void
+  {
+    $output = ['status' => $status];
+
+    if ($status === 'error') {
+      $output['error'] = $metadata['error'] ?? ['message' => 'Unknown error'];
+    }
+    else {
+      $output['data'] = $data;
+      if (!empty($metadata)) {
+        $output['metadata'] = $metadata;
+      }
+    }
+
+    echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
   }
 
   /**

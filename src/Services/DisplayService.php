@@ -199,6 +199,246 @@ class DisplayService
     }
   }
   /**
+   * Format results for JSON output.
+   *
+   * Applies same grouping and filtering logic as displayResults() but returns
+   * structured data instead of rendering to console.
+   *
+   * @param array $logs Raw log entries
+   * @param array $displayOptions Display dimension options (host, status, etc.)
+   * @param array $filters Filter options including min_count and no_group
+   * @param string|null $searchTerm Optional search term for context
+   * @return array Structured data ready for JSON encoding
+   */
+  public function formatResultsForJson(array $logs, array $displayOptions, array $filters = [], ?string $searchTerm = NULL): array
+  {
+    if (empty($logs)) {
+      return [
+        'items' => [],
+        'grouping' => [],
+        'totals' => ['count' => 0, 'groups' => 0]
+      ];
+    }
+
+    // If no specific display options are set, return raw logs.
+    if (empty(array_filter($displayOptions))) {
+      return [
+        'items' => $logs,
+        'grouping' => [],
+        'totals' => ['count' => count($logs), 'groups' => 0]
+      ];
+    }
+
+    // Special handling for Drupal/PHP error format.
+    if (!empty($displayOptions['drupal'])) {
+      return $this->formatDrupalErrorsForJson($logs, $displayOptions, $filters);
+    }
+
+    // Group and format based on display options.
+    $grouped = $this->groupResults($logs, $displayOptions);
+
+    // Smart auto-regrouping: if only one group, regroup by time buckets (unless disabled).
+    if (count($grouped) === 1 && !$filters['no_group']) {
+      return $this->formatAutoTimeRegroupingForJson($logs, $displayOptions, $grouped, $filters);
+    }
+
+    return $this->formatGroupedResultsForJson($grouped, $displayOptions, $filters);
+  }
+
+  /**
+   * Format grouped results for JSON output.
+   */
+  protected function formatGroupedResultsForJson(array $grouped, array $displayOptions, array $filters = []): array
+  {
+    $enabledColumns = $this->getEnabledDisplayColumns($displayOptions);
+    $items = [];
+    $minCount = $filters['min_count'] ?? 1;
+
+    foreach ($grouped as $key => $data) {
+      // Apply min_count filter.
+      if ($data['count'] < $minCount) {
+        continue;
+      }
+
+      $log = $data['sample'];
+      $item = ['count' => $data['count']];
+
+      // Add values for enabled columns (without color codes).
+      foreach ($enabledColumns as $column) {
+        $value = $this->extractDisplayColumnValue($column, $log, $displayOptions, NULL);
+        // Strip ANSI color codes and Symfony console tags for JSON output.
+        $value = preg_replace('/\033\[[0-9;]*m/', '', $value);
+        $value = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $value);
+        $item[$column] = $value;
+      }
+
+      // Add time range.
+      $item['time_range'] = [
+        'first_seen' => $data['first_seen'],
+        'last_seen' => $data['last_seen'],
+      ];
+
+      $items[] = $item;
+    }
+
+    return [
+      'items' => $items,
+      'grouping' => $enabledColumns,
+      'totals' => [
+        'count' => array_sum(array_column($items, 'count')),
+        'groups' => count($items)
+      ]
+    ];
+  }
+
+  /**
+   * Format auto time-regrouped results for JSON output.
+   */
+  protected function formatAutoTimeRegroupingForJson(array $logs, array $displayOptions, array $grouped, array $filters = []): array
+  {
+    // For now, return the single group without time regrouping.
+    // Time regrouping logic can be added later if needed.
+    return $this->formatGroupedResultsForJson($grouped, $displayOptions, $filters);
+  }
+
+  /**
+   * Format Drupal errors for JSON output.
+   */
+  protected function formatDrupalErrorsForJson(array $logs, array $displayOptions, array $filters = []): array
+  {
+    // Group and parse Drupal errors same way as displayDrupalErrors().
+    $grouped = [];
+    $minCount = $filters['min_count'] ?? 1;
+    $varsOption = $displayOptions['vars'] ?? FALSE;
+
+    foreach ($logs as $log) {
+      // Parse the log message to get the JSON structure.
+      $parsedLog = $this->parseLogMessage($log);
+
+      // Extract Drupal watchdog specific fields.
+      $severity = $parsedLog['severity'] ?? 'Unknown';
+      $type = $parsedLog['type'] ?? 'Unknown';
+      $variables = $parsedLog['variables'] ?? [];
+
+      // Extract message - handle both @message and direct message.
+      $message = $variables['@message'] ?? $parsedLog['message'] ?? 'No message';
+
+      // Handle cases where message field contains nested JSON.
+      if (is_string($message) && strlen($message) > 0 && ($message[0] === '{' || $message[0] === '[')) {
+        $nestedData = json_decode($message, TRUE);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($nestedData)) {
+          if (isset($nestedData['message'])) {
+            $message = $nestedData['message'];
+          }
+          elseif (isset($nestedData['msg'])) {
+            $message = $nestedData['msg'];
+          }
+          elseif (isset($nestedData['type'])) {
+            $message = ucwords(str_replace('_', ' ', $nestedData['type']));
+          }
+          else {
+            $message = 'Log entry';
+          }
+        }
+      }
+
+      // Create grouping key based on type and message.
+      $key = "$type:" . md5($message);
+
+      if (!empty($displayOptions['host'])) {
+        $host = $parsedLog['site'] ?? $parsedLog['orig_host'] ?? $parsedLog['hostname'] ?? $parsedLog['host'] ?? 'unknown';
+        $displayHost = $this->getDisplayLabelForHost($host);
+        $key .= ":host:$displayHost";
+      }
+
+      if (!isset($grouped[$key])) {
+        $grouped[$key] = [
+          'count' => 0,
+          'severity' => $severity,
+          'type' => $type,
+          'message' => $message,
+          'variables' => $variables,
+          'first_seen' => $log['time'] ?? 'unknown',
+          'last_seen' => $log['time'] ?? 'unknown',
+          'sample' => $parsedLog,
+        ];
+      }
+
+      $grouped[$key]['count']++;
+      $grouped[$key]['last_seen'] = $log['time'] ?? 'unknown';
+    }
+
+    // Sort by count (descending).
+    uasort($grouped, function($a, $b) {
+      return $b['count'] <=> $a['count'];
+    });
+
+    // Build JSON items.
+    $items = [];
+    foreach ($grouped as $key => $data) {
+      // Apply min_count filter.
+      if ($data['count'] < $minCount) {
+        continue;
+      }
+
+      $item = [
+        'count' => $data['count'],
+        'severity' => $data['severity'],
+        'type' => $data['type'],
+        'message' => $data['message'],
+      ];
+
+      // Add variables based on varsOption or default to common variables.
+      if ($varsOption === TRUE) {
+        // Show all variables.
+        $item['variables'] = $data['variables'];
+      }
+      elseif (is_array($varsOption)) {
+        // Show specific variables.
+        foreach ($varsOption as $varName) {
+          $cleanName = ltrim($varName, '%@');
+          $item[$cleanName] = $data['variables']['%' . ltrim($varName, '%@')] ??
+                              $data['variables']['@' . ltrim($varName, '%@')] ??
+                              $data['variables'][$varName] ??
+                              NULL;
+        }
+      }
+      else {
+        // Default: don't include variable fields (matches regular display behavior)
+        // Variables are only shown when --vars or --vars=field1,field2 is explicitly used
+      }
+
+      // Add optional display columns if enabled.
+      $enabledColumns = $this->getEnabledDisplayColumns($displayOptions);
+      $log = $data['sample'];
+      foreach ($enabledColumns as $column) {
+        $value = $this->extractDisplayColumnValue($column, $log, $displayOptions, NULL);
+        // Strip ANSI color codes and Symfony console tags for JSON output.
+        $value = preg_replace('/\033\[[0-9;]*m/', '', $value);
+        $value = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $value);
+        $item[$column] = $value;
+      }
+
+      // Add time range.
+      $item['time_range'] = [
+        'first_seen' => $data['first_seen'],
+        'last_seen' => $data['last_seen'],
+      ];
+
+      $items[] = $item;
+    }
+
+    return [
+      'items' => $items,
+      'grouping' => ['drupal'],
+      'totals' => [
+        'count' => array_sum(array_column($items, 'count')),
+        'groups' => count($items)
+      ]
+    ];
+  }
+
+  /**
    * Display results based on display options.
    */
   public function displayResults(array $logs, array $displayOptions, SymfonyStyle $io, bool $debugMode = FALSE, array $filters = [], ?string $searchTerm = NULL): void
