@@ -200,6 +200,11 @@ aliases:
   ban: status --403 --host --ip --day
   banip: search "blocked" --ip --status --day
 
+  # Security threat detection (with client-side filtering)
+  xss: 'search --query="{ json.req_uri:? } { json.req_uri:script } { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }" --filter="req_uri:\?.*</?script" --host --path --day'
+  sql-injection: "search --query=\"{ json.req_uri:? } ( { json.req_uri:insert } OR { json.req_uri:update } OR { json.req_uri:delete } OR { json.req_uri:select } OR { json.req_uri:union } OR { json.req_uri:drop } ) { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }\" --filter=\"req_uri:\\?.*(select[\\s\\*\\(\\+]|insert[\\s\\*\\(\\+]|update[\\s\\*\\(\\+]|delete[\\s\\*\\(\\+]|union[\\s\\*\\(\\+]|drop[\\s\\*\\(\\+])\" --host --path --day"
+  pentest: "search --query=\"{ json.req_uri:? } ( { json.req_uri:insert } OR { json.req_uri:update } OR { json.req_uri:delete } OR { json.req_uri:select } OR { json.req_uri:union } OR { json.req_uri:drop } OR { json.req_uri:script } ) { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }\" --filter=\"req_uri:\\?.*(select[\\s\\*\\(]|insert[\\s\\(]into|update[\\s\\(].*set|delete[\\s\\(]from|union[\\s\\(]select|drop[\\s\\(]table|or[\\s]+\\w+[\\s]*=|and[\\s]+\\w+[\\s]*=|'\\s*--|--\\s*$|\\d'\\s*(or|and)|</?script)\" --host --path --day"
+
   # Drupal/PHP error analysis
   drupal: search "{ json.type:php }" --drupal --1d
   drupal-error: search "{ json.type:php } { json.severity:Error }" --drupal --1d
@@ -232,6 +237,11 @@ solarwinds drupal --2h                 # All PHP errors (last 2 hours)
 solarwinds drupal-error --1d           # PHP errors only (last day)
 solarwinds drupal-warning --1h         # PHP warnings (last hour)
 solarwinds drupal-notice --day         # PHP notices (last day)
+
+# Security threat detection
+solarwinds xss --2h                    # XSS attack detection (last 2 hours)
+solarwinds sql-injection --1d          # SQL injection detection (last day)
+solarwinds pentest --week              # Combined security scan (last week)
 
 # Custom aliases
 solarwinds errors --country            # Error patterns by country
@@ -298,7 +308,33 @@ Supports comprehensive time range options:
 - `--ip` - Show IP addresses
 - `--country` - Show country information
 - `--drupal` - Format PHP/Drupal watchdog errors with file:line grouping
+- `--filter=PATTERN` - Client-side regex filtering in format "field:regex" (can be used multiple times, AND logic)
 - And more...
+
+### Client-Side Filtering
+
+The `--filter` option enables post-processing of API results with regex patterns to narrow down results that can't be filtered by the SolarWinds API directly.
+
+**Format:** `--filter="field:regex"`
+
+**Examples:**
+```bash
+# Filter for script tags in URLs (XSS detection)
+bin/solarwinds search "script" --filter="req_uri:\?.*<script"
+
+# Filter for SQL keywords followed by operators
+bin/solarwinds search "select" --filter="req_uri:select[\s\*\(]"
+
+# Multiple filters (AND logic)
+bin/solarwinds search "error" --filter="req_uri:/admin" --filter="resp_status:50[0-9]"
+```
+
+**Features:**
+- URL-decodes values before matching (catches encoded attacks like `%3Cscript%3E`)
+- Supports multiple filters with AND logic (all must match)
+- Works with any field in the log data (req_uri, resp_status, etc.)
+- Especially useful for security analysis (XSS, SQL injection detection)
+- Shows filtered count in output: "Found 98 results (filtered from 629 results)"
 
 ### Caching System
 

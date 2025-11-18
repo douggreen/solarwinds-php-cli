@@ -218,9 +218,23 @@ class AliasCommand extends Command
           // Option with value: --query="value"
           [$optionName, $optionValue] = explode('=', $arg, 2);
           $optionName = ltrim($optionName, '-');
+
+          // Check if this option is defined as VALUE_IS_ARRAY in the target command
+          // If so, wrap the value in an array
+          if ($application && $application->has($this->targetCommand)) {
+            $targetCommand = $application->find($this->targetCommand);
+            $targetDefinition = $targetCommand->getDefinition();
+            if ($targetDefinition->hasOption($optionName)) {
+              $option = $targetDefinition->getOption($optionName);
+              if ($option->isArray()) {
+                $optionValue = [$optionValue];
+              }
+            }
+          }
+
           $mergedArgs['--' . $optionName] = $optionValue;
           if ($input->getOption('debug')) {
-            $output->writeln("<comment>DEBUG [AliasCommand]: Added option '--{$optionName}' = '{$optionValue}'</comment>");
+            $output->writeln("<comment>DEBUG [AliasCommand]: Added option '--{$optionName}' = " . var_export($optionValue, TRUE) . "</comment>");
           }
         } else {
           // Boolean option: --host
@@ -298,7 +312,16 @@ class AliasCommand extends Command
         continue;
       }
 
-      // Include all other values (NULL for nullable options, true, strings, numbers)
+      // For VALUE_IS_ARRAY options (like --filter), an empty array means the user didn't specify the option
+      // Skip empty arrays to avoid overwriting alias values
+      if (is_array($value) && empty($value)) {
+        if ($input->getOption('debug')) {
+          $output->writeln("<comment>DEBUG [AliasCommand]: Skipping empty array for option '{$name}'</comment>");
+        }
+        continue;
+      }
+
+      // Include all other values (NULL for nullable options, true, strings, numbers, non-empty arrays)
       $mergedArgs['--' . $name] = $value;
       if ($input->getOption('debug')) {
         $output->writeln("<comment>DEBUG [AliasCommand]: Added user option '--{$name}' = " . var_export($value, TRUE) . "</comment>");

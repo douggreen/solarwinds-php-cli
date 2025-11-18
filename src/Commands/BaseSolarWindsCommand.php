@@ -246,6 +246,10 @@ abstract class BaseSolarWindsCommand extends Command
       // Shortcuts for common filter options.
       ->addOption('status-code', NULL, InputOption::VALUE_REQUIRED, 'Shortcut for --status-code-filter')
       ->addOption('code', NULL, InputOption::VALUE_REQUIRED, 'Shortcut for --status-code-filter')
+
+      // Client-side filtering options.
+      ->addOption('filter', NULL, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
+        'Client-side regex filter in format "field:regex" (URL-decoded before matching). Example: --filter="req_uri:\?.*<script". Multiple filters are AND\'d together')
     ;
   }
 
@@ -448,6 +452,7 @@ abstract class BaseSolarWindsCommand extends Command
       'user_agent_filter' => $input->getOption('user-agent-filter'),
       'path_filter' => $input->getOption('path-filter') !== FALSE ? ($input->getOption('path-filter') ?: '/') : NULL,
       'ip_filter' => $input->getOption('ip-filter'),
+      'client_side_filters' => $input->getOption('filter') ?: [],
     ];
   }
 
@@ -566,6 +571,127 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
+   * Apply client-side regex filters to results.
+   *
+   * Filters logs based on --filter options in format "field:regex".
+   * Multiple filters are AND'd together (all must match).
+   * Field names can be specified with or without 'json.' prefix.
+   */
+  protected function filterResults(array $logs, array $options): array
+  {
+    $filters = $options['filters']['client_side_filters'] ?? [];
+
+    if (empty($filters)) {
+      return $logs;
+    }
+
+    $filtered = [];
+    $debugMode = $options['filters']['debug'] ?? FALSE;
+
+    if ($debugMode && !empty($filters)) {
+      $this->io->section('Client-Side Filtering');
+      $this->io->text("Applying filters:");
+      foreach ($filters as $filter) {
+        $this->io->text("  - $filter");
+      }
+      if (!empty($logs)) {
+        $this->io->text("Sample log fields: " . implode(', ', array_keys($logs[0])));
+      }
+      $this->io->newLine();
+    }
+
+    foreach ($logs as $log) {
+      $matchesAll = TRUE;
+      $failedFilter = NULL;
+      $fieldValue = NULL;
+
+      // AND logic - all filters must match.
+      foreach ($filters as $filter) {
+        // Parse filter in format "field:regex".
+        if (strpos($filter, ':') === FALSE) {
+          throw new \InvalidArgumentException("Invalid filter format: '$filter'. Expected 'field:regex'");
+        }
+
+        [$field, $regex] = explode(':', $filter, 2);
+
+        // Normalize field name - strip 'json.' prefix if present.
+        $field = preg_replace('/^json\./', '', $field);
+
+        // Get field value - check top level first, then parse JSON message.
+        $value = '';
+        if (isset($log[$field])) {
+          $value = $log[$field];
+        }
+        elseif (isset($log['message'])) {
+          // Parse JSON message to get nested fields.
+          $messageData = json_decode($log['message'], TRUE);
+          if (is_array($messageData) && isset($messageData[$field])) {
+            $value = $messageData[$field];
+          }
+        }
+
+        // URL-decode the value to catch encoded attacks (e.g., %3Cscript%3E = <script>).
+        $decodedValue = urldecode($value);
+
+        // Apply regex filter on decoded value.
+        // Use # as delimiter and escape any # in the pattern to avoid conflicts.
+        $escapedRegex = str_replace('#', '\#', $regex);
+        if (@preg_match('#' . $escapedRegex . '#', $decodedValue) === FALSE) {
+          throw new \InvalidArgumentException("Invalid regex in filter: '$regex'");
+        }
+
+        if (!preg_match('#' . $escapedRegex . '#', $decodedValue)) {
+          $matchesAll = FALSE;
+          $failedFilter = $filter;
+          $fieldValue = $value;  // Keep original value for display.
+          break;
+        }
+      }
+
+      if ($matchesAll) {
+        $filtered[] = $log;
+
+        // Show what was kept (matched all filters).
+        if ($debugMode) {
+          $messageData = isset($log['message']) ? json_decode($log['message'], TRUE) : [];
+          $host = $messageData['orig_host'] ?? $log['hostname'] ?? 'unknown';
+          $uri = $messageData['req_uri'] ?? 'unknown';
+          $this->io->text("<info>MATCHED:</info> $host - $uri");
+
+          // Show which field value matched for verification.
+          foreach ($filters as $filter) {
+            [$field, $regex] = explode(':', $filter, 2);
+            $field = preg_replace('/^json\./', '', $field);
+
+            $value = '';
+            if (isset($log[$field])) {
+              $value = $log[$field];
+            }
+            elseif (isset($messageData[$field])) {
+              $value = $messageData[$field];
+            }
+
+            $decodedValue = urldecode($value);
+            $this->io->text("  Filter: $filter");
+            $this->io->text("  Value: " . substr($value, 0, 200));
+            if ($decodedValue !== $value) {
+              $this->io->text("  Decoded: " . substr($decodedValue, 0, 200));
+            }
+          }
+          $this->io->newLine();
+        }
+      }
+    }
+
+    if ($debugMode && !empty($filters)) {
+      $this->io->text("Client-side filtering: " . count($logs) . " results -> " . count($filtered) . " results after filters");
+      $this->io->newLine();
+    }
+
+    return $filtered;
+  }
+
+  /**
    * Execute the search with progress feedback.
    */
   protected function executeSearch(string $query, array $options): int
@@ -613,10 +739,22 @@ abstract class BaseSolarWindsCommand extends Command
         $cachedResults = $this->cacheService->loadFromCache($cacheKey);
 
         if ($cachedResults !== NULL) {
+          // Apply client-side filters.
+          $originalCount = count($cachedResults);
+          $cachedResults = $this->filterResults($cachedResults, $options);
+          $filteredCount = count($cachedResults);
+
           // Extract search term for highlighting.
           $searchTerm = $this->extractSearchTerm($options);
           $this->displayService->displayResults($cachedResults, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
-          $this->io->success("Found " . count($cachedResults) . " results (from cache)");
+
+          // Show filtered count if filtering was applied.
+          if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
+            $this->io->success("Found $filteredCount results (filtered from $originalCount results, from cache)");
+          }
+          else {
+            $this->io->success("Found $filteredCount results (from cache)");
+          }
           return Command::SUCCESS;
         }
       }
@@ -744,13 +882,24 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
 
+      // Apply client-side filters.
+      $originalCount = count($results);
+      $results = $this->filterResults($results, $options);
+      $filteredCount = count($results);
+
       // Extract search term for highlighting.
       $searchTerm = $this->extractSearchTerm($options);
 
       // Display results.
       $this->displayService->displayResults($results, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
 
-      $this->io->success("Found " . count($results) . " results");
+      // Show filtered count if filtering was applied.
+      if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
+        $this->io->success("Found $filteredCount results (filtered from $originalCount results)");
+      }
+      else {
+        $this->io->success("Found $filteredCount results");
+      }
       return Command::SUCCESS;
 
     }
