@@ -26,6 +26,8 @@ This project provides a modern PHP/Symfony Console application for comprehensive
 composer install
 ```
 
+**Note on Dependencies:** This project excludes `composer.lock` from version control to allow dependency versions to update within the constraints specified in `composer.json`. This is appropriate for a CLI tool where using the latest compatible versions is preferred over strict version locking.
+
 ### Configuration
 Create a configuration file at `~/.solarwinds.yml`:
 
