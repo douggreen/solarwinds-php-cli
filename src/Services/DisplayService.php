@@ -157,7 +157,7 @@ class DisplayService
         return $this->colorizeStatus($status);
 
       case 'path':
-        $uri = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? '/';
+        $uri = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? $log['location'] ?? '/';
         $segments = (int) $displayOptions['path'];
         if ($segments > 1) {
           $pathParts = array_slice(explode('/', trim($uri, '/')), 0, $segments);
@@ -616,7 +616,7 @@ class DisplayService
 
     if (!empty($displayOptions['path'])) {
       // Use req_uri from parsed message data.
-      $uri = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? '/';
+      $uri = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? $log['location'] ?? '/';
       $segments = (int) $displayOptions['path'];
       if ($segments > 1) {
         $pathParts = array_slice(explode('/', trim($uri, '/')), 0, $segments);
