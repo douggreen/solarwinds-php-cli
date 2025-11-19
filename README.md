@@ -200,7 +200,6 @@ aliases:
 
   # Security and blocking analysis
   ban: status --403 --host --ip --day
-  banip: search "blocked" --ip --status --day
 
   # Security threat detection (with client-side filtering)
   xss: 'search --query="{ json.req_uri:? } { json.req_uri:script } { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }" --filter="req_uri:\?.*</?script" --host --path --day'
@@ -208,10 +207,12 @@ aliases:
   pentest: "search --query=\"{ json.req_uri:? } ( { json.req_uri:insert } OR { json.req_uri:update } OR { json.req_uri:delete } OR { json.req_uri:select } OR { json.req_uri:union } OR { json.req_uri:drop } OR { json.req_uri:script } ) { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }\" --filter=\"req_uri:\\?.*(select[\\s\\*\\(]|insert[\\s\\(]into|update[\\s\\(].*set|delete[\\s\\(]from|union[\\s\\(]select|drop[\\s\\(]table|or[\\s]+\\w+[\\s]*=|and[\\s]+\\w+[\\s]*=|'\\s*--|--\\s*$|\\d'\\s*(or|and)|</?script)\" --host --path --day"
 
   # Drupal/PHP error analysis
-  drupal: search "{ json.type:php }" --drupal --1d
-  drupal-error: search "{ json.type:php } { json.severity:Error }" --drupal --1d
-  drupal-warning: search "{ json.type:php } { json.severity:Warning }" --drupal --1d
-  drupal-notice: search "{ json.type:php } { json.severity:Notice }" --drupal --1d
+  cron: search "{ json.type:cron }" --drupal --1d --host
+  drupal: search "{ program:logger }" --drupal --1d --host
+  drupal-php: search "{ json.type:php }" --drupal --vars=file,line,function --1d --host
+  drupal-error: search "{ json.severity:Error }" --drupal --1d --host --path
+  drupal-warning: search "{ json.severity:Warning }" --drupal --1d --host --path
+  drupal-notice: search "{ json.severity:Notice }" --drupal --1d --host
 
   # Convenience shortcuts
   errors: search "error" --status --1h
