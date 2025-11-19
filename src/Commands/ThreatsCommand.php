@@ -1,27 +1,28 @@
 <?php
 
 /**
- * @file DdosCommand.php
- * @brief DDoS attack detection and analysis command
+ * @file ThreatsCommand.php
+ * @brief Security threat detection and analysis command
  *
- * @class DdosCommand
- * @brief Analyzes traffic patterns to detect potential DDoS attacks and exploit attempts
+ * @class ThreatsCommand
+ * @brief Analyzes traffic patterns to detect potential security threats and malicious actors
  *
- * This command specializes in detecting distributed denial-of-service attacks and
- * exploit attempts by analyzing request volume, geographic distribution, targeted
- * endpoints, and POST request patterns.
+ * This command specializes in detecting various security threats including distributed
+ * denial-of-service attacks, exploit attempts, vulnerability scanning, brute-force attacks,
+ * and other malicious behavior patterns.
  *
  * @section command_purpose Command Purpose
  *
  * **Primary Functions:**
  * - Detect high-volume request sources (potential DDoS)
- * - Identify geographic clustering of attack traffic
- * - Detect targeted endpoint attacks
- * - Flag excessive POST requests (exploit attempts)
+ * - Identify exploit scanning and vulnerability probing
+ * - Detect geographic clustering of attack traffic
+ * - Flag excessive POST requests (exploit/brute-force attempts)
+ * - Identify targeted endpoint attacks
  *
  * **Use Cases:**
- * - Monitor for active DDoS attacks
- * - Detect exploit scanning and brute-force attempts
+ * - Monitor for active attacks (DDoS, exploits, brute-force)
+ * - Detect vulnerability scanning and probe attempts
  * - Identify coordinated attack patterns
  * - Track malicious traffic sources for blocking
  *
@@ -50,23 +51,23 @@
  *
  * @section example Usage Examples
  * @code{.bash}
- * # Basic DDoS detection (high-volume IPs, last 15 minutes)
- * solarwinds ddos
+ * # Basic threat detection (high-volume IPs, last 15 minutes)
+ * solarwinds threats
  *
  * # Custom threshold for IP analysis
- * solarwinds ddos --min-requests=200 --1h
+ * solarwinds threats --min-requests=200 --1h
  *
- * # Detect POST-based attacks (exploit attempts)
- * solarwinds ddos --posts-only --min-posts=10
+ * # Detect POST-based attacks (exploit/brute-force attempts)
+ * solarwinds threats --posts-only --min-posts=10
  *
  * # Geographic attack clustering
- * solarwinds ddos --by-country --1h
+ * solarwinds threats --by-country --1h
  *
  * # Targeted endpoint attacks
- * solarwinds ddos --by-path --min-requests=150
+ * solarwinds threats --by-path --min-requests=150
  *
  * # JSON output for monitoring integration
- * solarwinds ddos --json
+ * solarwinds threats --json
  * @endcode
  *
  * @see BaseSolarWindsCommand For base class implementation
@@ -83,12 +84,12 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 
 /**
- * DDoS Command - Analyzes traffic for DDoS attack patterns
+ * Threats Command - Analyzes traffic for security threats and malicious actors
  *
- * Specialized command for detecting distributed denial-of-service attacks,
- * exploit attempts, and malicious traffic patterns.
+ * Specialized command for detecting various security threats including DDoS attacks,
+ * exploit attempts, vulnerability scanning, and malicious traffic patterns.
  */
-class DdosCommand extends BaseSolarWindsCommand
+class ThreatsCommand extends BaseSolarWindsCommand
 {
   protected string $defaultTime = '15m';
   protected array $defaultDisplayOptions = ['ip'];
@@ -96,11 +97,11 @@ class DdosCommand extends BaseSolarWindsCommand
   protected function configure(): void
   {
     $this
-      ->setName('ddos')
-      ->setDescription('Detect potential DDoS attacks and exploit attempts')
+      ->setName('threats')
+      ->setDescription('Detect potential security threats and malicious actors')
       ->setHelp('
-        The <info>ddos</info> command analyzes traffic patterns to detect potential DDoS attacks,
-        exploit attempts, and malicious traffic sources.
+        The <info>threats</info> command analyzes traffic patterns to detect potential security threats
+        including DDoS attacks, exploit attempts, vulnerability scanning, and malicious traffic sources.
 
         <comment>Threshold Options (with defaults):</comment>
         <info>--min-requests=RATE</info>   Minimum request rate to flag (default: 1/s)
@@ -120,16 +121,16 @@ class DdosCommand extends BaseSolarWindsCommand
         <info>--by-ip</info>            Show high-volume IP addresses
         <info>--by-country</info>       Show geographic clustering (coordinated attacks)
         <info>--by-path</info>          Show targeted endpoints (path-focused attacks)
-        <info>--posts-only</info>       Analyze only POST requests (exploit detection)
+        <info>--posts-only</info>       Analyze only POST requests (exploit/brute-force detection)
 
         <comment>Examples:</comment>
-        <info>solarwinds ddos</info>                                # Multi-dimensional analysis (all 3)
-        <info>solarwinds ddos --min-requests=5s --1h</info>         # Custom threshold, all dimensions
-        <info>solarwinds ddos --by-ip</info>                        # Only show high-volume IPs
-        <info>solarwinds ddos --by-ip --by-country</info>           # Show IPs and countries
-        <info>solarwinds ddos --posts-only</info>                   # Detect POST attacks, all dimensions
-        <info>solarwinds ddos --posts-only --by-ip</info>           # POST attacks by IP only
-        <info>solarwinds ddos --json</info>                         # JSON output for monitoring
+        <info>solarwinds threats</info>                                # Multi-dimensional analysis (all 3)
+        <info>solarwinds threats --min-requests=5s --1h</info>         # Custom threshold, all dimensions
+        <info>solarwinds threats --by-ip</info>                        # Only show high-volume IPs
+        <info>solarwinds threats --by-ip --by-country</info>           # Show IPs and countries
+        <info>solarwinds threats --posts-only</info>                   # Detect POST attacks, all dimensions
+        <info>solarwinds threats --posts-only --by-ip</info>           # POST attacks by IP only
+        <info>solarwinds threats --json</info>                         # JSON output for monitoring
         ')
       ->addOption('min-requests', NULL, InputOption::VALUE_REQUIRED, 'Minimum request rate to flag (default: 1/s)', '1/s')
       ->addOption('min-posts', NULL, InputOption::VALUE_REQUIRED, 'Minimum POST rate to flag (default: 30s)', '30s')
@@ -249,7 +250,7 @@ class DdosCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Parse script-specific options for ddos.
+   * Parse script-specific options for threats.
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
@@ -272,7 +273,7 @@ class DdosCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Build the search query for DDoS detection.
+   * Build the search query for threat detection.
    */
   protected function buildSearchQuery(array $options): string
   {
@@ -289,7 +290,7 @@ class DdosCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Validate the query and options for ddos.
+   * Validate the query and options for threat detection.
    */
   protected function validateQuery(string $query, array $options): void
   {
