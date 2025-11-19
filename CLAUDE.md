@@ -47,7 +47,7 @@
 ## PROJECT ARCHITECTURE CONTEXT
 
 ### Current Status
-- **4 Core Commands:** `bot`, `threats`, `search`, `status` (flexible foundation)
+- **5 Core Commands:** `bot`, `exploits`, `threats`, `search`, `status` (flexible foundation)
 - **8+ YAML Aliases:** Specialized commands via configuration
 - **Template Pattern:** `BaseSolarWindsCommand` provides shared functionality
 - **Services:** `ConfigurationService`, `ApiService`, `DisplayService`, `CacheService`

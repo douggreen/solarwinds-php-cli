@@ -100,27 +100,22 @@ class ThreatsCommand extends BaseSolarWindsCommand
       ->setName('threats')
       ->setDescription('Detect potential security threats and malicious actors')
       ->setHelp('
-        The <info>threats</info> command analyzes traffic patterns to detect potential security threats
-        including DDoS attacks, exploit attempts, vulnerability scanning, and malicious traffic sources.
+        The <info>threats</info> command analyzes traffic patterns to detect volume-based security threats
+        including DDoS attacks, vulnerability scanning, brute-force attempts, and high-volume malicious actors.
+
+        For payload-based exploit detection (XSS, SQLi, etc.), use the <info>exploits</info> command instead.
 
         <comment>Threshold Options (with defaults):</comment>
         <info>--min-requests=RATE</info>           Minimum request rate to flag (default: 1/s)
                                           Formats: N/s (per second), Ns (every N seconds), or absolute number
                                           Examples: 3/s, 5s (1 every 5 sec), 100 (absolute)
-        <info>--min-posts=RATE</info>              Minimum POST rate to flag (default: 30s = 1 every 30 sec)
-                                          Auto-used with --posts-only flag
-                                          Scales: 30 POSTs/15m, 120/1h, 2880/1d
         <info>--by-country-multiplier=N</info>     Multiply threshold for country aggregation (default: 5)
                                           Countries need N times more requests than IPs to be flagged
         <info>--by-country-exclude=LIST</info>     Comma-separated country codes to exclude (default: US)
                                           Use empty string or "none" to include all countries
 
-        Note: --posts-only automatically uses --min-posts threshold instead of --min-requests
-
         <comment>Analysis Display:</comment>
         Always shows all three dimensions: IP addresses, countries, and paths.
-
-        <info>--posts-only</info>       Analyze only POST requests (exploit/brute-force detection)
 
         <comment>Examples:</comment>
         <info>solarwinds threats</info>                                      # Multi-dimensional analysis (all 3)
@@ -128,14 +123,11 @@ class ThreatsCommand extends BaseSolarWindsCommand
         <info>solarwinds threats --by-country-exclude=""</info>              # Include all countries (even US)
         <info>solarwinds threats --by-country-exclude=US,CN,RU</info>        # Exclude multiple countries
         <info>solarwinds threats --by-country-multiplier=10</info>           # Countries need 10x threshold
-        <info>solarwinds threats --posts-only</info>                         # Detect POST attacks, all dimensions
         <info>solarwinds threats --json</info>                               # JSON output for monitoring
         ')
       ->addOption('min-requests', NULL, InputOption::VALUE_REQUIRED, 'Minimum request rate to flag (default: 1/s)', '1/s')
-      ->addOption('min-posts', NULL, InputOption::VALUE_REQUIRED, 'Minimum POST rate to flag (default: 30s)', '30s')
       ->addOption('by-country-multiplier', NULL, InputOption::VALUE_REQUIRED, 'Multiply threshold for country aggregation (default: 5)', 5)
       ->addOption('by-country-exclude', NULL, InputOption::VALUE_REQUIRED, 'Comma-separated country codes to exclude (default: US)', 'US')
-      ->addOption('posts-only', NULL, InputOption::VALUE_NONE, 'Analyze only POST requests')
     ;
 
     // Call parent to set up common options.
@@ -181,15 +173,12 @@ class ThreatsCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Override parseFilterOptions to apply --min-requests or --min-posts as the threshold.
+   * Override parseFilterOptions to apply --min-requests as the threshold.
    */
   protected function parseFilterOptions(InputInterface $input): array
   {
     // Call parent to get base filter options.
     $filters = parent::parseFilterOptions($input);
-
-    // Check if --posts-only is set to determine which threshold to use.
-    $postsOnly = $input->getOption('posts-only');
 
     // Calculate timeframe duration in seconds from the time options.
     $timeOptions = $this->parseTimeOptions($input);
@@ -197,15 +186,9 @@ class ThreatsCommand extends BaseSolarWindsCommand
     $endTime = strtotime($timeOptions['end_time']);
     $timeframeSeconds = $endTime - $startTime;
 
-    // Use --min-posts if analyzing POST traffic, otherwise --min-requests.
-    if ($postsOnly) {
-      $minPostsRaw = $input->getOption('min-posts');
-      $minThreshold = $this->parseRequestRate($minPostsRaw, $timeframeSeconds);
-    }
-    else {
-      $minRequestsRaw = $input->getOption('min-requests');
-      $minThreshold = $this->parseRequestRate($minRequestsRaw, $timeframeSeconds);
-    }
+    // Parse --min-requests threshold.
+    $minRequestsRaw = $input->getOption('min-requests');
+    $minThreshold = $this->parseRequestRate($minRequestsRaw, $timeframeSeconds);
 
     // If --min-count is still the default value (1), override with calculated threshold.
     // This allows users to still use --min-count if they want to override.
@@ -225,7 +208,6 @@ class ThreatsCommand extends BaseSolarWindsCommand
 
     // Parse threshold options (keep as strings for rate parsing).
     $options['min_requests'] = $input->getOption('min-requests');
-    $options['min_posts'] = $input->getOption('min-posts');
 
     // Parse country-specific options.
     $options['country_multiplier'] = (int) $input->getOption('by-country-multiplier');
@@ -244,9 +226,6 @@ class ThreatsCommand extends BaseSolarWindsCommand
       );
     }
 
-    // Parse filter options.
-    $options['posts_only'] = $input->getOption('posts-only');
-
     return $options;
   }
 
@@ -255,14 +234,7 @@ class ThreatsCommand extends BaseSolarWindsCommand
    */
   protected function buildSearchQuery(array $options): string
   {
-    $postsOnly = $options['script_specific']['posts_only'];
-
-    // Filter to POST requests only if --posts-only flag is set.
-    if ($postsOnly) {
-      return "{ json.req_method:POST }";
-    }
-
-    // Otherwise, analyze all HTTP traffic (Fastly logs only).
+    // Analyze all HTTP traffic (Fastly logs only).
     // GET + POST + HEAD + other HTTP methods.
     return "( { json.req_method:GET } OR { json.req_method:POST } OR { json.req_method:HEAD } )";
   }
