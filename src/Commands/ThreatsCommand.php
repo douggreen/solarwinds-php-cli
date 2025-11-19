@@ -319,33 +319,10 @@ class ThreatsCommand extends BaseSolarWindsCommand
     $searchTerm = $this->extractSearchTerm($options);
     $debugMode = $options['filters']['debug'] || $this->config->isDebugEnabled();
 
-    // Fetch data once using parent's caching logic.
-    $scriptName = $this->getName() ?? 'unknown';
-    $timeArg = $options['time']['human_readable'];
-    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
-
     // Try to load from cache first.
-    $results = NULL;
     $cacheUsed = FALSE;
     $cacheAge = NULL;
-
-    if (!$options['filters']['no_cache']) {
-      $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
-
-      if ($this->cacheService->isCacheFresh(
-        $cacheKey,
-        $currentTimeArg,
-        $options['filters']['cache_infinite'],
-        $options['filters']['cache_seconds']
-      )) {
-        $results = $this->cacheService->loadFromCache($cacheKey);
-        if ($results !== NULL) {
-          $cacheUsed = TRUE;
-          $cacheAge = $this->cacheService->getCacheAge($cacheKey);
-        }
-      }
-    }
+    $results = $this->tryLoadFromCache($query, $options, $cacheUsed, $cacheAge);
 
     // If no cache, fetch from API.
     if ($results === NULL) {
@@ -355,14 +332,20 @@ class ThreatsCommand extends BaseSolarWindsCommand
         $this->io->text("Query: $query");
       }
 
+      // Create progress bar and fetch results.
+      $progressBar = $this->createSearchProgressBar($options);
+
       $results = $this->apiService->searchLogs(
         $query,
         $options['time']['start_time'],
-        $options['time']['end_time']
+        $options['time']['end_time'],
+        $this->getProgressCallback($progressBar, $options)
       );
 
+      $this->finishProgressBar($progressBar);
+
       // Save to cache (multi-dimensional searches always cache).
-      $this->cacheService->saveToCache($cacheKey, $results, 0);
+      $this->saveResultsToCache($query, $options, $results, 0);
     }
     elseif (!$this->jsonMode) {
       $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";

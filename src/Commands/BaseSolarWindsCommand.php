@@ -1062,6 +1062,133 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
+   * Create a progress bar for search operations.
+   *
+   * @param array $options Query options containing time range
+   * @return ProgressBar|null Progress bar instance or NULL if disabled
+   */
+  protected function createSearchProgressBar(array $options): ?ProgressBar
+  {
+    if (!$this->config->isProgressEnabled() || $this->jsonMode) {
+      return NULL;
+    }
+
+    $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
+    $progressBar = new ProgressBar($this->io, $totalSeconds);
+    $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s% %message%');
+    $progressBar->setMessage('');
+    $progressBar->start();
+
+    return $progressBar;
+  }
+
+  /**
+   * Get standard progress callback for API search.
+   *
+   * @param ProgressBar|null $progressBar Progress bar to update
+   * @param array $options Query options
+   * @return callable|null Progress callback function
+   */
+  protected function getProgressCallback(?ProgressBar $progressBar, array $options): ?callable
+  {
+    if (!$progressBar) {
+      return NULL;
+    }
+
+    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options) {
+      if (!empty($pageLogs)) {
+        $oldestTime = $pageLogs[0]['time'] ?? NULL;
+        if ($oldestTime) {
+          $currentEpoch = strtotime($oldestTime);
+          $endEpoch = strtotime($options['time']['end_time']);
+          $coveredSeconds = $endEpoch - $currentEpoch;
+          $progressBar->setProgress($coveredSeconds);
+        }
+      }
+      else {
+        $progressBar->advance();
+      }
+      $progressBar->setMessage("($totalResults results)");
+    };
+  }
+
+  /**
+   * Finish progress bar display.
+   *
+   * @param ProgressBar|null $progressBar Progress bar to finish
+   */
+  protected function finishProgressBar(?ProgressBar $progressBar): void
+  {
+    if ($progressBar) {
+      $progressBar->finish();
+      $this->io->newLine();
+    }
+  }
+
+  /**
+   * Try to load results from cache.
+   *
+   * @param string $query The search query
+   * @param array $options Query options
+   * @param bool &$cacheUsed Output parameter set to TRUE if cache was used
+   * @param string|null &$cacheAge Output parameter set to cache age string
+   * @return array|null Cached results or NULL if not available
+   */
+  protected function tryLoadFromCache(string $query, array $options, bool &$cacheUsed, ?string &$cacheAge): ?array
+  {
+    // Don't use cache if --no-cache flag is set.
+    if ($options['filters']['no_cache']) {
+      return NULL;
+    }
+
+    // Generate cache key.
+    $scriptName = $this->getName() ?? 'unknown';
+    $timeArg = $options['time']['human_readable'];
+    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+
+    // Check if cache is fresh.
+    $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
+
+    if (!$this->cacheService->isCacheFresh(
+      $cacheKey,
+      $currentTimeArg,
+      $options['filters']['cache_infinite'],
+      $options['filters']['cache_seconds']
+    )) {
+      return NULL;
+    }
+
+    // Load from cache.
+    $results = $this->cacheService->loadFromCache($cacheKey);
+    if ($results !== NULL) {
+      $cacheUsed = TRUE;
+      $cacheAge = $this->cacheService->getCacheAge($cacheKey);
+      return $results;
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Save results to cache.
+   *
+   * @param string $query The search query
+   * @param array $options Query options
+   * @param array $results Results to cache
+   * @param int $searchDuration Search duration in seconds (0 for immediate caching)
+   */
+  protected function saveResultsToCache(string $query, array $options, array $results, int $searchDuration = 0): void
+  {
+    $scriptName = $this->getName() ?? 'unknown';
+    $timeArg = $options['time']['human_readable'];
+    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+
+    $this->cacheService->saveToCache($cacheKey, $results, $searchDuration);
+  }
+
+  /**
    * Build the search query (must be implemented by child classes).
    */
   abstract protected function buildSearchQuery(array $options): string;
