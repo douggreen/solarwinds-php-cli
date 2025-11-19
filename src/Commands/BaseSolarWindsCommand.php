@@ -217,7 +217,7 @@ abstract class BaseSolarWindsCommand extends Command
       'region' => 'Show region information',
       'cache' => 'Show cache status',
       'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping',
-      'vars' => 'Show variable replacements (all variables, or specify: file,line,function)'
+      'vars' => 'Show variable replacements (all variables, or specify: user,ip,post.name). Supports deep array references with dot notation (e.g., post.name, geoip.country_code2)'
     ];
     foreach ($displayOptions as $option => $description) {
       if ($option === 'vars') {

@@ -193,7 +193,7 @@ aliases:
 
   # Request analysis
   posts: search --query="{ json.req_method:POST } { json.resp_status:200 } -/sites/default/files" --host --path --day
-  login: search "Login attempt failed" --ip --day
+  login: search "Login attempt failed" --drupal --vars=ip,post.name --day --host
 
   # Geographic analysis
   country: search --query="{ json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 } -/sites/default/files" --country --15m
@@ -310,6 +310,11 @@ Supports comprehensive time range options:
 - `--ip` - Show IP addresses
 - `--country` - Show country information
 - `--drupal` - Format PHP/Drupal watchdog errors with file:line grouping
+- `--vars[=FIELDS]` - Show variable replacements from Drupal watchdog logs. Supports:
+  - `--vars` - Show all variables
+  - `--vars=user,ip` - Show specific Drupal variables
+  - `--vars=post.name,post.pass` - Access nested JSON fields using dot notation
+  - Deep array references work with any nested structure (e.g., `geoip.country_code2`)
 - `--filter=PATTERN` - Client-side regex filtering in format "field:regex" (can be used multiple times, AND logic)
 - And more...
 

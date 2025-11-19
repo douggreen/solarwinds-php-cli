@@ -397,10 +397,18 @@ class DisplayService
         // Show specific variables.
         foreach ($varsOption as $varName) {
           $cleanName = ltrim($varName, '%@');
-          $item[$cleanName] = $data['variables']['%' . ltrim($varName, '%@')] ??
-                              $data['variables']['@' . ltrim($varName, '%@')] ??
-                              $data['variables'][$varName] ??
-                              NULL;
+          // Check if this is a deep array reference (contains a dot).
+          if (strpos($varName, '.') !== FALSE) {
+            // Use nested value extraction from the full parsed log.
+            $item[$cleanName] = $this->getNestedValue($data['sample'], $varName);
+          }
+          else {
+            // Try both % and @ prefixes for Drupal variables.
+            $item[$cleanName] = $data['variables']['%' . ltrim($varName, '%@')] ??
+                                $data['variables']['@' . ltrim($varName, '%@')] ??
+                                $data['variables'][$varName] ??
+                                NULL;
+          }
         }
       }
       else {
@@ -1112,6 +1120,9 @@ class DisplayService
         continue;
       }
 
+      // Get the sample log for this group (used for variable and column extraction).
+      $log = $data['sample'];
+
       // Colorize severity like status codes.
       $severityDisplay = $this->colorizeDrupalSeverity($data['severity']);
 
@@ -1148,17 +1159,23 @@ class DisplayService
       elseif (is_array($varsOption)) {
         // Show specific variables as separate columns.
         foreach ($varColumns as $varName) {
-          // Try both % and @ prefixes.
-          $value = $data['variables']['%' . ltrim($varName, '%@')] ??
-                   $data['variables']['@' . ltrim($varName, '%@')] ??
-                   $data['variables'][$varName] ??
-                   '-';
+          // Check if this is a deep array reference (contains a dot).
+          if (strpos($varName, '.') !== FALSE) {
+            // Use nested value extraction from the full parsed log.
+            $value = $this->getNestedValue($log, $varName) ?? '-';
+          }
+          else {
+            // Try both % and @ prefixes for Drupal variables.
+            $value = $data['variables']['%' . ltrim($varName, '%@')] ??
+                     $data['variables']['@' . ltrim($varName, '%@')] ??
+                     $data['variables'][$varName] ??
+                     '-';
+          }
           $row[] = $value;
         }
       }
 
       // Add optional display column values (--host, --ip, etc.).
-      $log = $data['sample'];
       foreach ($enabledColumns as $column) {
         $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
       }
@@ -1202,6 +1219,35 @@ class DisplayService
     }
 
     return $severity;
+  }
+
+  /**
+   * Get nested array value using dot notation path.
+   *
+   * Supports paths like "post.name" to access $data['post']['name'].
+   *
+   * @param array $data The array to traverse.
+   * @param string $path Dot-separated path to the value.
+   * @return string|null The value at the path, or NULL if not found.
+   */
+  protected function getNestedValue(array $data, string $path): ?string
+  {
+    $keys = explode('.', $path);
+    $current = $data;
+
+    foreach ($keys as $key) {
+      if (!is_array($current) || !isset($current[$key])) {
+        return NULL;
+      }
+      $current = $current[$key];
+    }
+
+    // Convert to string if we found a value.
+    if ($current === NULL) {
+      return NULL;
+    }
+
+    return is_array($current) ? json_encode($current) : (string) $current;
   }
 
 }
