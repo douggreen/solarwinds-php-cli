@@ -303,6 +303,7 @@ class DisplayService
     $enabledColumns = $this->getEnabledDisplayColumns($displayOptions);
     $items = [];
     $minCount = $filters['min_count'] ?? 1;
+    $excludedCountries = $filters['excluded_countries'] ?? [];
 
     foreach ($grouped as $key => $data) {
       // Apply min_count filter.
@@ -311,6 +312,20 @@ class DisplayService
       }
 
       $log = $data['sample'];
+
+      // Apply country exclusion filter if grouping by country.
+      if (in_array('country', $enabledColumns) && !empty($excludedCountries)) {
+        $country = $this->extractDisplayColumnValue('country', $log, $displayOptions, NULL);
+        // Strip ANSI codes and tags for comparison.
+        $country = preg_replace('/\033\[[0-9;]*m/', '', $country);
+        $country = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $country);
+        $country = strtoupper(trim($country));
+
+        if (in_array($country, $excludedCountries)) {
+          continue;
+        }
+      }
+
       $item = ['count' => $data['count']];
 
       // Add values for enabled columns (without color codes).
@@ -750,6 +765,7 @@ class DisplayService
 
     $rows = [];
     $minCount = $filters['min_count'] ?? 1;
+    $excludedCountries = $filters['excluded_countries'] ?? [];
 
     foreach ($grouped as $key => $data) {
       // Apply min_count filter.
@@ -757,8 +773,22 @@ class DisplayService
         continue;
       }
 
-      $row = [$data['count']];
       $log = $data['sample'];
+
+      // Apply country exclusion filter if grouping by country.
+      if (in_array('country', $enabledColumns) && !empty($excludedCountries)) {
+        $country = $this->extractDisplayColumnValue('country', $log, $displayOptions, NULL);
+        // Strip ANSI codes and tags for comparison.
+        $country = preg_replace('/\033\[[0-9;]*m/', '', $country);
+        $country = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $country);
+        $country = strtoupper(trim($country));
+
+        if (in_array($country, $excludedCountries)) {
+          continue;
+        }
+      }
+
+      $row = [$data['count']];
 
       // Add values for enabled columns.
       foreach ($enabledColumns as $column) {

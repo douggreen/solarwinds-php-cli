@@ -92,7 +92,7 @@ use Symfony\Component\Console\Input\InputOption;
 class ThreatsCommand extends BaseSolarWindsCommand
 {
   protected string $defaultTime = '15m';
-  protected array $defaultDisplayOptions = ['ip'];
+  protected array $defaultDisplayOptions = ['ip', 'country', 'path'];
 
   protected function configure(): void
   {
@@ -104,40 +104,37 @@ class ThreatsCommand extends BaseSolarWindsCommand
         including DDoS attacks, exploit attempts, vulnerability scanning, and malicious traffic sources.
 
         <comment>Threshold Options (with defaults):</comment>
-        <info>--min-requests=RATE</info>   Minimum request rate to flag (default: 1/s)
-                                  Formats: N/s (per second), Ns (every N seconds), or absolute number
-                                  Examples: 3/s, 5s (1 every 5 sec), 100 (absolute)
-        <info>--min-posts=RATE</info>      Minimum POST rate to flag (default: 30s = 1 every 30 sec)
-                                  Auto-used with --posts-only flag
-                                  Scales: 30 POSTs/15m, 120/1h, 2880/1d
-        <info>--geo-threshold=N</info>     Minimum % from single country to flag (default: 80, with --by-country)
+        <info>--min-requests=RATE</info>           Minimum request rate to flag (default: 1/s)
+                                          Formats: N/s (per second), Ns (every N seconds), or absolute number
+                                          Examples: 3/s, 5s (1 every 5 sec), 100 (absolute)
+        <info>--min-posts=RATE</info>              Minimum POST rate to flag (default: 30s = 1 every 30 sec)
+                                          Auto-used with --posts-only flag
+                                          Scales: 30 POSTs/15m, 120/1h, 2880/1d
+        <info>--by-country-multiplier=N</info>     Multiply threshold for country aggregation (default: 5)
+                                          Countries need N times more requests than IPs to be flagged
+        <info>--by-country-exclude=LIST</info>     Comma-separated country codes to exclude (default: US)
+                                          Use empty string or "none" to include all countries
 
         Note: --posts-only automatically uses --min-posts threshold instead of --min-requests
 
-        <comment>Analysis Dimensions:</comment>
-        By default, analyzes ALL dimensions (IP, country, path) and shows anything above thresholds.
-        Use --by-* flags to analyze specific dimensions only:
+        <comment>Analysis Display:</comment>
+        Always shows all three dimensions: IP addresses, countries, and paths.
 
-        <info>--by-ip</info>            Show high-volume IP addresses
-        <info>--by-country</info>       Show geographic clustering (coordinated attacks)
-        <info>--by-path</info>          Show targeted endpoints (path-focused attacks)
         <info>--posts-only</info>       Analyze only POST requests (exploit/brute-force detection)
 
         <comment>Examples:</comment>
-        <info>solarwinds threats</info>                                # Multi-dimensional analysis (all 3)
-        <info>solarwinds threats --min-requests=5s --1h</info>         # Custom threshold, all dimensions
-        <info>solarwinds threats --by-ip</info>                        # Only show high-volume IPs
-        <info>solarwinds threats --by-ip --by-country</info>           # Show IPs and countries
-        <info>solarwinds threats --posts-only</info>                   # Detect POST attacks, all dimensions
-        <info>solarwinds threats --posts-only --by-ip</info>           # POST attacks by IP only
-        <info>solarwinds threats --json</info>                         # JSON output for monitoring
+        <info>solarwinds threats</info>                                      # Multi-dimensional analysis (all 3)
+        <info>solarwinds threats --min-requests=5s --1h</info>               # Custom threshold, all dimensions
+        <info>solarwinds threats --by-country-exclude=""</info>              # Include all countries (even US)
+        <info>solarwinds threats --by-country-exclude=US,CN,RU</info>        # Exclude multiple countries
+        <info>solarwinds threats --by-country-multiplier=10</info>           # Countries need 10x threshold
+        <info>solarwinds threats --posts-only</info>                         # Detect POST attacks, all dimensions
+        <info>solarwinds threats --json</info>                               # JSON output for monitoring
         ')
       ->addOption('min-requests', NULL, InputOption::VALUE_REQUIRED, 'Minimum request rate to flag (default: 1/s)', '1/s')
       ->addOption('min-posts', NULL, InputOption::VALUE_REQUIRED, 'Minimum POST rate to flag (default: 30s)', '30s')
-      ->addOption('geo-threshold', NULL, InputOption::VALUE_REQUIRED, 'Minimum % from single country (default: 80)', 80)
-      ->addOption('by-ip', NULL, InputOption::VALUE_NONE, 'Group by IP address (default)')
-      ->addOption('by-country', NULL, InputOption::VALUE_NONE, 'Group by country')
-      ->addOption('by-path', NULL, InputOption::VALUE_NONE, 'Group by request path')
+      ->addOption('by-country-multiplier', NULL, InputOption::VALUE_REQUIRED, 'Multiply threshold for country aggregation (default: 5)', 5)
+      ->addOption('by-country-exclude', NULL, InputOption::VALUE_REQUIRED, 'Comma-separated country codes to exclude (default: US)', 'US')
       ->addOption('posts-only', NULL, InputOption::VALUE_NONE, 'Analyze only POST requests')
     ;
 
@@ -145,36 +142,6 @@ class ThreatsCommand extends BaseSolarWindsCommand
     parent::configure();
   }
 
-  /**
-   * Override parseDisplayOptions to handle multi-dimensional analysis.
-   */
-  protected function parseDisplayOptions(InputInterface $input): array
-  {
-    // Check which dimensions were explicitly requested.
-    $byIp = $input->getOption('by-ip');
-    $byCountry = $input->getOption('by-country');
-    $byPath = $input->getOption('by-path');
-
-    // If user specified any --by-* flags, use only those dimensions.
-    // Otherwise, default to analyzing all three dimensions.
-    $anySpecified = $byIp || $byCountry || $byPath;
-
-    if ($anySpecified) {
-      // User wants specific dimensions only.
-      $dimensions = [];
-      if ($byIp) $dimensions[] = 'ip';
-      if ($byCountry) $dimensions[] = 'country';
-      if ($byPath) $dimensions[] = 'path';
-      $this->defaultDisplayOptions = $dimensions;
-    }
-    else {
-      // Default: analyze all three dimensions.
-      $this->defaultDisplayOptions = ['ip', 'country', 'path'];
-    }
-
-    // Call parent to apply defaults and parse other display options.
-    return parent::parseDisplayOptions($input);
-  }
 
   /**
    * Parse request rate syntax and convert to absolute count based on timeframe.
@@ -259,12 +226,23 @@ class ThreatsCommand extends BaseSolarWindsCommand
     // Parse threshold options (keep as strings for rate parsing).
     $options['min_requests'] = $input->getOption('min-requests');
     $options['min_posts'] = $input->getOption('min-posts');
-    $options['geo_threshold'] = (int) $input->getOption('geo-threshold');
 
-    // Parse aggregation options.
-    $options['by_ip'] = $input->getOption('by-ip');
-    $options['by_country'] = $input->getOption('by-country');
-    $options['by_path'] = $input->getOption('by-path');
+    // Parse country-specific options.
+    $options['country_multiplier'] = (int) $input->getOption('by-country-multiplier');
+
+    // Parse country exclusion list.
+    $excludeCountries = $input->getOption('by-country-exclude');
+    // Handle special values: empty string or 'none' means no exclusions.
+    if ($excludeCountries === '' || strtolower($excludeCountries) === 'none') {
+      $options['excluded_countries'] = [];
+    }
+    else {
+      // Split comma-separated list and normalize to uppercase.
+      $options['excluded_countries'] = array_map(
+        'trim',
+        array_map('strtoupper', explode(',', $excludeCountries))
+      );
+    }
 
     // Parse filter options.
     $options['posts_only'] = $input->getOption('posts-only');
@@ -296,13 +274,34 @@ class ThreatsCommand extends BaseSolarWindsCommand
   {
     $scriptOptions = $options['script_specific'];
 
-    // Validate geo_threshold.
-    if ($scriptOptions['geo_threshold'] < 1 || $scriptOptions['geo_threshold'] > 100) {
-      throw new \InvalidArgumentException("--geo-threshold must be between 1-100: {$scriptOptions['geo_threshold']}");
+    // Validate country_multiplier.
+    if ($scriptOptions['country_multiplier'] < 1) {
+      throw new \InvalidArgumentException("--by-country-multiplier must be at least 1: {$scriptOptions['country_multiplier']}");
     }
 
     // Note: min_requests and min_posts are validated in parseRequestRate() when parsed.
-    // Note: Multiple --by-* flags are now allowed for multi-dimensional analysis.
+  }
+
+  /**
+   * Get dimension-specific filters.
+   *
+   * Applies country-specific threshold multiplier and exclusions.
+   */
+  protected function getDimensionFilters(string $dimension, array $options): array
+  {
+    $filters = $options['filters'];
+    $scriptOptions = $options['script_specific'];
+
+    // Apply country-specific logic.
+    if ($dimension === 'country') {
+      // Multiply threshold for country aggregation.
+      $filters['min_count'] = $filters['min_count'] * $scriptOptions['country_multiplier'];
+
+      // Add excluded countries to filters.
+      $filters['excluded_countries'] = $scriptOptions['excluded_countries'];
+    }
+
+    return $filters;
   }
 
   /**
@@ -408,10 +407,14 @@ class ThreatsCommand extends BaseSolarWindsCommand
       $dimensionResults = [];
       foreach ($dimensions as $dimension) {
         $dimDisplay = [$dimension['key'] => TRUE, '_explicit' => $originalDisplay['_explicit']];
+
+        // Apply dimension-specific filtering.
+        $dimFilters = $this->getDimensionFilters($dimension['key'], $options);
+
         $formattedResults = $this->displayService->formatResultsForJson(
           $results,
           $dimDisplay,
-          $options['filters'],
+          $dimFilters,
           $searchTerm
         );
         $dimensionResults[$dimension['key']] = $formattedResults;
@@ -445,12 +448,16 @@ class ThreatsCommand extends BaseSolarWindsCommand
         $this->io->newLine();
       }
 
-      $header = "Analysis by {$dimension['name']} (threshold: {$threshold} requests)";
+      // Apply dimension-specific filtering.
+      $dimFilters = $this->getDimensionFilters($dimension['key'], $options);
+      $dimThreshold = $dimFilters['min_count'];
+
+      $header = "Analysis by {$dimension['name']} (threshold: {$dimThreshold} requests)";
       $this->io->section($header);
 
       // Display results for this dimension.
       $dimDisplay = [$dimension['key'] => TRUE, '_explicit' => $originalDisplay['_explicit']];
-      $this->displayService->displayResults($results, $dimDisplay, $this->io, $debugMode, $options['filters'], $searchTerm);
+      $this->displayService->displayResults($results, $dimDisplay, $this->io, $debugMode, $dimFilters, $searchTerm);
 
       // Show result count.
       if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
