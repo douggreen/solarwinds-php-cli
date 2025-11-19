@@ -103,6 +103,56 @@ class DisplayService
   }
 
   /**
+   * Substitute variable placeholders in message with their values.
+   *
+   * Replaces Drupal-style placeholders like %name, %choice, @message with
+   * their actual values from the variables array.
+   *
+   * @param string $message The message template with placeholders
+   * @param array $variables Associative array of variable name => value
+   * @return string The message with substituted values
+   */
+  protected function substituteVariables(string $message, array $variables): string
+  {
+    if (empty($variables)) {
+      return $message;
+    }
+
+    // Build replacement array for strtr().
+    $replacements = [];
+    foreach ($variables as $key => $value) {
+      // Skip @message as it's the message template itself.
+      if ($key === '@message') {
+        continue;
+      }
+
+      // Convert value to string if it's not already.
+      if (is_array($value)) {
+        $value = json_encode($value);
+      }
+      elseif (!is_string($value)) {
+        $value = (string) $value;
+      }
+
+      // Drupal variables come in different formats:
+      // - Already prefixed: "%name", "@name"
+      // - Unprefixed: "name"
+      // Handle both cases.
+      if ($key[0] === '%' || $key[0] === '@') {
+        // Already prefixed - use as-is.
+        $replacements[$key] = $value;
+      }
+      else {
+        // Not prefixed - add both % and @ versions.
+        $replacements["%$key"] = $value;
+        $replacements["@$key"] = $value;
+      }
+    }
+
+    return strtr($message, $replacements);
+  }
+
+  /**
    * Get all display column headers mapping.
    */
   protected function getDisplayColumnHeaders(): array
@@ -340,6 +390,11 @@ class DisplayService
             $message = 'Log entry';
           }
         }
+      }
+
+      // Apply variable substitution if requested.
+      if (!empty($filterOptions['substitute_vars']) && !empty($variables)) {
+        $message = $this->substituteVariables($message, $variables);
       }
 
       // Create grouping key based on type and message.
@@ -1049,6 +1104,11 @@ class DisplayService
             $message = 'Log entry';
           }
         }
+      }
+
+      // Apply variable substitution if requested.
+      if (!empty($filters['substitute_vars']) && !empty($variables)) {
+        $message = $this->substituteVariables($message, $variables);
       }
 
       // Create grouping key based on type and message.

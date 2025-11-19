@@ -239,6 +239,7 @@ abstract class BaseSolarWindsCommand extends Command
       ->addOption('debug', NULL, InputOption::VALUE_NONE, 'Enable debug output')
       ->addOption('json', NULL, InputOption::VALUE_NONE, 'Output results as JSON (suppresses progress and interactive messages)')
       ->addOption('no-group', NULL, InputOption::VALUE_NONE, 'Disable automatic time-based regrouping for single result groups')
+      ->addOption('substitute-vars', NULL, InputOption::VALUE_NONE, 'Substitute variable placeholders in messages (e.g., %name, %choice) with their values')
 
       // Global filter options.
       ->addOption('country-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by country code (e.g., US, GB, FR)')
@@ -463,6 +464,7 @@ abstract class BaseSolarWindsCommand extends Command
       'json' => $input->getOption('json'),
       'no_group' => $input->getOption('no-group'),
       'no_cache' => $input->getOption('no-cache'),
+      'substitute_vars' => $input->getOption('substitute-vars'),
       'country_filter' => $input->getOption('country-filter'),
       'city_filter' => $input->getOption('city-filter'),
       'status_code_filter' => $input->getOption('status-code-filter') ?: $input->getOption('status-code') ?: $input->getOption('code'),
