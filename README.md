@@ -176,7 +176,7 @@ Add aliases to your `~/.solarwinds.yml` file under the `aliases:` section:
 ```yaml
 aliases:
   errors: search "error" --status --1h
-  quickbot: bot --1h --ua
+  quickbot: bot --1h
   404s: status --404 --host --path
   mysite: search --query="{ json.orig_host:example.com }" --host --status
 ```
