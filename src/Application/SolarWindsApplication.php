@@ -102,6 +102,7 @@ namespace SolarWinds\Application;
 
 use Symfony\Component\Console\Application;
 use SolarWinds\Commands\BotCommand;
+use SolarWinds\Commands\DdosCommand;
 use SolarWinds\Commands\SearchCommand;
 use SolarWinds\Commands\StatusCommand;
 use SolarWinds\Commands\AliasCommand;
@@ -121,6 +122,7 @@ class SolarWindsApplication extends Application
     // Register core commands.
     $this->addCommands([
       new BotCommand(),
+      new DdosCommand(),
       new SearchCommand(),
       new StatusCommand(),
     ]);
