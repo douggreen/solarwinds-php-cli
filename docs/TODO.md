@@ -134,6 +134,29 @@ The following commands require new core implementations as they cannot be effect
   - Apply same pattern to ThreatsCommand if needed
   - Parallelize volume analysis IP queries (currently sequential)
   - Implementation options: Guzzle async HTTP, ReactPHP, amphp, or other async solutions
-- **Extended Caching**: More sophisticated cache invalidation strategies
+- **Incremental Cache Updates** (Automatic):
+  - For queries with recent cached data, only fetch the time gap
+  - Example: --1d query with 10-hour-old cache should fetch fresh 10h data
+  - Merge fresh data with cached data (14 hours from cache + 10 hours fresh)
+  - Update cache with combined 24-hour result set
+  - **Threshold for activation:**
+    - Query time range ≥ 1 day (86,400 seconds)
+    - Cache age ≤ 50% of query time range
+    - Skip for short queries (--15m, --30m, --1h) where merge overhead > API savings
+  - **Implementation location:**
+    - CacheService or BaseSolarWindsCommand.searchLogsWithProgress()
+    - Not in individual commands - all commands benefit automatically
+  - **Cache metadata enhancements needed:**
+    - Track original_query_start and original_query_end timestamps
+    - Store time_range_seconds for gap calculations
+    - Keep query string for validation
+  - **Implementation details:**
+    - Deduplicate merged results by log entry ID field
+    - Calculate time gap between cache end time and current query end time
+    - Run incremental query for gap period only
+    - Merge and save combined result set with updated metadata
+  - **Multi-batch handling:**
+    - ExploitsCommand runs 4+ batches - each batch cached independently
+    - Incremental updates apply per-batch, not per-command
 - **Pagination Optimization**: Improved memory usage for large result sets
 - **Parallel Processing**: Concurrent API requests for complex queries
