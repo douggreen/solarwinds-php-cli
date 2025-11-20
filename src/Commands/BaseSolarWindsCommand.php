@@ -1155,6 +1155,12 @@ abstract class BaseSolarWindsCommand extends Command
       return $results;
     }
 
+    // Check if we can use incremental cache update.
+    $incrementalResults = $this->tryIncrementalCacheUpdate($query, $options, $showCacheMessage);
+    if ($incrementalResults !== NULL) {
+      return $incrementalResults;
+    }
+
     // Cache miss - fetch from API with progress bar.
     $progressBar = $this->createSearchProgressBar($options);
     $results = $this->apiService->searchLogs(
@@ -1169,6 +1175,106 @@ abstract class BaseSolarWindsCommand extends Command
     $this->saveResultsToCache($query, $options, $results, 0);
 
     return $results;
+  }
+
+  /**
+   * Try to use incremental cache update.
+   *
+   * @param string $query The search query
+   * @param array $options Query options
+   * @param bool $showCacheMessage Whether to show cache messages
+   * @return array|null Merged results or NULL if incremental not applicable
+   */
+  protected function tryIncrementalCacheUpdate(string $query, array $options, bool $showCacheMessage = TRUE): ?array
+  {
+    // Skip if --no-cache flag is set.
+    if ($options['filters']['no_cache']) {
+      return NULL;
+    }
+
+    // Generate cache key.
+    $scriptName = $this->getName() ?? 'unknown';
+    $timeArg = $options['time']['human_readable'];
+    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+
+    // Calculate time range and convert to ISO 8601.
+    $startTimeRaw = $options['time']['start_time'];
+    $endTimeRaw = $options['time']['end_time'];
+
+    $startTimeTimestamp = strtotime($startTimeRaw);
+    $endTimeTimestamp = strtotime($endTimeRaw);
+    $timeRangeSeconds = $endTimeTimestamp - $startTimeTimestamp;
+
+    $startTime = date('Y-m-d\TH:i:s\Z', $startTimeTimestamp);
+    $endTime = date('Y-m-d\TH:i:s\Z', $endTimeTimestamp);
+
+    // Check if incremental update should be used.
+    if (!$this->cacheService->shouldUseIncrementalUpdate($cacheKey, $startTime, $endTime, $timeRangeSeconds)) {
+      return NULL;
+    }
+
+    // Load cached results.
+    $cachedResults = $this->cacheService->loadFromCache($cacheKey);
+    if ($cachedResults === NULL) {
+      return NULL;
+    }
+
+    // Calculate gap query.
+    $gap = $this->cacheService->calculateGapQuery($cacheKey, $endTime);
+    if ($gap === NULL) {
+      return NULL;
+    }
+
+    // Show debug message.
+    if ($showCacheMessage && !$this->jsonMode) {
+      $metadata = $this->cacheService->loadMetadata($cacheKey);
+      $cacheAge = $this->cacheService->getCacheAge($cacheKey);
+      $gapStart = strtotime($gap['start_time']);
+      $gapEnd = strtotime($gap['end_time']);
+      $gapSeconds = $gapEnd - $gapStart;
+
+      // Format gap duration appropriately.
+      if ($gapSeconds < 60) {
+        $gapDisplay = $gapSeconds . 's';
+      } elseif ($gapSeconds < 3600) {
+        $gapMinutes = round($gapSeconds / 60);
+        $gapDisplay = $gapMinutes . 'm';
+      } else {
+        $gapHours = round($gapSeconds / 3600, 1);
+        $gapDisplay = $gapHours . 'h';
+      }
+
+      $this->io->writeln("<comment>[CACHE] Incremental update: Using cached data ($cacheAge old) + fetching {$gapDisplay} gap</comment>");
+    }
+
+    // Fetch gap data.
+    $progressBar = $this->createSearchProgressBar($options);
+    $freshResults = $this->apiService->searchLogs(
+      $query,
+      $gap['start_time'],
+      $gap['end_time'],
+      $this->getProgressCallback($progressBar, $options)
+    );
+    $this->finishProgressBar($progressBar);
+
+    // Merge and deduplicate.
+    $mergedResults = $this->cacheService->mergeAndDeduplicateResults($cachedResults, $freshResults);
+
+    // Show merge statistics.
+    if ($showCacheMessage && !$this->jsonMode) {
+      $cachedCount = count($cachedResults);
+      $freshCount = count($freshResults);
+      $mergedCount = count($mergedResults);
+      $duplicates = ($cachedCount + $freshCount) - $mergedCount;
+
+      $this->io->writeln("<comment>[CACHE] Merged {$cachedCount} cached + {$freshCount} fresh = {$mergedCount} total ({$duplicates} duplicates removed)</comment>");
+    }
+
+    // Save merged results back to cache with updated time range.
+    $this->saveResultsToCache($query, $options, $mergedResults, 0);
+
+    return $mergedResults;
   }
 
   /**
@@ -1231,7 +1337,31 @@ abstract class BaseSolarWindsCommand extends Command
     $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
     $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
 
-    $this->cacheService->saveToCache($cacheKey, $results, $searchDuration);
+    // Calculate time range in seconds for enhanced metadata.
+    $startTimeRaw = $options['time']['start_time'];
+    $endTimeRaw = $options['time']['end_time'];
+
+    // Convert relative time strings to ISO 8601 timestamps.
+    $startTimeTimestamp = strtotime($startTimeRaw);
+    $endTimeTimestamp = strtotime($endTimeRaw);
+    $timeRangeSeconds = $endTimeTimestamp - $startTimeTimestamp;
+
+    $startTime = date('Y-m-d\TH:i:s\Z', $startTimeTimestamp);
+    $endTime = date('Y-m-d\TH:i:s\Z', $endTimeTimestamp);
+
+    // Generate query hash for validation.
+    $queryHash = md5($query . implode(',', $options['sites']));
+
+    $this->cacheService->saveToCache(
+      $cacheKey,
+      $results,
+      $searchDuration,
+      $startTime,
+      $endTime,
+      $timeRangeSeconds,
+      $queryHash,
+      $scriptName
+    );
   }
 
   /**

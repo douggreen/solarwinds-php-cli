@@ -175,15 +175,98 @@ class CacheService
   }
 
   /**
+   * Load cache metadata.
+   *
+   * @param string $cacheKey Cache key
+   * @return array|null Metadata array or NULL if not available
+   */
+  public function loadMetadata(string $cacheKey): ?array
+  {
+    $metaFile = $this->getCacheMetaFilePath($cacheKey);
+
+    if (!file_exists($metaFile)) {
+      return NULL;
+    }
+
+    $contents = file_get_contents($metaFile);
+    if ($contents === FALSE) {
+      return NULL;
+    }
+
+    // Try to parse as JSON (new format).
+    $metadata = json_decode($contents, TRUE);
+
+    if (json_last_error() === JSON_ERROR_NONE && is_array($metadata)) {
+      // New format - validate required fields.
+      if (isset($metadata['version']) && $metadata['version'] === 2) {
+        return $metadata;
+      }
+    }
+
+    // Legacy format - plain timestamp.
+    if (is_numeric($contents)) {
+      return [
+        'version' => 1,
+        'created_at' => (int) $contents,
+        'query_start_time' => NULL,
+        'query_end_time' => NULL,
+        'time_range_seconds' => NULL,
+        'query_hash' => NULL,
+        'script_name' => NULL,
+      ];
+    }
+
+    // Corrupted or invalid metadata.
+    return NULL;
+  }
+
+  /**
+   * Save cache metadata.
+   *
+   * @param string $cacheKey Cache key
+   * @param array $metadata Metadata to save
+   * @return bool TRUE on success, FALSE on failure
+   */
+  public function saveMetadata(string $cacheKey, array $metadata): bool
+  {
+    $metaFile = $this->getCacheMetaFilePath($cacheKey);
+
+    $jsonData = json_encode($metadata, JSON_PRETTY_PRINT);
+    if (file_put_contents($metaFile, $jsonData) === FALSE) {
+      return FALSE;
+    }
+
+    return TRUE;
+  }
+
+  /**
    * Save results to cache.
    *
    * Note: Caching decision is made by caller based on:.
    * - Query duration >= 5 seconds
    * - Time range >= 1 hour
    * - --cached flag used
+   *
+   * @param string $cacheKey Cache key
+   * @param array $results Results to cache
+   * @param int $queryDurationSeconds Query duration
+   * @param string|null $queryStartTime Query start time (ISO 8601)
+   * @param string|null $queryEndTime Query end time (ISO 8601)
+   * @param int|null $timeRangeSeconds Time range in seconds
+   * @param string|null $queryHash Hash of query parameters
+   * @param string|null $scriptName Script name
+   * @return bool TRUE on success, FALSE on failure
    */
-  public function saveToCache(string $cacheKey, array $results, int $queryDurationSeconds): bool
-  {
+  public function saveToCache(
+    string $cacheKey,
+    array $results,
+    int $queryDurationSeconds,
+    ?string $queryStartTime = NULL,
+    ?string $queryEndTime = NULL,
+    ?int $timeRangeSeconds = NULL,
+    ?string $queryHash = NULL,
+    ?string $scriptName = NULL
+  ): bool {
     $cacheFile = $this->getCacheFilePath($cacheKey);
     $cacheMetaFile = $this->getCacheMetaFilePath($cacheKey);
 
@@ -193,12 +276,113 @@ class CacheService
       return FALSE;
     }
 
-    // Save timestamp metadata.
-    if (file_put_contents($cacheMetaFile, (string) time()) === FALSE) {
-      return FALSE;
+    // Build metadata.
+    if ($queryStartTime !== NULL && $queryEndTime !== NULL) {
+      // New format with enhanced metadata.
+      $metadata = [
+        'version' => 2,
+        'created_at' => time(),
+        'query_start_time' => $queryStartTime,
+        'query_end_time' => $queryEndTime,
+        'time_range_seconds' => $timeRangeSeconds,
+        'query_hash' => $queryHash,
+        'script_name' => $scriptName,
+      ];
+
+      return $this->saveMetadata($cacheKey, $metadata);
+    }
+    else {
+      // Legacy format - plain timestamp for backwards compatibility.
+      if (file_put_contents($cacheMetaFile, (string) time()) === FALSE) {
+        return FALSE;
+      }
     }
 
     return TRUE;
+  }
+
+  /**
+   * Check if incremental cache update should be used.
+   *
+   * @param string $cacheKey Cache key
+   * @param string $queryStartTime Current query start time (ISO 8601)
+   * @param string $queryEndTime Current query end time (ISO 8601)
+   * @param int $timeRangeSeconds Current query time range in seconds
+   * @return bool TRUE if incremental update should be used
+   */
+  public function shouldUseIncrementalUpdate(
+    string $cacheKey,
+    string $queryStartTime,
+    string $queryEndTime,
+    int $timeRangeSeconds
+  ): bool {
+    // Minimum time range for incremental updates (1 day).
+    if ($timeRangeSeconds < 86400) {
+      return FALSE;
+    }
+
+    // Load cache metadata.
+    $metadata = $this->loadMetadata($cacheKey);
+    if ($metadata === NULL || $metadata['version'] !== 2) {
+      // No cache or legacy format - can't do incremental.
+      return FALSE;
+    }
+
+    // Check if cache has time range information.
+    if ($metadata['query_start_time'] === NULL || $metadata['query_end_time'] === NULL) {
+      return FALSE;
+    }
+
+    // Calculate cache age.
+    $cacheAge = time() - $metadata['created_at'];
+    $maxAge = (int) ($timeRangeSeconds * 0.5); // 50% threshold
+
+    if ($cacheAge > $maxAge) {
+      // Cache too old - do full refresh.
+      return FALSE;
+    }
+
+    // Check if cached query end time is within current query range.
+    $cachedEndTimestamp = strtotime($metadata['query_end_time']);
+    $currentStartTimestamp = strtotime($queryStartTime);
+    $currentEndTimestamp = strtotime($queryEndTime);
+
+    if ($cachedEndTimestamp === FALSE || $currentStartTimestamp === FALSE || $currentEndTimestamp === FALSE) {
+      // Invalid timestamps.
+      return FALSE;
+    }
+
+    // Cached end must be before current end and after/equal to current start.
+    if ($cachedEndTimestamp < $currentEndTimestamp && $cachedEndTimestamp >= $currentStartTimestamp) {
+      return TRUE;
+    }
+
+    return FALSE;
+  }
+
+  /**
+   * Calculate gap query time range for incremental update.
+   *
+   * @param string $cacheKey Cache key
+   * @param string $queryEndTime Current query end time (ISO 8601)
+   * @return array|null Array with 'start_time' and 'end_time' for gap query, or NULL if not applicable
+   */
+  public function calculateGapQuery(string $cacheKey, string $queryEndTime): ?array
+  {
+    $metadata = $this->loadMetadata($cacheKey);
+    if ($metadata === NULL || $metadata['version'] !== 2) {
+      return NULL;
+    }
+
+    if ($metadata['query_end_time'] === NULL) {
+      return NULL;
+    }
+
+    // Gap is from cached end to current end.
+    return [
+      'start_time' => $metadata['query_end_time'],
+      'end_time' => $queryEndTime,
+    ];
   }
 
   /**
@@ -242,6 +426,40 @@ class CacheService
   }
 
   /**
+   * Merge and deduplicate cached and fresh results.
+   *
+   * @param array $cachedResults Results from cache
+   * @param array $freshResults Fresh results from API
+   * @return array Merged and deduplicated results
+   */
+  public function mergeAndDeduplicateResults(array $cachedResults, array $freshResults): array
+  {
+    $merged = [];
+    $seenIds = [];
+
+    // Process all results (cached + fresh)
+    foreach (array_merge($cachedResults, $freshResults) as $entry) {
+      $id = $entry['id'] ?? NULL;
+
+      if ($id === NULL) {
+        // No ID - include anyway (can't deduplicate)
+        $merged[] = $entry;
+        continue;
+      }
+
+      if (isset($seenIds[$id])) {
+        // Duplicate - skip (keeps first occurrence)
+        continue;
+      }
+
+      $seenIds[$id] = TRUE;
+      $merged[] = $entry;
+    }
+
+    return $merged;
+  }
+
+  /**
    * Calculate time range in seconds for cache staleness detection.
    */
   protected function getTimeRangeSeconds(string $timeArg): int
@@ -257,15 +475,20 @@ class CacheService
    */
   public function getCacheAge(string $cacheKey): ?string
   {
-    $cacheMetaFile = $this->getCacheMetaFilePath($cacheKey);
+    $metadata = $this->loadMetadata($cacheKey);
 
-    if (!file_exists($cacheMetaFile)) {
+    if ($metadata === NULL) {
       return NULL;
     }
 
-    $cacheTime = (int) file_get_contents($cacheMetaFile);
+    $cacheTime = $metadata['created_at'];
     $currentTime = time();
     $ageSeconds = $currentTime - $cacheTime;
+
+    // Handle negative age (clock skew or manual timestamp editing).
+    if ($ageSeconds < 0) {
+      return '0 seconds';
+    }
 
     // Format age in human-readable format.
     if ($ageSeconds < 60) {
