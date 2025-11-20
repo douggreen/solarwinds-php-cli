@@ -1126,6 +1126,30 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
+   * Execute searchLogs with automatic progress bar handling.
+   *
+   * This is a convenience wrapper that eliminates boilerplate by automatically
+   * creating a progress bar, passing the callback, and finishing the progress bar.
+   *
+   * @param string $query The search query
+   * @param array $options Query options containing time range
+   * @return array Array of log entries
+   */
+  protected function searchLogsWithProgress(string $query, array $options): array
+  {
+    $progressBar = $this->createSearchProgressBar($options);
+    $results = $this->apiService->searchLogs(
+      $query,
+      $options['time']['start_time'],
+      $options['time']['end_time'],
+      $this->getProgressCallback($progressBar, $options)
+    );
+    $this->finishProgressBar($progressBar);
+
+    return $results;
+  }
+
+  /**
    * Try to load results from cache.
    *
    * @param string $query The search query

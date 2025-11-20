@@ -357,17 +357,8 @@ class ThreatsCommand extends BaseSolarWindsCommand
         $this->io->text("Query: $query");
       }
 
-      // Create progress bar and fetch results.
-      $progressBar = $this->createSearchProgressBar($options);
-
-      $results = $this->apiService->searchLogs(
-        $query,
-        $options['time']['start_time'],
-        $options['time']['end_time'],
-        $this->getProgressCallback($progressBar, $options)
-      );
-
-      $this->finishProgressBar($progressBar);
+      // Fetch results with automatic progress bar handling.
+      $results = $this->searchLogsWithProgress($query, $options);
 
       // Save to cache (multi-dimensional searches always cache).
       $this->saveResultsToCache($query, $options, $results, 0);
