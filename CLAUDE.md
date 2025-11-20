@@ -6,27 +6,39 @@
 
 ## CORE PRINCIPLES (Always Applicable)
 
-### **:red_circle: PERMISSION-BASED WORKFLOW**
-1. **Ask permission before implementing solutions** - Present plan and get explicit approval
-2. **Never mark tasks as complete** - Present work for review rather than declaring completion
+### **:red_circle: CRITICAL WORKFLOW CONSTRAINTS** (Most Important - Repeatedly Violated)
 
-### **:red_circle: FILE MANAGEMENT PRINCIPLES**
-3. **Clean trailing whitespace** - Run `sed -i 's/ *$//' filename` on ALL PHP files
+1. **MANDATORY GIT COMMIT WORKFLOW** - This constraint has been repeatedly violated. Follow this exact sequence:
+   - After completing ANY implementation, explicitly state: "Implementation complete. Would you like me to commit this?"
+   - WAIT for explicit user response
+   - Only run `git commit` after receiving explicit permission (e.g., "yes", "commit it", "ok commit")
+   - NEVER commit as part of task completion
+   - NEVER assume permission based on task completion
+   - If you commit without permission, this is a critical violation
+
+2. **Ask permission before implementing solutions** - Present plan and get explicit approval
+
+3. **Never mark tasks as complete** - Present work for review rather than declaring completion
+
+4. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints. If you violate the same constraint multiple times, stop and acknowledge the pattern.
+
+### **:red_circle: CODE QUALITY PRINCIPLES**
+
+5. **Clean trailing whitespace** - Run `sed -i 's/ *$//' filename` on ALL PHP files
+
+6. **Use existing debugging tools** - Check for --debug options before adding custom debug code
+
+7. **Read error messages completely** - Don't skim; read full output including suggestions and context
 
 ### **:red_circle: DOCUMENTATION STYLE PRINCIPLES**
-4. **Always use text-based emoticon notation** - All project documentation should use text-based emoticon notation (`:name:` format) rather than Unicode emoji characters. This ensures consistency and readability across all platforms. Examples:
+
+8. **Always use text-based emoticon notation** - All project documentation should use text-based emoticon notation (`:name:` format) rather than Unicode emoji characters. This ensures consistency and readability across all platforms. Examples:
    - Use `:white_check_mark:` not ✅
    - Use `:x:` not ❌
    - Use `:arrow_right:` not →
    - Use `:red_circle:` not 🔴
    - NEVER convert between formats in either direction
    - This applies to ALL documentation files (CLAUDE.md, CASE_STUDY.md, CONTRIBUTING.md, README.md, TODO.md, etc.)
-
-### **:red_circle: CORE BEHAVIORAL CONSTRAINTS**
-5. **Use existing debugging tools** - Check for --debug options before adding custom debug code
-6. **Read error messages completely** - Don't skim; read full output including suggestions and context
-7. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints
-8. **NEVER commit without explicit permission** - Always ask before running git commit, even when work appears complete
 
 ## SITUATIONAL PATTERNS (Specific Contexts)
 
