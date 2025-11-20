@@ -29,29 +29,21 @@ The following commands require new core implementations as they cannot be effect
 - **Validation**: IP argument is required
 - **Example Usage**: `pagebyip --1h 192.168.1.100`, `pagebyip --day '10.1.1.1,10.1.1.2'`
 
-### **3. pentest (PentestCommand)**
-- **Purpose**: Security penetration testing activity analysis
-- **Query Pattern**: `{ json.req_uri:admin } OR { json.req_uri:phpmyadmin } OR { json.req_uri:wp-admin } OR { json.req_uri:wp-login } OR { json.req_uri:xmlrpc } OR { json.req_uri:eval } OR { json.req_uri:union } OR { json.req_uri:select } OR { json.req_uri:script } OR { json.req_uri:alert }`
-- **Filtering**: Excludes '/news', '/tags', '%20Union%20City%20' patterns (false positives)
-- **Default Display**: Custom format with count, host, path columns
-- **Country Mode**: `--country` flag for geographic analysis
-- **Example Usage**: `pentest --day`, `pentest --1h --country`
-
-### **4. pingdom (PingdomCommand)**
+### **3. pingdom (PingdomCommand)**
 - **Purpose**: Pingdom monitoring service error analysis
 - **Query Pattern**: `json.req_user_agent:pingdom AND -json.resp_status:200 AND -json.resp_status:301 AND -json.resp_status:304`
 - **Focus**: Non-successful responses from Pingdom monitoring
 - **Default Display**: Custom format with host,status,uri,timestamp
 - **Example Usage**: `pingdom --day`, `pingdom --1h --status`
 
-### **5. importer (ImporterCommand)**
+### **4. importer (ImporterCommand)**
 - **Purpose**: Content import activity analysis
 - **Query Pattern**: `{ json.type:mtc_importer } { json.severity:Info }`
 - **Default Display**: ips-only format (IP address analysis)
 - **Default Time**: 1 day
 - **Example Usage**: `importer --1h`, `importer --day --status`
 
-### **6. antibot (AntibotCommand)**
+### **5. antibot (AntibotCommand)**
 - **Purpose**: Anti-bot measure effectiveness analysis
 - **Query Pattern**: `{ json.resp_status:429 } OR { json.resp_status:503 }`
 - **Focus**: Rate limiting and bot blocking responses
@@ -65,11 +57,11 @@ The following commands require new core implementations as they cannot be effect
 - Follow established patterns closely
 - Standard query building and validation
 
-**Phase 2 (Medium):** pagebyip, pentest, pingdom
+**Phase 2 (Medium):** pagebyip, pingdom
 - Require custom output formatting
 - More complex query logic
 
-**Note:** php-error was implemented via the `--drupal` display flag and aliases rather than as a separate command.
+**Note:** php-error was implemented via the `--drupal` display flag and aliases rather than as a separate command. pentest was replaced by the xss, sql-injection, and pentest aliases, and superseded by the comprehensive exploits command.
 
 ## ExploitsCommand Enhancements
 
