@@ -71,6 +71,37 @@ The following commands require new core implementations as they cannot be effect
 
 **Note:** php-error was implemented via the `--drupal` display flag and aliases rather than as a separate command.
 
+## ExploitsCommand Enhancements
+
+### Add functionality from ThreatsCommand
+
+1. **Add DDoS Detection (`detectDDoSPatterns()`)**
+   - Detect coordinated exploit campaigns
+   - Group by host + target path + time window (1-minute windows)
+   - Look for 10+ coordinating IPs attacking same target
+   - Detect 1000+ requests in window at 100+ requests/second
+   - Would help identify distributed exploit campaigns vs single-source attacks
+
+2. **Add Advanced Threat Classification (`classifyThreatType()`)**
+   - More sophisticated classification than current `classifyIpBehavior()`
+   - Uses URI duplication ratio to detect "Exploit Probing" (same request repeated)
+   - Uses parameter scanning ratio to detect "Parameter Scanner" (same path, varying params)
+   - Uses POST ratio analysis to detect "Brute-force Attack"
+   - Uses request rate thresholds to detect "Load Attack", "DoS Attack", "Aggressive Bot"
+   - Provides more specific threat types:
+     - Exploit Probing
+     - Parameter Scanner
+     - Load Attack
+     - Brute-force Attack
+     - High-Rate Crawler
+     - Web Scraper / Crawler
+     - DoS Attack (High Rate)
+     - Aggressive Crawler
+     - Targeted Endpoint Attack
+     - Vulnerability Scanner
+     - Aggressive Bot
+     - High-Volume Traffic
+
 ## Code Quality Improvements
 
 ### High Priority Tasks
@@ -105,6 +136,12 @@ The following commands require new core implementations as they cannot be effect
 - **API Integration**: REST API for programmatic access
 
 ### Performance Optimizations
+- **Parallel Batch Queries with Multi-Threading**:
+  - Run the 4 exploit batches in parallel instead of sequentially
+  - Speed up 2-week queries (currently taking minutes)
+  - Apply same pattern to ThreatsCommand if needed
+  - Parallelize volume analysis IP queries (currently sequential)
+  - Implementation options: Guzzle async HTTP, ReactPHP, amphp, or other async solutions
 - **Extended Caching**: More sophisticated cache invalidation strategies
 - **Pagination Optimization**: Improved memory usage for large result sets
 - **Parallel Processing**: Concurrent API requests for complex queries

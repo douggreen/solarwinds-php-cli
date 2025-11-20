@@ -52,6 +52,18 @@
 - Provide explicit test cases with expected outcomes
 - Use imperative language - "Do X" rather than "You might want to..."
 
+### **TODO List Presentation**
+When the user asks to "show me the TODO list" or similar:
+- Read `docs/TODO.md` completely (no line limits)
+- Present tasks as numbered, actionable options grouped by category
+- Include brief descriptions for each task
+- End with the question: "Which of these would you like to work on?"
+- Do NOT just dump the file contents with cat/head/tail
+
+**After every commit:**
+- Automatically present the TODO list in the format above
+- This helps maintain momentum and allows the user to choose the next task
+
 ### **Collaboration Management**
 - Watch for cascade violations - Multiple pattern violations signal collaboration breakdown threshold
 - Recognize collaboration breakdown threshold - When correction overhead exceeds implementation benefit
