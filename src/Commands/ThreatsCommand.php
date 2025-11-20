@@ -344,29 +344,14 @@ class ThreatsCommand extends BaseSolarWindsCommand
     $searchTerm = $this->extractSearchTerm($options);
     $debugMode = $options['filters']['debug'] || $this->config->isDebugEnabled();
 
-    // Try to load from cache first.
-    $cacheUsed = FALSE;
-    $cacheAge = NULL;
-    $results = $this->tryLoadFromCache($query, $options, $cacheUsed, $cacheAge);
-
-    // If no cache, fetch from API.
-    if ($results === NULL) {
-      if (!$this->jsonMode) {
-        $this->io->section('Searching SolarWinds Logs');
-        $this->io->text("Time range: {$options['time']['human_readable']}");
-        $this->io->text("Query: $query");
-      }
-
-      // Fetch results with automatic progress bar handling.
-      $results = $this->searchLogsWithProgress($query, $options);
-
-      // Save to cache (multi-dimensional searches always cache).
-      $this->saveResultsToCache($query, $options, $results, 0);
+    if (!$this->jsonMode) {
+      $this->io->section('Searching SolarWinds Logs');
+      $this->io->text("Time range: {$options['time']['human_readable']}");
+      $this->io->text("Query: $query");
     }
-    elseif (!$this->jsonMode) {
-      $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";
-      $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
-    }
+
+    // Fetch results with automatic caching and progress bar handling.
+    $results = $this->searchLogsWithProgress($query, $options);
 
     // Apply client-side filters.
     $originalCount = count($results);

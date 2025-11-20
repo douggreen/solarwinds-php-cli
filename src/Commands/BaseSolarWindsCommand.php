@@ -1126,17 +1126,36 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Execute searchLogs with automatic progress bar handling.
+   * Execute searchLogs with automatic progress bar and cache handling.
    *
-   * This is a convenience wrapper that eliminates boilerplate by automatically
-   * creating a progress bar, passing the callback, and finishing the progress bar.
+   * This is a convenience wrapper that eliminates boilerplate by automatically:
+   * 1. Checking cache for existing results
+   * 2. Creating progress bar and fetching from API if cache miss
+   * 3. Saving results to cache
+   * 4. Displaying cache usage message when appropriate
    *
    * @param string $query The search query
    * @param array $options Query options containing time range
+   * @param bool $showCacheMessage Whether to show cache hit message (default: TRUE)
    * @return array Array of log entries
    */
-  protected function searchLogsWithProgress(string $query, array $options): array
+  protected function searchLogsWithProgress(string $query, array $options, bool $showCacheMessage = TRUE): array
   {
+    // Try to load from cache first.
+    $cacheUsed = FALSE;
+    $cacheAge = NULL;
+    $results = $this->tryLoadFromCache($query, $options, $cacheUsed, $cacheAge);
+
+    // If cache hit, show message and return.
+    if ($results !== NULL) {
+      if ($showCacheMessage && !$this->jsonMode) {
+        $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";
+        $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
+      }
+      return $results;
+    }
+
+    // Cache miss - fetch from API with progress bar.
     $progressBar = $this->createSearchProgressBar($options);
     $results = $this->apiService->searchLogs(
       $query,
@@ -1145,6 +1164,9 @@ abstract class BaseSolarWindsCommand extends Command
       $this->getProgressCallback($progressBar, $options)
     );
     $this->finishProgressBar($progressBar);
+
+    // Save to cache.
+    $this->saveResultsToCache($query, $options, $results, 0);
 
     return $results;
   }
