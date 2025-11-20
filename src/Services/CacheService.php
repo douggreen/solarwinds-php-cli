@@ -108,14 +108,15 @@ class CacheService
   /**
    * Generate a cache key.
    *
-   * Note: Time args are intentionally excluded to allow cache reuse across
-   * different time ranges (e.g., --1d cache can be reused for --2d queries).
+   * Note: Both time args and script name are intentionally excluded to allow:
+   * - Cache reuse across different time ranges (e.g., --1d cache for --2d queries)
+   * - Cache reuse across different commands (e.g., exploits cache for search command)
    * The cache metadata tracks the actual time range stored.
    */
   public function generateCacheKey(string $scriptName, string $query, string $siteArgs = ''): string
   {
-    // Combine all parameters for hashing (time args excluded for cross-timeframe reuse).
-    $cacheInput = "{$scriptName}:{$query}:{$siteArgs}";
+    // Combine only query + sites for hashing (script name and time args excluded).
+    $cacheInput = "{$query}:{$siteArgs}";
     return md5($cacheInput);
   }
 
