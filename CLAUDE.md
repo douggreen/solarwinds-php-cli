@@ -26,6 +26,7 @@
 5. **Use existing debugging tools** - Check for --debug options before adding custom debug code
 6. **Read error messages completely** - Don't skim; read full output including suggestions and context
 7. **Stop if violating core principles repeatedly** - AI momentum can override documented constraints
+8. **NEVER commit without explicit permission** - Always ask before running git commit, even when work appears complete
 
 ## SITUATIONAL PATTERNS (Specific Contexts)
 
