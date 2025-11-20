@@ -85,8 +85,7 @@ function simulateQuery(
     echo "--- Run #{$runNumber}: Query from {$startTime} to {$endTime} ---\n";
 
     $scriptName = 'test-command';
-    $timeArg = '--1d';
-    $cacheKey = $cache->generateCacheKey($scriptName, $query, $timeArg, '');
+    $cacheKey = $cache->generateCacheKey($scriptName, $query, '');
 
     $timeRangeSeconds = strtotime($endTime) - strtotime($startTime);
 
@@ -98,12 +97,19 @@ function simulateQuery(
 
       // Load cached results
       $cachedResults = $cache->loadFromCache($cacheKey);
-      $gap = $cache->calculateGapQuery($cacheKey, $endTime);
+      $gaps = $cache->calculateGapQueries($cacheKey, $startTime, $endTime);
 
-      echo "[CACHE] Fetching gap: {$gap['start_time']} to {$gap['end_time']}\n";
-
-      // Fetch gap
-      $freshResults = $api->searchLogs($query, $gap['start_time'], $gap['end_time']);
+      $freshResults = [];
+    if ($gaps['before'] !== NULL) {
+        echo "[CACHE] Fetching before gap: {$gaps['before']['start_time']} to {$gaps['before']['end_time']}\n";
+        $beforeResults = $api->searchLogs($query, $gaps['before']['start_time'], $gaps['before']['end_time']);
+        $freshResults = array_merge($freshResults, $beforeResults);
+    }
+    if ($gaps['after'] !== NULL) {
+        echo "[CACHE] Fetching after gap: {$gaps['after']['start_time']} to {$gaps['after']['end_time']}\n";
+        $afterResults = $api->searchLogs($query, $gaps['after']['start_time'], $gaps['after']['end_time']);
+        $freshResults = array_merge($freshResults, $afterResults);
+    }
 
       // Merge
       $results = $cache->mergeAndDeduplicateResults($cachedResults, $freshResults);
@@ -173,7 +179,7 @@ $mockApi->resetCallCount();
 echo "=== TEST 2: Query 10 Hours Later (Incremental Update) ===\n";
 
 // Manually adjust cache timestamp to simulate 10 hours ago
-$cacheKey = $cacheService->generateCacheKey('test-command', 'test query', '--1d', '');
+$cacheKey = $cacheService->generateCacheKey('test-command', 'test query', '');
 $metadata = $cacheService->loadMetadata($cacheKey);
 $tenHoursAgo = $now - (10 * 3600);
 $metadata['created_at'] = $tenHoursAgo;

@@ -107,11 +107,15 @@ class CacheService
 
   /**
    * Generate a cache key.
+   *
+   * Note: Time args are intentionally excluded to allow cache reuse across
+   * different time ranges (e.g., --1d cache can be reused for --2d queries).
+   * The cache metadata tracks the actual time range stored.
    */
-  public function generateCacheKey(string $scriptName, string $query, string $timeArgs, string $siteArgs = ''): string
+  public function generateCacheKey(string $scriptName, string $query, string $siteArgs = ''): string
   {
-    // Combine all parameters for hashing (matches original logic).
-    $cacheInput = "{$scriptName}:{$query}:{$timeArgs}:{$siteArgs}";
+    // Combine all parameters for hashing (time args excluded for cross-timeframe reuse).
+    $cacheInput = "{$scriptName}:{$query}:{$siteArgs}";
     return md5($cacheInput);
   }
 
@@ -333,27 +337,44 @@ class CacheService
       return FALSE;
     }
 
-    // Calculate cache age.
-    $cacheAge = time() - $metadata['created_at'];
-    $maxAge = (int) ($timeRangeSeconds * 0.5); // 50% threshold
-
-    if ($cacheAge > $maxAge) {
-      // Cache too old - do full refresh.
-      return FALSE;
-    }
-
-    // Check if cached query end time is within current query range.
+    // Parse all timestamps.
+    $cachedStartTimestamp = strtotime($metadata['query_start_time']);
     $cachedEndTimestamp = strtotime($metadata['query_end_time']);
     $currentStartTimestamp = strtotime($queryStartTime);
     $currentEndTimestamp = strtotime($queryEndTime);
 
-    if ($cachedEndTimestamp === FALSE || $currentStartTimestamp === FALSE || $currentEndTimestamp === FALSE) {
+    if ($cachedStartTimestamp === FALSE || $cachedEndTimestamp === FALSE ||
+        $currentStartTimestamp === FALSE || $currentEndTimestamp === FALSE) {
       // Invalid timestamps.
       return FALSE;
     }
 
-    // Cached end must be before current end and after/equal to current start.
-    if ($cachedEndTimestamp < $currentEndTimestamp && $cachedEndTimestamp >= $currentStartTimestamp) {
+    // Check for overlap: two ranges overlap if one doesn't end before the other starts.
+    $hasOverlap = !($cachedEndTimestamp <= $currentStartTimestamp || $cachedStartTimestamp >= $currentEndTimestamp);
+
+    if (!$hasOverlap) {
+      // No overlap - cache is useless for this query.
+      return FALSE;
+    }
+
+    // Calculate what percentage of the requested range is already cached.
+    $cachedDuration = $cachedEndTimestamp - $cachedStartTimestamp;
+    $overlapStart = max($cachedStartTimestamp, $currentStartTimestamp);
+    $overlapEnd = min($cachedEndTimestamp, $currentEndTimestamp);
+    $overlapDuration = max(0, $overlapEnd - $overlapStart);
+    $cacheOverlapPercentage = ($overlapDuration / $timeRangeSeconds) * 100;
+
+    // Use incremental update if ≥50% of requested data is already cached.
+    if ($cacheOverlapPercentage >= 50) {
+      return TRUE;
+    }
+
+    // Calculate cache age to decide if it's worth using even with <50% overlap.
+    $cacheAge = time() - $metadata['created_at'];
+    $maxAge = (int) ($timeRangeSeconds * 0.5); // 50% of query range
+
+    // If cache is fresh (< 50% of query range old) and has ANY overlap, use it.
+    if ($cacheAge <= $maxAge && $hasOverlap) {
       return TRUE;
     }
 
@@ -361,28 +382,49 @@ class CacheService
   }
 
   /**
-   * Calculate gap query time range for incremental update.
+   * Calculate gap queries for incremental update.
+   *
+   * Returns up to two gaps: one before the cached range (if needed) and one after (if needed).
    *
    * @param string $cacheKey Cache key
+   * @param string $queryStartTime Current query start time (ISO 8601)
    * @param string $queryEndTime Current query end time (ISO 8601)
-   * @return array|null Array with 'start_time' and 'end_time' for gap query, or NULL if not applicable
+   * @return array Array with 'before' and 'after' gaps (each may be NULL if not needed)
    */
-  public function calculateGapQuery(string $cacheKey, string $queryEndTime): ?array
+  public function calculateGapQueries(string $cacheKey, string $queryStartTime, string $queryEndTime): array
   {
     $metadata = $this->loadMetadata($cacheKey);
     if ($metadata === NULL || $metadata['version'] !== 2) {
-      return NULL;
+      return ['before' => NULL, 'after' => NULL];
     }
 
-    if ($metadata['query_end_time'] === NULL) {
-      return NULL;
+    if ($metadata['query_start_time'] === NULL || $metadata['query_end_time'] === NULL) {
+      return ['before' => NULL, 'after' => NULL];
     }
 
-    // Gap is from cached end to current end.
-    return [
-      'start_time' => $metadata['query_end_time'],
-      'end_time' => $queryEndTime,
-    ];
+    $cachedStart = $metadata['query_start_time'];
+    $cachedEnd = $metadata['query_end_time'];
+
+    $gapBefore = NULL;
+    $gapAfter = NULL;
+
+    // Check if we need data before the cached range.
+    if (strtotime($queryStartTime) < strtotime($cachedStart)) {
+      $gapBefore = [
+        'start_time' => $queryStartTime,
+        'end_time' => $cachedStart,
+      ];
+    }
+
+    // Check if we need data after the cached range.
+    if (strtotime($queryEndTime) > strtotime($cachedEnd)) {
+      $gapAfter = [
+        'start_time' => $cachedEnd,
+        'end_time' => $queryEndTime,
+      ];
+    }
+
+    return ['before' => $gapBefore, 'after' => $gapAfter];
   }
 
   /**

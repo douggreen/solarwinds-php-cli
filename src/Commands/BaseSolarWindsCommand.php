@@ -723,11 +723,10 @@ abstract class BaseSolarWindsCommand extends Command
     $debugMode = $options['filters']['debug'] || $this->config->isDebugEnabled();
     $progressMode = $this->config->isProgressEnabled();
 
-    // Generate cache key for this query.
+    // Generate cache key for this query (time-arg agnostic for cross-timeframe reuse).
     $scriptName = $this->getName() ?? 'unknown';
-    $timeArg = $options['time']['human_readable'];
     $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
 
     if ($debugMode) {
       $this->debugOutput('');
@@ -1192,11 +1191,10 @@ abstract class BaseSolarWindsCommand extends Command
       return NULL;
     }
 
-    // Generate cache key.
+    // Generate cache key (time-arg agnostic for cross-timeframe reuse).
     $scriptName = $this->getName() ?? 'unknown';
-    $timeArg = $options['time']['human_readable'];
     $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
 
     // Calculate time range and convert to ISO 8601.
     $startTimeRaw = $options['time']['start_time'];
@@ -1220,51 +1218,83 @@ abstract class BaseSolarWindsCommand extends Command
       return NULL;
     }
 
-    // Calculate gap query.
-    $gap = $this->cacheService->calculateGapQuery($cacheKey, $endTime);
-    if ($gap === NULL) {
-      return NULL;
+    // Calculate gap queries (before and after cached range).
+    $gaps = $this->cacheService->calculateGapQueries($cacheKey, $startTime, $endTime);
+    if ($gaps['before'] === NULL && $gaps['after'] === NULL) {
+      // No gaps to fetch - cached range fully covers query.
+      return $cachedResults;
+    }
+
+    // Fetch gap data.
+    $gapResults = [];
+    $totalGapSeconds = 0;
+
+    if ($gaps['before'] !== NULL) {
+      $gapStart = strtotime($gaps['before']['start_time']);
+      $gapEnd = strtotime($gaps['before']['end_time']);
+      $totalGapSeconds += ($gapEnd - $gapStart);
+
+      $progressBar = $this->createSearchProgressBar($options);
+      $beforeResults = $this->apiService->searchLogs(
+        $query,
+        $gaps['before']['start_time'],
+        $gaps['before']['end_time'],
+        $this->getProgressCallback($progressBar, $options)
+      );
+      $this->finishProgressBar($progressBar);
+      $gapResults = array_merge($gapResults, $beforeResults);
+    }
+
+    if ($gaps['after'] !== NULL) {
+      $gapStart = strtotime($gaps['after']['start_time']);
+      $gapEnd = strtotime($gaps['after']['end_time']);
+      $totalGapSeconds += ($gapEnd - $gapStart);
+
+      $progressBar = $this->createSearchProgressBar($options);
+      $afterResults = $this->apiService->searchLogs(
+        $query,
+        $gaps['after']['start_time'],
+        $gaps['after']['end_time'],
+        $this->getProgressCallback($progressBar, $options)
+      );
+      $this->finishProgressBar($progressBar);
+      $gapResults = array_merge($gapResults, $afterResults);
     }
 
     // Show debug message.
     if ($showCacheMessage && !$this->jsonMode) {
-      $metadata = $this->cacheService->loadMetadata($cacheKey);
       $cacheAge = $this->cacheService->getCacheAge($cacheKey);
-      $gapStart = strtotime($gap['start_time']);
-      $gapEnd = strtotime($gap['end_time']);
-      $gapSeconds = $gapEnd - $gapStart;
 
       // Format gap duration appropriately.
-      if ($gapSeconds < 60) {
-        $gapDisplay = $gapSeconds . 's';
-      } elseif ($gapSeconds < 3600) {
-        $gapMinutes = round($gapSeconds / 60);
+      if ($totalGapSeconds < 60) {
+        $gapDisplay = $totalGapSeconds . 's';
+      } elseif ($totalGapSeconds < 3600) {
+        $gapMinutes = round($totalGapSeconds / 60);
         $gapDisplay = $gapMinutes . 'm';
       } else {
-        $gapHours = round($gapSeconds / 3600, 1);
+        $gapHours = round($totalGapSeconds / 3600, 1);
         $gapDisplay = $gapHours . 'h';
       }
 
-      $this->io->writeln("<comment>[CACHE] Incremental update: Using cached data ($cacheAge old) + fetching {$gapDisplay} gap</comment>");
+      $gapDesc = [];
+      if ($gaps['before'] !== NULL) {
+        $gapDesc[] = 'older data';
+      }
+      if ($gaps['after'] !== NULL) {
+        $gapDesc[] = 'recent data';
+      }
+      $gapDescStr = implode(' + ', $gapDesc);
+
+      $this->io->writeln("<comment>[CACHE] Incremental update: Using cached data ($cacheAge old) + fetching {$gapDisplay} gap ({$gapDescStr})</comment>");
     }
 
-    // Fetch gap data.
-    $progressBar = $this->createSearchProgressBar($options);
-    $freshResults = $this->apiService->searchLogs(
-      $query,
-      $gap['start_time'],
-      $gap['end_time'],
-      $this->getProgressCallback($progressBar, $options)
-    );
-    $this->finishProgressBar($progressBar);
-
-    // Merge and deduplicate.
-    $mergedResults = $this->cacheService->mergeAndDeduplicateResults($cachedResults, $freshResults);
+    // Merge and deduplicate (order matters: before + cached + after).
+    $mergedResults = $this->cacheService->mergeAndDeduplicateResults($cachedResults, $gapResults);
 
     // Show merge statistics.
     if ($showCacheMessage && !$this->jsonMode) {
       $cachedCount = count($cachedResults);
-      $freshCount = count($freshResults);
+      $freshCount = count($gapResults);
       $mergedCount = count($mergedResults);
       $duplicates = ($cachedCount + $freshCount) - $mergedCount;
 
@@ -1293,11 +1323,10 @@ abstract class BaseSolarWindsCommand extends Command
       return NULL;
     }
 
-    // Generate cache key.
+    // Generate cache key (time-arg agnostic for cross-timeframe reuse).
     $scriptName = $this->getName() ?? 'unknown';
-    $timeArg = $options['time']['human_readable'];
     $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
 
     // Check if cache is fresh.
     $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
@@ -1333,9 +1362,8 @@ abstract class BaseSolarWindsCommand extends Command
   protected function saveResultsToCache(string $query, array $options, array $results, int $searchDuration = 0): void
   {
     $scriptName = $this->getName() ?? 'unknown';
-    $timeArg = $options['time']['human_readable'];
     $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $timeArg, $siteArgs);
+    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
 
     // Calculate time range in seconds for enhanced metadata.
     $startTimeRaw = $options['time']['start_time'];
