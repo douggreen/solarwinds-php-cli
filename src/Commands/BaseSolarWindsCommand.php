@@ -712,304 +712,73 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Execute the search with progress feedback.
+   * Execute search using database-backed universal sync.
+   *
+   * This simplified implementation fetches data via searchLogsWithProgress()
+   * which automatically handles database storage and API syncing.
    */
   protected function executeSearch(string $query, array $options): int
   {
     // Register signal handlers for graceful interruption.
     $this->registerSignalHandlers();
 
-    // Check if debug is enabled via config or command line.
-    $debugMode = $options['filters']['debug'] || $this->config->isDebugEnabled();
-    $progressMode = $this->config->isProgressEnabled();
-
-    // Generate cache key for this query (time-arg agnostic for cross-timeframe reuse).
-    $scriptName = $this->getName() ?? 'unknown';
-    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
-
-    if ($debugMode) {
-      $this->debugOutput('');
-      $this->debugOutput('=== Debug Information ===');
-      $this->debugOutput("Query: $query");
-      $this->debugOutput("Time range: {$options['time']['human_readable']}");
-      $this->debugOutput("Start time: {$options['time']['start_time']}");
-      $this->debugOutput("End time: {$options['time']['end_time']}");
-      $this->debugOutput("API Base URL: " . $this->config->getApiBaseUrl());
-      $this->debugOutput("Progress mode: " . ($progressMode ? 'enabled' : 'disabled'));
-      $this->debugOutput("Cache key: $cacheKey");
-      $this->debugOutput("Use cached: " . ($options['filters']['use_cached'] ? 'yes' : 'no'));
-      $this->debugOutput('');
-    }
-
-    // Always check for fresh cache first (unless --no-cache is used).
-    if (!$options['filters']['no_cache']) {
-      $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
-
-      // If --cached flag is used, it modifies freshness checking behavior.
-      if ($this->cacheService->isCacheFresh(
-        $cacheKey,
-        $currentTimeArg,
-        $options['filters']['cache_infinite'],
-        $options['filters']['cache_seconds']
-      )) {
-        $cacheAge = $this->cacheService->getCacheAge($cacheKey);
-        $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";
-
-        if (!$this->jsonMode) {
-          $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
-        }
-
-        $cachedResults = $this->cacheService->loadFromCache($cacheKey);
-
-        if ($cachedResults !== NULL) {
-          // Apply client-side filters.
-          $originalCount = count($cachedResults);
-          $cachedResults = $this->filterResults($cachedResults, $options);
-          $filteredCount = count($cachedResults);
-
-          // Extract search term for highlighting.
-          $searchTerm = $this->extractSearchTerm($options);
-
-          if ($this->jsonMode) {
-            // JSON output mode.
-            $formattedResults = $this->displayService->formatResultsForJson(
-              $cachedResults,
-              $options['display'],
-              $options['filters'],
-              $searchTerm
-            );
-            $this->outputJson('success', $formattedResults, [
-              'query' => $query,
-              'time_range' => $options['time'],
-              'cache' => [
-                'used' => TRUE,
-                'age' => $cacheAge,
-              ],
-              'filters' => [
-                'original_count' => $originalCount,
-                'filtered_count' => $filteredCount,
-              ]
-            ]);
-          }
-          else {
-            // Regular display mode.
-            $this->displayService->displayResults($cachedResults, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
-
-            // Show filtered count if filtering was applied.
-            if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
-              $this->io->success("Found $filteredCount results (filtered from $originalCount results, from cache)");
-            }
-            else {
-              $this->io->success("Found $filteredCount results (from cache)");
-            }
-          }
-          return Command::SUCCESS;
-        }
-      }
-    }
-
-    // Suppress interactive output in JSON mode.
+    // Fetch data (from database or API via universal sync).
     if (!$this->jsonMode) {
       $this->io->section('Searching SolarWinds Logs');
       $this->io->text("Time range: {$options['time']['human_readable']}");
       $this->io->text("Query: $query");
-
-      // Display applied filters if any.
-      $appliedFilters = $this->formatAppliedFilters($options);
-      if (!empty($appliedFilters)) {
-        $this->io->text("Applied filters: $appliedFilters");
-      }
+      $this->io->newLine();
     }
 
-    // Create progress bar only if progress is enabled and not in JSON mode.
-    $progressBar = NULL;
-    if ($progressMode && !$this->jsonMode) {
-      $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
-      $progressBar = new ProgressBar($this->io, $totalSeconds);
-      $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s% %message%');
-      $progressBar->setMessage('');
-      $progressBar->start();
+    $results = $this->searchLogsWithProgress($query, $options);
+
+    // Apply client-side filters.
+    $originalCount = count($results);
+    $results = $this->filterResults($results, $options);
+    $filteredCount = count($results);
+
+    // Extract search term for highlighting.
+    $searchTerm = $this->extractSearchTerm($options);
+
+    // Display results.
+    if ($this->jsonMode) {
+      // JSON output mode.
+      $formattedResults = $this->displayService->formatResultsForJson(
+        $results,
+        $options['display'],
+        $options['filters'],
+        $searchTerm
+      );
+      $this->outputJson('success', $formattedResults, [
+        'query' => $query,
+        'time_range' => $options['time'],
+        'filters' => [
+          'original_count' => $originalCount,
+          'filtered_count' => $filteredCount,
+        ]
+      ]);
     }
-    try {
-      $searchStartTime = time();
-
-      // Execute API search with enhanced progress updates.
-      $results = $this->apiService->searchLogs(
-        $query,
-        $options['time']['start_time'],
-        $options['time']['end_time'],
-        function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $debugMode, $options, $query) {
-          // Enhanced debug output for first page.
-          if ($debugMode && $pageNum === 1) {
-            $this->debugOutput('');
-            $this->debugOutput('=== API Call Debug ===');
-            $this->debugOutput("First page received: " . count($pageLogs) . " logs");
-            if (!empty($pageLogs)) {
-              $this->debugOutput("Sample log structure: " . json_encode(array_keys($pageLogs[0] ?? []), JSON_PRETTY_PRINT));
-            }
-            else {
-              $this->debugOutput("No logs returned from API");
-              $this->debugOutput("This suggests the query may not match any data in the time range");
-            }
-            $this->debugOutput('');
-          }
-
-          if ($progressBar) {
-            if (!empty($pageLogs)) {
-              $oldestTime = $pageLogs[0]['time'] ?? NULL;
-              if ($oldestTime) {
-                $currentEpoch = strtotime($oldestTime);
-                $endEpoch = strtotime($options['time']['end_time']);
-                $coveredSeconds = $endEpoch - $currentEpoch;
-                $progressBar->setProgress($coveredSeconds);
-              }
-            }
-            else {
-              $progressBar->advance();
-            }
-            $progressBar->setMessage("($totalResults results)");
-          }
-          elseif ($debugMode) {
-            $this->debugOutput("Page $pageNum: Added $newLogsAdded new logs, found $duplicatesFound duplicates ($totalResults total unique)");
-          }
-        },
-        // Add debug callback for detailed API logging.
-        $debugMode ? function(string $message) {
-          $this->debugOutput($message);
-        } : NULL
+    else {
+      // Regular display mode.
+      $this->displayService->displayResults(
+        $results,
+        $options['display'],
+        $this->io,
+        $options['filters']['debug'] || $this->config->isDebugEnabled(),
+        $options['filters'],
+        $searchTerm
       );
 
-      $searchDuration = time() - $searchStartTime;
-
-      // Check if search was interrupted.
-      $interrupted = self::isInterrupted();
-      if ($interrupted) {
-        if ($progressBar) {
-          $progressBar->finish();
-          $this->io->newLine(2);
-        }
-        if (!$this->jsonMode) {
-          $this->io->error("Search interrupted by user. Displaying partial results (" . count($results) . " found so far).");
-        }
-        // Continue to display results and return success - we got some data.
-      }
-
-      // Clear progress display if it was shown.
-      if ($progressBar) {
-        $progressBar->finish();
-        $this->io->newLine(2);
-      }
-
-      // Determine if we should save to cache based on new rules:
-      // 1. Query took >= 5 seconds (lowered from 60)
-      // 2. Time range >= 1 hour (always cache longer queries)
-      // 3. --cached flag was used (explicit user request)
-      $shouldCache = FALSE;
-      $cacheReason = '';
-
-      if ($searchDuration >= 5) {
-        $shouldCache = TRUE;
-        $cacheReason = "query took {$searchDuration}s";
-      }
-
-      // Check if time range is >= 1 hour (3600 seconds)
-      $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
-      $timeRangeSeconds = TimeSpecifications::convertToSeconds($currentTimeArg);
-      if ($timeRangeSeconds >= 3600) {
-        $shouldCache = TRUE;
-        if (!$cacheReason) {
-          $cacheReason = "time range >= 1h";
-        }
-      }
-
-      // Always cache if --cached flag was used
-      if ($options['filters']['use_cached']) {
-        $shouldCache = TRUE;
-        if (!$cacheReason) {
-          $cacheReason = "--cached flag used";
-        }
-      }
-
-      if ($shouldCache) {
-        if ($this->cacheService->saveToCache($cacheKey, $results, $searchDuration)) {
-          if (!$this->jsonMode) {
-            $this->io->note("Results saved to cache ($cacheReason)");
-          }
-        }
-      }
-
-      // Apply client-side filters.
-      $originalCount = count($results);
-      $results = $this->filterResults($results, $options);
-      $filteredCount = count($results);
-
-      // Extract search term for highlighting.
-      $searchTerm = $this->extractSearchTerm($options);
-
-      if ($this->jsonMode) {
-        // JSON output mode.
-        $formattedResults = $this->displayService->formatResultsForJson(
-          $results,
-          $options['display'],
-          $options['filters'],
-          $searchTerm
-        );
-        $this->outputJson('success', $formattedResults, [
-          'query' => $query,
-          'time_range' => $options['time'],
-          'display_options' => array_keys(array_filter($options['display'])),
-          'cache' => [
-            'used' => FALSE,
-            'saved' => $shouldCache,
-            'reason' => $cacheReason ?: NULL,
-          ],
-          'filters' => [
-            'original_count' => $originalCount,
-            'filtered_count' => $filteredCount,
-            'client_side' => $options['filters']['client_side_filters'] ?: [],
-          ],
-          'execution_time' => $searchDuration,
-          'interrupted' => $interrupted,
-        ]);
+      // Show filtered count if filtering was applied.
+      if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
+        $this->io->success("Found $filteredCount results (filtered from $originalCount results)");
       }
       else {
-        // Regular display mode.
-        $this->displayService->displayResults($results, $options['display'], $this->io, $debugMode, $options['filters'], $searchTerm);
-
-        // Show filtered count if filtering was applied.
-        if (!empty($options['filters']['client_side_filters']) && $originalCount !== $filteredCount) {
-          $this->io->success("Found $filteredCount results (filtered from $originalCount results)");
-        }
-        else {
-          $this->io->success("Found $filteredCount results");
-        }
+        $this->io->success("Found $filteredCount results");
       }
-      return Command::SUCCESS;
-
     }
-    catch (GuzzleException $e) {
-      if ($progressBar) {
-        $progressBar->finish();
-        $this->io->newLine();
-      }
 
-      // Provide user-friendly error messages based on error type.
-      $errorMessage = $this->getErrorMessage($e);
-
-      if ($this->jsonMode) {
-        $this->outputJson('error', NULL, [
-          'error' => [
-            'message' => $errorMessage,
-            'type' => get_class($e),
-          ]
-        ]);
-      }
-      else {
-        $this->io->error($errorMessage);
-      }
-      return Command::FAILURE;
-    }
+    return Command::SUCCESS;
   }
 
   /**
@@ -1163,7 +932,6 @@ abstract class BaseSolarWindsCommand extends Command
     // Cache miss - fetch from API with progress bar.
     $progressBar = $this->createSearchProgressBar($options);
     $results = $this->apiService->searchLogs(
-      $query,
       $options['time']['start_time'],
       $options['time']['end_time'],
       $this->getProgressCallback($progressBar, $options)
@@ -1236,7 +1004,6 @@ abstract class BaseSolarWindsCommand extends Command
 
       $progressBar = $this->createSearchProgressBar($options);
       $beforeResults = $this->apiService->searchLogs(
-        $query,
         $gaps['before']['start_time'],
         $gaps['before']['end_time'],
         $this->getProgressCallback($progressBar, $options)
@@ -1252,7 +1019,6 @@ abstract class BaseSolarWindsCommand extends Command
 
       $progressBar = $this->createSearchProgressBar($options);
       $afterResults = $this->apiService->searchLogs(
-        $query,
         $gaps['after']['start_time'],
         $gaps['after']['end_time'],
         $this->getProgressCallback($progressBar, $options)
