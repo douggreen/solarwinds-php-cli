@@ -887,17 +887,31 @@ abstract class BaseSolarWindsCommand extends Command
       $durationStr = "$days day" . ($days != 1 ? 's' : '');
     }
 
-    // Format dates based on duration.
+    // Format dates based on duration and whether they span different days.
+    $startDay = date('Y-m-d', $start);
+    $endDay = date('Y-m-d', $end);
+    $spansDays = $startDay !== $endDay;
+
     if ($duration < 3600) {
       // Short duration: show full date and time.
       $startStr = date('M j, g:ia', $start);
-      $endStr = date('g:ia', $end);
+      if ($spansDays) {
+        $endStr = date('M j, g:ia', $end);
+      }
+      else {
+        $endStr = date('g:ia', $end);
+      }
       $dateRange = "$startStr to $endStr";
     }
     elseif ($duration < 86400) {
-      // Hours: show date and time for both.
+      // Hours: show date and time.
       $startStr = date('M j, g:ia', $start);
-      $endStr = date('g:ia', $end);
+      if ($spansDays) {
+        $endStr = date('M j, g:ia', $end);
+      }
+      else {
+        $endStr = date('g:ia', $end);
+      }
       $dateRange = "$startStr to $endStr";
     }
     else {
@@ -925,64 +939,16 @@ abstract class BaseSolarWindsCommand extends Command
       return NULL;
     }
 
-    $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
+    // Calculate total time range in seconds for progress tracking.
+    $startEpoch = strtotime($options['time']['start_time']);
+    $endEpoch = strtotime($options['time']['end_time']);
+    $totalSeconds = $endEpoch - $startEpoch;
+
     $progressBar = new ProgressBar($this->io, $totalSeconds);
 
-    // Define custom format with remaining time and ETA.
-    // Simplified: just show bar, remaining, ETA, and message (no percent - redundant with bar).
-    ProgressBar::setFormatDefinition('custom', ' %current%/%max% [%bar%] %remaining% %eta% %message%');
+    // Define custom format: bar with inline status showing elapsed, remaining, and results.
+    ProgressBar::setFormatDefinition('custom', ' [%bar%] %message%');
     $progressBar->setFormat('custom');
-
-    // Add custom placeholder for remaining time.
-    $progressBar->setPlaceholderFormatterDefinition('remaining', function (ProgressBar $bar) {
-      if (!$bar->getMaxSteps()) {
-        return 'remaining: -';
-      }
-      $remaining = $bar->getMaxSteps() - $bar->getProgress();
-      if ($remaining <= 0) {
-        return 'remaining: 0 secs';
-      }
-
-      // Format remaining time.
-      if ($remaining < 60) {
-        return sprintf('remaining: %d sec%s', $remaining, $remaining != 1 ? 's' : '');
-      }
-      elseif ($remaining < 3600) {
-        $mins = floor($remaining / 60);
-        $secs = $remaining % 60;
-        return sprintf('remaining: %d min%s, %d sec%s', $mins, $mins != 1 ? 's' : '', $secs, $secs != 1 ? 's' : '');
-      }
-      else {
-        $hours = floor($remaining / 3600);
-        $mins = floor(($remaining % 3600) / 60);
-        return sprintf('remaining: %d hr%s, %d min%s', $hours, $hours != 1 ? 's' : '', $mins, $mins != 1 ? 's' : '');
-      }
-    });
-
-    // Add custom placeholder for ETA time.
-    $progressBar->setPlaceholderFormatterDefinition('eta', function (ProgressBar $bar) {
-      if (!$bar->getMaxSteps()) {
-        return '';
-      }
-
-      $remaining = $bar->getMaxSteps() - $bar->getProgress();
-      if ($remaining <= 0) {
-        return '';
-      }
-
-      // Calculate ETA based on progress rate (need at least 2 seconds of data).
-      $elapsed = time() - $bar->getStartTime();
-      if ($elapsed >= 2 && $bar->getProgress() > 0) {
-        $rate = $bar->getProgress() / $elapsed;
-        if ($rate > 0) {
-          $etaSeconds = $remaining / $rate;
-          $etaTime = time() + (int) $etaSeconds;
-          return sprintf('ETA: %s', date('g:ia', $etaTime));
-        }
-      }
-
-      return '';
-    });
 
     $progressBar->setMessage('');
     $progressBar->start();
@@ -1003,20 +969,68 @@ abstract class BaseSolarWindsCommand extends Command
       return NULL;
     }
 
-    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options) {
+    $startEpoch = strtotime($options['time']['start_time']);
+    $endEpoch = strtotime($options['time']['end_time']);
+    $totalSeconds = $endEpoch - $startEpoch;
+
+    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds) {
+      // Update progress based on time range covered (oldest timestamp in current page).
+      $coveredSeconds = 0;
       if (!empty($pageLogs)) {
         $oldestTime = $pageLogs[0]['time'] ?? NULL;
         if ($oldestTime) {
           $currentEpoch = strtotime($oldestTime);
-          $endEpoch = strtotime($options['time']['end_time']);
           $coveredSeconds = $endEpoch - $currentEpoch;
           $progressBar->setProgress($coveredSeconds);
         }
       }
-      else {
-        $progressBar->advance();
+
+      // Calculate elapsed time and estimate remaining.
+      $elapsed = time() - $progressBar->getStartTime();
+
+      // Format elapsed time with more detail: "2m3s" or "2h3m".
+      if ($elapsed < 60) {
+        $elapsedStr = $elapsed . 's';
       }
-      $progressBar->setMessage("($totalResults results)");
+      elseif ($elapsed < 3600) {
+        $mins = floor($elapsed / 60);
+        $secs = $elapsed % 60;
+        $elapsedStr = $secs > 0 ? "{$mins}m{$secs}s" : "{$mins}m";
+      }
+      else {
+        $hours = floor($elapsed / 3600);
+        $mins = floor(($elapsed % 3600) / 60);
+        $elapsedStr = $mins > 0 ? "{$hours}h{$mins}m" : "{$hours}h";
+      }
+
+      // Format results count (use k for thousands).
+      $resultsStr = $totalResults >= 1000 ? round($totalResults / 1000) . 'k' : $totalResults;
+
+      // Estimate remaining time if enough data.
+      $remainingStr = 'estimating';
+      if ($elapsed >= 5 && $coveredSeconds > 0) {
+        $coverageRate = $coveredSeconds / $elapsed;
+        $remainingSeconds = $totalSeconds - $coveredSeconds;
+        $estimatedTimeRemaining = $remainingSeconds / $coverageRate;
+
+        if ($estimatedTimeRemaining < 60) {
+          $remainingStr = '< 1m';
+        }
+        elseif ($estimatedTimeRemaining < 3600) {
+          $minutes = round($estimatedTimeRemaining / 60);
+          $remainingStr = $minutes . 'm';
+        }
+        elseif ($estimatedTimeRemaining < 86400) {
+          $hours = round($estimatedTimeRemaining / 3600, 1);
+          $remainingStr = $hours . 'h';
+        }
+        else {
+          $days = round($estimatedTimeRemaining / 86400, 1);
+          $remainingStr = $days . 'd';
+        }
+      }
+
+      $progressBar->setMessage("$elapsedStr elapsed, $remainingStr remaining ($resultsStr results)");
     };
   }
 
@@ -1068,7 +1082,7 @@ abstract class BaseSolarWindsCommand extends Command
       // Check for interruption before processing each gap.
       if (self::isInterrupted()) {
         $interrupted = TRUE;
-        if (!$this->jsonMode && $showCacheMessage) {
+        if (!$this->jsonMode) {
           $this->io->writeln('');
           $this->io->warning('Sync interrupted - continuing with partial data');
         }
@@ -1140,8 +1154,27 @@ abstract class BaseSolarWindsCommand extends Command
     // Get complete dataset from database (now includes newly fetched data).
     $results = $this->databaseService->getLogs($startTime, $endTime);
 
-    if ($showCacheMessage && !$this->jsonMode && $rangeAnalysis['has_data']) {
-      $this->io->note("Merged $totalNewLogs new logs with existing database data (total: " . count($results) . " logs)");
+    // Show result summary.
+    if ($showCacheMessage && !$this->jsonMode) {
+      if ($interrupted) {
+        // Show partial results message with time coverage.
+        if (!empty($results)) {
+          $earliest = $results[0]['time'] ?? NULL;
+          $latest = $results[count($results) - 1]['time'] ?? NULL;
+          if ($earliest && $latest) {
+            $this->io->warning("Partial results (" . count($results) . " logs covering " . date('M j g:ia', strtotime($earliest)) . " to " . date('M j g:ia', strtotime($latest)) . ")");
+          }
+          else {
+            $this->io->warning("Partial results (" . count($results) . " logs)");
+          }
+        }
+        else {
+          $this->io->warning("No results (interrupted before any data was fetched)");
+        }
+      }
+      elseif ($rangeAnalysis['has_data']) {
+        $this->io->note("Merged $totalNewLogs new logs with existing database data (total: " . count($results) . " logs)");
+      }
     }
 
     return $results;

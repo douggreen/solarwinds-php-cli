@@ -142,6 +142,10 @@ The following commands require new core implementations as they cannot be effect
      - ✅ DatabaseService created with JSON schema
      - ✅ Integrated with BaseSolarWindsCommand
      - ✅ Auto-sync logic with gap detection
+     - ✅ Malformed JSON handling (strip control chars, preserve all data)
+     - ⏳ Add `retrieved_at` metadata (timestamp when log was fetched from API)
+       - Consider: Add as column with migration OR store in JSON data field
+       - Benefits: Track data freshness, debug sync issues, retention policies
      - ⏳ SearchCommand SQL WHERE clause support
      - ⏳ Alias migration to new syntax
 
