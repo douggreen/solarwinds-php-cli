@@ -11,8 +11,8 @@ When starting work on this project, follow this sequence to get properly oriente
 2. **Follow all documentation links from [README.md](README.md)** - Especially [CLAUDE-MUST-READ-FIRST.md](CLAUDE-MUST-READ-FIRST.md) for AI behavioral context
 3. **Read the code** - Familiarize yourself with the architecture, particularly:
    - `BaseSolarWindsCommand.php` - Abstract base class with shared functionality
-   - The three core commands: `StatusCommand.php`, `SearchCommand.php`, `BotCommand.php`
-   - Service layer: `ConfigurationService.php`, `ApiService.php`, `DisplayService.php`, `CacheService.php`
+   - The four core commands: `StatusCommand.php`, `SearchCommand.php`, `BotCommand.php`, `ExploitsCommand.php`
+   - Service layer: `ConfigurationService.php`, `ApiService.php`, `DisplayService.php`, `DatabaseService.php`
 4. **Read [TODO.md](TODO.md)** - Understand current priorities and remaining work
 5. **Ask clarifying questions** - Before starting implementation work
 
@@ -32,9 +32,9 @@ This project migrated from a collection of shell scripts to a modern PHP/Symfony
 
 **Services:** Modular service layer provides shared functionality:
 - **`ConfigurationService`** - YAML configuration parsing and site mapping
-- **`ApiService`** - SolarWinds API communication with caching and pagination
+- **`ApiService`** - SolarWinds API communication with pagination
 - **`DisplayService`** - Output formatting, coloring, and display modes
-- **`CacheService`** - Intelligent caching with time-based expiration
+- **`DatabaseService`** - SQLite storage with intelligent gap detection and auto-sync
 
 **Base Class Inheritance:** `BaseSolarWindsCommand` provides common functionality while allowing command-specific implementations through abstract methods.
 
@@ -62,7 +62,7 @@ public function __construct(
     ConfigurationService $configService,
     ApiService $apiService,
     DisplayService $displayService,
-    CacheService $cacheService
+    DatabaseService $databaseService
 ) {
     parent::__construct();
     // ...
@@ -73,7 +73,7 @@ public function __construct(
 - Configuration parsing and validation
 - API communication and response handling
 - Display formatting and color schemes
-- Cache management and expiration logic
+- Database storage with gap detection and auto-sync
 
 ### Configuration System
 
@@ -205,7 +205,7 @@ sites:
 - Services should be stateless where possible
 - Use dependency injection rather than static methods
 - Handle errors gracefully and provide meaningful messages
-- Cache expensive operations appropriately
+- Use database storage for persistent data across queries
 
 **Configuration Handling:**
 - Validate configuration on load, not on use
@@ -294,13 +294,13 @@ The original shell scripts are preserved for reference and provide authoritative
 **Debug Mode:** Use `--debug` flag to see:
 - Raw SolarWinds queries being executed
 - API request/response details
-- Cache hit/miss information
+- Database gap detection information
 - Service initialization and configuration
 
 **Validation Mode:** Use `--validate` flag to:
 - Verify result consistency across runs
 - Check for data integrity issues
-- Validate caching behavior
+- Validate database behavior
 
 ## Attribution
 

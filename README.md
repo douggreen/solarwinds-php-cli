@@ -163,9 +163,10 @@ This project supports configurable command aliases that allow you to create cust
 
 ### Core Commands
 
-The application includes 3 core commands that provide the foundation for all log analysis:
+The application includes 4 core commands that provide the foundation for all log analysis:
 
 - **`bot`** - Analyze bot and crawler traffic with dynamic user agent filtering
+- **`exploits`** - Advanced security threat detection with pattern-based analysis
 - **`search`** - General-purpose log search with flexible query syntax
 - **`status`** - HTTP status code analysis with built-in shortcuts
 
@@ -344,26 +345,30 @@ bin/solarwinds search "error" --filter="req_uri:/admin" --filter="resp_status:50
 - Especially useful for security analysis (XSS, SQL injection detection)
 - Shows filtered count in output: "Found 98 results (filtered from 629 results)"
 
-### Caching System
+### Database Storage & Auto-Sync
 
-**Automatic Caching** - Results are cached when any of these conditions are met:
-- Query takes ≥ 5 seconds to execute
-- Time range is ≥ 1 hour (--1h, --1d, --week, etc.)
-- `--cached` flag is used (forces cache creation)
+**Automatic Database Storage** - All fetched logs are permanently stored in a SQLite database for fast querying.
 
-**Cache Usage** - Cached results are automatically used when fresh (10% of query time range by default)
+**Intelligent Gap Detection** - The system automatically detects missing time ranges in the database:
+- Queries the database for existing data in the requested time range
+- Identifies gaps before existing data (historical logs)
+- Identifies gaps after existing data (recent logs)
+- Fetches ONLY the missing time ranges from the API
+- Merges new data with existing database records
 
-**Cache Control Options:**
-- `--cached` - Force cache creation, or specify max age: `--cached=5m`, `--cached=2h`
-- `--cached=0` - Accept any cached results regardless of age
-- `--no-cache` - Skip cache and force fresh query
-
-**Example:**
+**Auto-Sync Behavior:**
 ```bash
-solarwinds drupal-warning --1d     # Creates cache (query takes time)
-solarwinds drupal-warning          # Uses cache automatically
-solarwinds drupal-warning --no-cache  # Forces fresh query
+solarwinds exploits --1h           # Fetches last hour, stores in database
+# ... wait a few minutes ...
+solarwinds exploits --1d           # Only fetches the missing ~23 hours
+                                   # (already has the recent hour from previous query)
 ```
+
+**Benefits:**
+- :white_check_mark: No duplicate API requests for overlapping time ranges
+- :white_check_mark: Fast queries for previously fetched data
+- :white_check_mark: Automatic historical backfill
+- :white_check_mark: Scales to months of data
 
 ## Original Shell Scripts
 

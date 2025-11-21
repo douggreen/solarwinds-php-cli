@@ -124,6 +124,9 @@ abstract class BaseSolarWindsCommand extends Command
   protected bool $jsonMode = FALSE;
 
   /**
+   * Get time mappings for all supported time options.
+   *
+   * @return array Time mappings array
    */
   protected static function getTimeMappings(): array
   {
