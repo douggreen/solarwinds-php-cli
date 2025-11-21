@@ -964,7 +964,7 @@ abstract class BaseSolarWindsCommand extends Command
    * @param array $options Query options
    * @return callable|null Progress callback function
    */
-  protected function getProgressCallback(?ProgressBar $progressBar, array $options): ?callable
+  protected function getProgressCallback(?ProgressBar $progressBar, array $options, &$totalFixed = 0): ?callable
   {
     if (!$progressBar) {
       return NULL;
@@ -973,8 +973,11 @@ abstract class BaseSolarWindsCommand extends Command
     $startEpoch = strtotime($options['time']['start_time']);
     $endEpoch = strtotime($options['time']['end_time']);
     $totalSeconds = $endEpoch - $startEpoch;
+    $lastMessage = '';
+    $samples = [];  // Rolling window: [realTime => coveredSeconds]
+    $lastSampleMinute = 0;
 
-    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds) {
+    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$samples, &$lastSampleMinute) {
       // Update progress based on time range covered (oldest timestamp in current page).
       $coveredSeconds = 0;
       if (!empty($pageLogs)) {
@@ -988,19 +991,30 @@ abstract class BaseSolarWindsCommand extends Command
 
       // Calculate elapsed time and estimate remaining.
       $elapsed = time() - $progressBar->getStartTime();
+      $currentMinute = floor($elapsed / 60);
 
-      // Format elapsed time with more detail: "2m3s" or "2h3m".
+      // Collect samples for rolling average (one per minute, max 10 samples).
+      if ($currentMinute > $lastSampleMinute && $coveredSeconds > 0) {
+        $samples[$elapsed] = $coveredSeconds;
+        $lastSampleMinute = $currentMinute;
+
+        // Keep only last 10 minutes of samples.
+        if (count($samples) > 10) {
+          array_shift($samples);
+        }
+      }
+
+      // Format elapsed time with tenths to reduce message churn (updates every ~6s instead of every 1s).
       if ($elapsed < 60) {
-        $elapsedStr = $elapsed . 's';
+        $elapsedStr = '< 1m';
       }
       elseif ($elapsed < 3600) {
-        $mins = floor($elapsed / 60);
-        $secs = $elapsed % 60;
-        $elapsedStr = $secs > 0 ? "{$mins}m{$secs}s" : "{$mins}m";
+        $mins = round($elapsed / 60, 1);
+        $elapsedStr = "{$mins}m";
       }
       else {
         $hours = floor($elapsed / 3600);
-        $mins = floor(($elapsed % 3600) / 60);
+        $mins = round(($elapsed % 3600) / 60);
         $elapsedStr = $mins > 0 ? "{$hours}h{$mins}m" : "{$hours}h";
       }
 
@@ -1010,7 +1024,20 @@ abstract class BaseSolarWindsCommand extends Command
       // Estimate remaining time if enough data.
       $remainingStr = 'estimating';
       if ($elapsed >= 5 && $coveredSeconds > 0) {
-        $coverageRate = $coveredSeconds / $elapsed;
+        // Use rolling average if we have multiple samples, otherwise use overall average.
+        if (count($samples) >= 2) {
+          // Calculate rate from oldest to newest sample in window.
+          $oldestElapsed = array_key_first($samples);
+          $oldestCovered = $samples[$oldestElapsed];
+          $timeDiff = $elapsed - $oldestElapsed;
+          $coverageDiff = $coveredSeconds - $oldestCovered;
+          $coverageRate = $timeDiff > 0 ? $coverageDiff / $timeDiff : $coveredSeconds / $elapsed;
+        }
+        else {
+          // Fall back to overall average if not enough samples yet.
+          $coverageRate = $coveredSeconds / $elapsed;
+        }
+
         $remainingSeconds = $totalSeconds - $coveredSeconds;
         $estimatedTimeRemaining = $remainingSeconds / $coverageRate;
 
@@ -1031,7 +1058,18 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
 
-      $progressBar->setMessage("$elapsedStr elapsed ($resultsStr results), $remainingStr remaining");
+      // Build progress message with optional fixed count.
+      $message = "$elapsedStr elapsed ($resultsStr results)";
+      if ($totalFixed > 0) {
+        $message .= ", $totalFixed fixed";
+      }
+      $message .= ", $remainingStr remaining";
+
+      // Only update terminal if message changed (avoid redundant I/O).
+      if ($message !== $lastMessage) {
+        $progressBar->setMessage($message);
+        $lastMessage = $message;
+      }
     };
   }
 
@@ -1184,10 +1222,14 @@ abstract class BaseSolarWindsCommand extends Command
       ];
       $progressBar = $this->createSearchProgressBar($rangeOptions);
 
+      // Track malformed JSON entries.
+      $totalFixed = 0;
+
       // Create save callback to insert each page immediately.
-      $saveCallback = function(array $pageLogs) use (&$totalNewLogs) {
-        $inserted = $this->databaseService->insertLogs($pageLogs);
-        $totalNewLogs += $inserted;
+      $saveCallback = function(array $pageLogs) use (&$totalNewLogs, &$totalFixed) {
+        $result = $this->databaseService->insertLogs($pageLogs);
+        $totalNewLogs += $result['inserted'];
+        $totalFixed += $result['fixed'];
       };
 
       // Process each chunk separately (internal optimization).
@@ -1208,7 +1250,7 @@ abstract class BaseSolarWindsCommand extends Command
           $this->apiService->retrieveLogs(
             $chunk['start'],
             $chunk['end'],
-            $this->getProgressCallback($progressBar, $rangeOptions),
+            $this->getProgressCallback($progressBar, $rangeOptions, $totalFixed),
             NULL,  // No debug callback
             $saveCallback  // Save each page immediately
           );

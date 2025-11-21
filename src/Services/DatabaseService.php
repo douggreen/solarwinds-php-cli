@@ -124,12 +124,12 @@ SQL;
    * Parses URL query parameters into url_arguments column for fast exploit detection.
    *
    * @param array $logs Array of log entries from SolarWinds API
-   * @return int Number of inserted records
+   * @return array Array with 'inserted' count and 'fixed' count
    */
-  public function insertLogs(array $logs): int
+  public function insertLogs(array $logs): array
   {
     if (empty($logs)) {
-      return 0;
+      return ['inserted' => 0, 'fixed' => 0];
     }
 
     $this->db->beginTransaction();
@@ -146,28 +146,30 @@ SQL
       foreach ($logs as $log) {
         $message = $log['message'] ?? '';
 
-        // Validate and fix JSON if needed.
+        // Decode JSON once and handle errors inline.
+        $logData = NULL;
         if (!empty($message)) {
-          json_decode($message);
+          $logData = json_decode($message, TRUE);
+
+          // If decode failed, try to fix malformed JSON.
           if (json_last_error() !== JSON_ERROR_NONE) {
-            // JSON is malformed - attempt to fix it.
-            // Common issues: control characters, unescaped quotes, truncation.
-
-            // Try to fix control characters by removing/escaping them.
             $fixed++;
-            $message = preg_replace('/[\x00-\x1F\x7F]/u', '', $message);
+            // Try to fix control characters by removing them.
+            $cleanedMessage = preg_replace('/[\x00-\x1F\x7F]/u', '', $message);
+            $logData = json_decode($cleanedMessage, TRUE);
 
-            // If still invalid, try to decode and re-encode to fix escaping.
-            json_decode($message);
             if (json_last_error() !== JSON_ERROR_NONE) {
               // Last resort: store the original as a JSON-escaped string.
               $message = json_encode(['raw' => $message, 'error' => json_last_error_msg()]);
+              $logData = NULL;
+            }
+            else {
+              $message = $cleanedMessage;
             }
           }
         }
 
-        // Parse and inject URL arguments into JSON data for fast exploit detection.
-        $logData = json_decode($message, TRUE);
+        // Inject URL arguments into JSON data for fast exploit detection.
         if ($logData && isset($logData['req_uri'])) {
           $urlArguments = $this->parseUrlArguments($logData['req_uri']);
           if ($urlArguments !== NULL) {
@@ -186,16 +188,10 @@ SQL
         $inserted++;
       }
 
-      // Log fixed entries if any.
-      if ($fixed > 0) {
-        error_log(sprintf(
-          'Fixed %d log entries with malformed JSON from API',
-          $fixed
-        ));
-      }
-
       $this->db->commit();
-      return $inserted;
+
+      // Return count of fixed entries for caller to track.
+      return ['inserted' => $inserted, 'fixed' => $fixed];
     }
     catch (PDOException $e) {
       $this->db->rollBack();
