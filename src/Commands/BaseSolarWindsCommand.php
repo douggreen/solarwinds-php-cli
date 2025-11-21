@@ -897,42 +897,35 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Execute searchLogs with automatic progress bar and cache handling.
+   * Execute searchLogs with automatic progress bar and database storage.
    *
-   * This is a convenience wrapper that eliminates boilerplate by automatically:
-   * 1. Checking cache for existing results
-   * 2. Creating progress bar and fetching from API if cache miss
-   * 3. Saving results to cache
-   * 4. Displaying cache usage message when appropriate
+   * Implements universal sync: fetches ALL logs for time range from database or API,
+   * with automatic gap detection and incremental updates.
    *
-   * @param string $query The search query
+   * @param string $query The search query (unused in universal sync, kept for compatibility)
    * @param array $options Query options containing time range
-   * @param bool $showCacheMessage Whether to show cache hit message (default: TRUE)
+   * @param bool $showCacheMessage Whether to show database hit message (default: TRUE)
    * @return array Array of log entries
    */
   protected function searchLogsWithProgress(string $query, array $options, bool $showCacheMessage = TRUE): array
   {
-    // Try to load from cache first.
-    $cacheUsed = FALSE;
-    $cacheAge = NULL;
-    $results = $this->tryLoadFromCache($query, $options, $cacheUsed, $cacheAge);
+    // Skip database if --no-cache flag is set.
+    if (!$options['filters']['no_cache']) {
+      // Try to load from database first.
+      $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
+      $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
 
-    // If cache hit, show message and return.
-    if ($results !== NULL) {
-      if ($showCacheMessage && !$this->jsonMode) {
-        $ageText = $cacheAge ? "($cacheAge old)" : "(age unknown)";
-        $this->io->note("Using cached results $ageText - use --no-cache to force fresh query");
+      $results = $this->databaseService->getLogs($startTime, $endTime);
+
+      if (!empty($results)) {
+        if ($showCacheMessage && !$this->jsonMode) {
+          $this->io->note("Using database results (" . count($results) . " logs) - use --no-cache to force fresh query");
+        }
+        return $results;
       }
-      return $results;
     }
 
-    // Check if we can use incremental cache update.
-    $incrementalResults = $this->tryIncrementalCacheUpdate($query, $options, $showCacheMessage);
-    if ($incrementalResults !== NULL) {
-      return $incrementalResults;
-    }
-
-    // Cache miss - fetch from API with progress bar.
+    // Database miss or --no-cache - fetch from API with progress bar.
     $progressBar = $this->createSearchProgressBar($options);
     $results = $this->apiService->searchLogs(
       $options['time']['start_time'],
@@ -941,8 +934,10 @@ abstract class BaseSolarWindsCommand extends Command
     );
     $this->finishProgressBar($progressBar);
 
-    // Save to cache.
-    $this->saveResultsToCache($query, $options, $results, 0);
+    // Save to database (unless --no-cache).
+    if (!$options['filters']['no_cache']) {
+      $this->databaseService->insertLogs($results, '', $options);
+    }
 
     return $results;
   }

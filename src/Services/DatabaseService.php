@@ -183,7 +183,7 @@ SQL
     $stmt->execute([
       ':cache_key' => $cacheKey,
       ':query' => $options['query'] ?? '',
-      ':time_range' => $options['time'] ?? '',
+      ':time_range' => is_array($options['time'] ?? '') ? json_encode($options['time']) : ($options['time'] ?? ''),
       ':query_start' => $options['since'] ?? '',
       ':query_end' => $options['until'] ?? '',
       ':created_at' => date('Y-m-d H:i:s'),
