@@ -308,6 +308,13 @@ class ApiService
         $saveCallback($pageLogs);
       }
 
+      // Check for interruption after processing page (allows graceful stop mid-sync).
+      if (class_exists('SolarWinds\\Commands\\BaseSolarWindsCommand') &&
+          method_exists('SolarWinds\\Commands\\BaseSolarWindsCommand', 'isInterrupted') &&
+          \SolarWinds\Commands\BaseSolarWindsCommand::isInterrupted()) {
+        break;
+      }
+
       // Check for nextPage token exactly like bash script.
       $nextPageUrl = $data['pageInfo']['nextPage'] ?? NULL;
 

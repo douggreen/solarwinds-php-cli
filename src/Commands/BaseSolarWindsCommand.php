@@ -922,8 +922,9 @@ abstract class BaseSolarWindsCommand extends Command
     $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
     $progressBar = new ProgressBar($this->io, $totalSeconds);
 
-    // Define custom format with ETA time and remaining duration.
-    ProgressBar::setFormatDefinition('custom', ' %current%/%max% [%bar%] %percent:3s%% %remaining% %eta% %message%');
+    // Define custom format with remaining time and ETA.
+    // Simplified: just show bar, remaining, ETA, and message (no percent - redundant with bar).
+    ProgressBar::setFormatDefinition('custom', ' %current%/%max% [%bar%] %remaining% %eta% %message%');
     $progressBar->setFormat('custom');
 
     // Add custom placeholder for remaining time.
@@ -1056,7 +1057,18 @@ abstract class BaseSolarWindsCommand extends Command
 
     // We have missing ranges - fetch from API with incremental saves.
     $totalNewLogs = 0;
+    $interrupted = FALSE;
     foreach ($rangeAnalysis['gaps'] as $gap) {
+      // Check for interruption before processing each gap.
+      if (self::isInterrupted()) {
+        $interrupted = TRUE;
+        if (!$this->jsonMode && $showCacheMessage) {
+          $this->io->writeln('');
+          $this->io->warning('Sync interrupted - continuing with partial data');
+        }
+        break;
+      }
+
       if (!$this->jsonMode && $showCacheMessage) {
         $gapMessage = $this->formatGapMessage($gap['start'], $gap['end'], $gap['reason']);
         $this->io->writeln("<comment>$gapMessage</comment>");
@@ -1090,6 +1102,17 @@ abstract class BaseSolarWindsCommand extends Command
       catch (\Exception $e) {
         $this->finishProgressBar($progressBar);
 
+        // Check if this was an interruption - if so, break loop and continue.
+        if (self::isInterrupted()) {
+          $interrupted = TRUE;
+          if (!$this->jsonMode) {
+            $this->io->writeln('');
+            $this->io->warning('Sync interrupted - continuing with partial data');
+          }
+          break;
+        }
+
+        // Non-interruption error - report and re-throw.
         if (!$this->jsonMode) {
           $this->io->error(sprintf(
             'Failed to fetch gap %s to %s: %s',
