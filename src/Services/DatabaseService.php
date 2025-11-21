@@ -227,6 +227,78 @@ SQL
   }
 
   /**
+   * Detect missing time ranges (gaps) in the database.
+   *
+   * Analyzes what data exists in the database for the requested time range
+   * and identifies gaps that need to be fetched from the API.
+   *
+   * @param string $requestedStart Start of requested range (ISO 8601)
+   * @param string $requestedEnd End of requested range (ISO 8601)
+   * @return array Array with 'coverage' info and 'gaps' to fetch
+   */
+  public function detectGaps(string $requestedStart, string $requestedEnd): array
+  {
+    // Get the actual time range covered by data in database.
+    $stmt = $this->db->prepare(<<<'SQL'
+SELECT MIN(time) as earliest, MAX(time) as latest, COUNT(*) as count
+FROM logs
+WHERE time >= :start AND time <= :end
+SQL
+    );
+    $stmt->execute([
+      ':start' => $requestedStart,
+      ':end' => $requestedEnd,
+    ]);
+    $coverage = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    // No data at all - need to fetch entire range.
+    if ($coverage['count'] == 0 || $coverage['earliest'] === NULL) {
+      return [
+        'has_data' => FALSE,
+        'coverage' => [
+          'earliest' => NULL,
+          'latest' => NULL,
+          'count' => 0,
+        ],
+        'gaps' => [
+          [
+            'start' => $requestedStart,
+            'end' => $requestedEnd,
+            'reason' => 'no_data',
+          ],
+        ],
+      ];
+    }
+
+    // We have some data - check for gaps at the beginning and/or end.
+    $gaps = [];
+
+    // Gap before existing data?
+    if ($coverage['earliest'] > $requestedStart) {
+      $gaps[] = [
+        'start' => $requestedStart,
+        'end' => $coverage['earliest'],
+        'reason' => 'before_existing_data',
+      ];
+    }
+
+    // Gap after existing data?
+    if ($coverage['latest'] < $requestedEnd) {
+      $gaps[] = [
+        'start' => $coverage['latest'],
+        'end' => $requestedEnd,
+        'reason' => 'after_existing_data',
+      ];
+    }
+
+    return [
+      'has_data' => TRUE,
+      'coverage' => $coverage,
+      'gaps' => $gaps,
+    ];
+  }
+
+  /**
    * Get database statistics.
    *
    * @return array Statistics

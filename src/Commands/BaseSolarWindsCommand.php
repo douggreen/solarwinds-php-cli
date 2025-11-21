@@ -892,30 +892,49 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function searchLogsWithProgress(string $query, array $options, bool $showCacheMessage = TRUE): array
   {
-    // Try to load from database first.
+    // Convert time range to ISO 8601 for database queries.
     $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
     $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
 
-    $results = $this->databaseService->getLogs($startTime, $endTime);
+    // Detect gaps in database coverage.
+    $gapAnalysis = $this->databaseService->detectGaps($startTime, $endTime);
 
-    if (!empty($results)) {
+    // No gaps - return existing database data.
+    if (empty($gapAnalysis['gaps'])) {
+      $results = $this->databaseService->getLogs($startTime, $endTime);
       if ($showCacheMessage && !$this->jsonMode) {
         $this->io->note("Using database results (" . count($results) . " logs)");
       }
       return $results;
     }
 
-    // Database miss - fetch from API with progress bar.
-    $progressBar = $this->createSearchProgressBar($options);
-    $results = $this->apiService->searchLogs(
-      $options['time']['start_time'],
-      $options['time']['end_time'],
-      $this->getProgressCallback($progressBar, $options)
-    );
-    $this->finishProgressBar($progressBar);
+    // We have gaps - fetch missing data from API.
+    $gapResults = [];
+    foreach ($gapAnalysis['gaps'] as $gap) {
+      if (!$this->jsonMode && $showCacheMessage) {
+        $this->io->writeln("<comment>Fetching gap: {$gap['start']} to {$gap['end']} ({$gap['reason']})</comment>");
+      }
 
-    // Save to database.
-    $this->databaseService->insertLogs($results);
+      $progressBar = $this->createSearchProgressBar($options);
+      $gapData = $this->apiService->searchLogs(
+        $gap['start'],
+        $gap['end'],
+        $this->getProgressCallback($progressBar, $options)
+      );
+      $this->finishProgressBar($progressBar);
+
+      // Save gap data to database.
+      $this->databaseService->insertLogs($gapData);
+
+      $gapResults = array_merge($gapResults, $gapData);
+    }
+
+    // Get complete dataset from database (now includes gap data).
+    $results = $this->databaseService->getLogs($startTime, $endTime);
+
+    if ($showCacheMessage && !$this->jsonMode && $gapAnalysis['has_data']) {
+      $this->io->note("Merged " . count($gapResults) . " new logs with existing database data (total: " . count($results) . " logs)");
+    }
 
     return $results;
   }
