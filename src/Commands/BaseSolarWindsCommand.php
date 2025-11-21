@@ -839,10 +839,16 @@ abstract class BaseSolarWindsCommand extends Command
    * Register signal handlers for graceful interruption.
    *
    * Sets up SIGINT and SIGTERM handlers if pcntl extension is available.
+   * Enables async signals so interrupts work even during blocking operations.
    */
   protected function registerSignalHandlers(): void
   {
     if (function_exists('pcntl_signal')) {
+      // Enable async signal handling (PHP 7.1+) so signals can interrupt blocking I/O.
+      if (function_exists('pcntl_async_signals')) {
+        pcntl_async_signals(TRUE);
+      }
+
       pcntl_signal(SIGINT, [self::class, 'handleSignal']);
       pcntl_signal(SIGTERM, [self::class, 'handleSignal']);
     }
@@ -1102,14 +1108,14 @@ abstract class BaseSolarWindsCommand extends Command
       catch (\Exception $e) {
         $this->finishProgressBar($progressBar);
 
-        // Check if this was an interruption - if so, break loop and continue.
+        // Check if this was an interruption - if so, break loop and continue gracefully.
         if (self::isInterrupted()) {
           $interrupted = TRUE;
           if (!$this->jsonMode) {
             $this->io->writeln('');
             $this->io->warning('Sync interrupted - continuing with partial data');
           }
-          break;
+          break;  // Break loop and continue to analysis (don't re-throw).
         }
 
         // Non-interruption error - report and re-throw.
@@ -1126,7 +1132,7 @@ abstract class BaseSolarWindsCommand extends Command
           }
         }
 
-        // Re-throw to let caller handle it.
+        // Re-throw non-interruption errors to let caller handle them.
         throw $e;
       }
     }
