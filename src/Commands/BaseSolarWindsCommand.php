@@ -849,6 +849,65 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
+   * Format gap message in human-readable format.
+   *
+   * Converts ISO timestamps to readable format and calculates duration.
+   * Examples:
+   *   - "Fetching 12 minutes of recent data (Nov 21 12:43 to 12:55)"
+   *   - "Fetching 2 days of historical data (Nov 19 to Nov 21)"
+   *
+   * @param string $startTime Start time (ISO 8601)
+   * @param string $endTime End time (ISO 8601)
+   * @param string $reason Gap reason (historical, recent, no_data)
+   * @return string Human-readable gap message
+   */
+  protected function formatGapMessage(string $startTime, string $endTime, string $reason): string
+  {
+    $start = strtotime($startTime);
+    $end = strtotime($endTime);
+    $duration = $end - $start;
+
+    // Calculate duration in human-readable format.
+    if ($duration < 3600) {
+      $minutes = round($duration / 60);
+      $durationStr = "$minutes minute" . ($minutes != 1 ? 's' : '');
+    }
+    elseif ($duration < 86400) {
+      $hours = round($duration / 3600);
+      $durationStr = "$hours hour" . ($hours != 1 ? 's' : '');
+    }
+    else {
+      $days = round($duration / 86400);
+      $durationStr = "$days day" . ($days != 1 ? 's' : '');
+    }
+
+    // Format dates based on duration.
+    if ($duration < 3600) {
+      // Short duration: show full date and time.
+      $startStr = date('M j, g:ia', $start);
+      $endStr = date('g:ia', $end);
+      $dateRange = "$startStr to $endStr";
+    }
+    elseif ($duration < 86400) {
+      // Hours: show date and time for both.
+      $startStr = date('M j, g:ia', $start);
+      $endStr = date('g:ia', $end);
+      $dateRange = "$startStr to $endStr";
+    }
+    else {
+      // Days: show just dates.
+      $startStr = date('M j', $start);
+      $endStr = date('M j', $end);
+      $dateRange = "$startStr to $endStr";
+    }
+
+    // Format reason.
+    $reasonStr = $reason === 'no_data' ? 'missing' : $reason;
+
+    return "Fetching $durationStr of $reasonStr data ($dateRange)";
+  }
+
+  /**
    * Create a progress bar for search operations.
    *
    * @param array $options Query options containing time range
@@ -862,7 +921,62 @@ abstract class BaseSolarWindsCommand extends Command
 
     $totalSeconds = strtotime($options['time']['end_time']) - strtotime($options['time']['start_time']);
     $progressBar = new ProgressBar($this->io, $totalSeconds);
-    $progressBar->setFormat(' %current%/%max% [%bar%] %percent:3s%% %elapsed:6s% %message%');
+
+    // Define custom format with ETA time and remaining duration.
+    ProgressBar::setFormatDefinition('custom', ' %current%/%max% [%bar%] %percent:3s%% %remaining% %eta% %message%');
+    $progressBar->setFormat('custom');
+
+    // Add custom placeholder for remaining time.
+    $progressBar->setPlaceholderFormatterDefinition('remaining', function (ProgressBar $bar) {
+      if (!$bar->getMaxSteps()) {
+        return 'remaining: -';
+      }
+      $remaining = $bar->getMaxSteps() - $bar->getProgress();
+      if ($remaining <= 0) {
+        return 'remaining: 0 secs';
+      }
+
+      // Format remaining time.
+      if ($remaining < 60) {
+        return sprintf('remaining: %d sec%s', $remaining, $remaining != 1 ? 's' : '');
+      }
+      elseif ($remaining < 3600) {
+        $mins = floor($remaining / 60);
+        $secs = $remaining % 60;
+        return sprintf('remaining: %d min%s, %d sec%s', $mins, $mins != 1 ? 's' : '', $secs, $secs != 1 ? 's' : '');
+      }
+      else {
+        $hours = floor($remaining / 3600);
+        $mins = floor(($remaining % 3600) / 60);
+        return sprintf('remaining: %d hr%s, %d min%s', $hours, $hours != 1 ? 's' : '', $mins, $mins != 1 ? 's' : '');
+      }
+    });
+
+    // Add custom placeholder for ETA time.
+    $progressBar->setPlaceholderFormatterDefinition('eta', function (ProgressBar $bar) {
+      if (!$bar->getMaxSteps()) {
+        return '';
+      }
+
+      $remaining = $bar->getMaxSteps() - $bar->getProgress();
+      if ($remaining <= 0) {
+        return '';
+      }
+
+      // Calculate ETA based on progress rate (need at least 2 seconds of data).
+      $elapsed = time() - $bar->getStartTime();
+      if ($elapsed >= 2 && $bar->getProgress() > 0) {
+        $rate = $bar->getProgress() / $elapsed;
+        if ($rate > 0) {
+          $etaSeconds = $remaining / $rate;
+          $etaTime = time() + (int) $etaSeconds;
+          return sprintf('ETA: %s', date('g:ia', $etaTime));
+        }
+      }
+
+      return '';
+    });
+
     $progressBar->setMessage('');
     $progressBar->start();
 
@@ -944,7 +1058,8 @@ abstract class BaseSolarWindsCommand extends Command
     $totalNewLogs = 0;
     foreach ($rangeAnalysis['gaps'] as $gap) {
       if (!$this->jsonMode && $showCacheMessage) {
-        $this->io->writeln("<comment>Fetching gap: {$gap['start']} to {$gap['end']} ({$gap['reason']})</comment>");
+        $gapMessage = $this->formatGapMessage($gap['start'], $gap['end'], $gap['reason']);
+        $this->io->writeln("<comment>$gapMessage</comment>");
       }
 
       // Create progress bar using gap range (not requested range).

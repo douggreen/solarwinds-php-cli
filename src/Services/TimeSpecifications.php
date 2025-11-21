@@ -12,15 +12,16 @@
  *
  * @section time_formats Supported Time Formats
  *
- * **Relative Time Options:**
- * - Minutes: --5m, --10m, --15m, --30m
- * - Hours: --1h, --2h, --3h, --6h, --12h
- * - Days: --1d, --2d, --1w, --2w
+ * **Relative Time Options (from now):**
+ * - Minutes: --Nm (e.g., --5m, --10m, --30m, --45m)
+ * - Hours: --Nh (e.g., --1h, --2h, --6h, --24h)
+ * - Days: --Nd (e.g., --1d, --3d, --7d, --30d)
+ * - Weeks: --Nw (e.g., --1w, --2w, --4w)
  * - Aliases: --hour (1h), --day (1d), --week (1w)
  *
- * **Specific Day Options:**
+ * **Specific Day Options (full 24-hour periods):**
  * - --yesterday: Full previous day (00:00:00 to 23:59:59)
- * - --1D through --14D: Specific days ago (full day ranges)
+ * - --ND: Any number of days ago (e.g., --1D, --7D, --30D, --90D)
  *
  * **Custom Time Ranges:**
  * - --since="time expression" --until="time expression"
@@ -94,24 +95,28 @@ namespace SolarWinds\Services;
 class TimeSpecifications
 {
   /**
-   * Get all time option categories and their values.
+   * Get time option ranges for registration.
    *
-   * @return array Time option categories with their supported values
+   * Defines which numeric ranges to register as command options.
+   * These are registered with Symfony Console, but the conversion logic
+   * accepts any numeric value.
+   *
+   * @return array Time option ranges
    */
   public static function getTimeOptions(): array
   {
     return [
-      'minutes' => ['5m', '10m', '15m', '30m'],
-      'hours' => ['1h', '2h', '3h', '6h', '12h'],
-      'days' => ['1d', '2d'],
-      'weeks' => ['1w', '2w'],
+      'minutes' => range(1, 60),        // 1m through 60m
+      'hours' => range(1, 48),          // 1h through 48h
+      'days' => range(1, 90),           // 1d through 90d (lowercase, relative)
+      'weeks' => range(1, 8),           // 1w through 8w
+      'specific_days' => range(1, 365), // 1D through 365D (uppercase, specific days)
       'aliases' => [
         'hour' => '1h',
         'day' => '1d',
         'week' => '1w'
       ],
-      'special_days' => ['yesterday', '1D'], // Both map to yesterday.
-      'day_range' => [2, 14] // 2D through 14D.
+      'special' => ['yesterday'],
     ];
   }
 
@@ -119,68 +124,74 @@ class TimeSpecifications
    * Convert time argument to human-readable time range.
    *
    * Converts time options like --1h, --yesterday to [start, end] time strings.
+   * Supports dynamic patterns:
+   *   - Nm (any number of minutes)
+   *   - Nh (any number of hours)
+   *   - Nd (any number of days, relative from now)
+   *   - Nw (any number of weeks)
+   *   - ND (any number of days ago, full 24-hour period)
    *
-   * @param string $timeArg Time option string (e.g., '1h', 'yesterday', '5m')
+   * @param string $timeArg Time option string (e.g., '1h', 'yesterday', '5m', '30d')
    * @return array|null Array with [start_time, end_time] or NULL if not recognized
    */
   public static function convertToTimeRange(string $timeArg): ?array
   {
-    $timeOptions = self::getTimeOptions();
-    $timeMappings = [];
-
-    // Generate time mappings for minutes.
-    foreach ($timeOptions['minutes'] as $option) {
-      $minutes = substr($option, 0, -1);
-      $timeMappings[$option] = ["{$minutes} minutes ago", 'now'];
+    // Handle special case: yesterday.
+    if ($timeArg === 'yesterday') {
+      return ['yesterday at 00:00:00', 'yesterday at 23:59:59'];
     }
 
-    // Generate time mappings for hours.
-    foreach ($timeOptions['hours'] as $option) {
-      $hours = substr($option, 0, -1);
-      $unit = $hours == 1 ? 'hour' : 'hours';
-      $timeMappings[$option] = ["{$hours} {$unit} ago", 'now'];
+    // Handle aliases.
+    $aliases = [
+      'hour' => '1h',
+      'day' => '1d',
+      'week' => '1w',
+    ];
+    if (isset($aliases[$timeArg])) {
+      $timeArg = $aliases[$timeArg];
     }
 
-    // Generate time mappings for days.
-    foreach ($timeOptions['days'] as $option) {
-      $days = $option[0]; // We know it's single digit.
-      $hours = $days * 24;
-      $timeMappings[$option] = ["{$hours} hours ago", 'now'];
+    // Handle pattern-based time options.
+    // Pattern: Nm (minutes), Nh (hours), Nd (days relative), Nw (weeks), ND (days ago full period).
+    if (preg_match('/^(\d+)([mhdw])$/i', $timeArg, $matches)) {
+      $number = (int) $matches[1];
+      $unit = strtolower($matches[2]);
+      $isUppercase = $matches[2] === 'D';
+
+      // Handle uppercase D (specific full day).
+      if ($isUppercase) {
+        $startTime = "{$number} days ago at 00:00:00";
+        $endTime = "{$number} days ago at 23:59:59";
+        return [$startTime, $endTime];
+      }
+
+      // Handle lowercase relative time ranges.
+      switch ($unit) {
+        case 'm':
+          $unitName = $number == 1 ? 'minute' : 'minutes';
+          return ["{$number} {$unitName} ago", 'now'];
+
+        case 'h':
+          $unitName = $number == 1 ? 'hour' : 'hours';
+          return ["{$number} {$unitName} ago", 'now'];
+
+        case 'd':
+          $hours = $number * 24;
+          return ["{$hours} hours ago", 'now'];
+
+        case 'w':
+          $days = $number * 7;
+          return ["{$days} days ago", 'now'];
+      }
     }
 
-    // Generate time mappings for weeks.
-    foreach ($timeOptions['weeks'] as $option) {
-      $weeks = $option[0]; // We know it's single digit.
-      $days = $weeks * 7;
-      $timeMappings[$option] = ["{$days} days ago", 'now'];
-    }
-
-    // Set alias mappings.
-    foreach ($timeOptions['aliases'] as $alias => $baseOption) {
-      $timeMappings[$alias] = $timeMappings[$baseOption];
-    }
-
-    // Set special day ranges (full 24-hour periods).
-    foreach ($timeOptions['special_days'] as $specialDay) {
-      $timeMappings[$specialDay] = ['yesterday at 00:00:00', 'yesterday at 23:59:59'];
-    }
-
-    // Add dynamic day ranges (2D through 14D with specific day boundaries).
-    [$startDay, $endDay] = $timeOptions['day_range'];
-    for ($day = $startDay; $day <= $endDay; $day++) {
-      $key = "{$day}D";
-      $startTime = "{$day} days ago at 00:00:00";
-      $endTime = "{$day} days ago at 23:59:59";
-      $timeMappings[$key] = [$startTime, $endTime];
-    }
-
-    return $timeMappings[$timeArg] ?? NULL;
+    return NULL;
   }
 
   /**
    * Get all available time options as a flat array for command configuration.
    *
-   * Returns complete list of supported time options for dynamic command setup.
+   * Generates comprehensive list of time options for Symfony Console registration.
    *
    * @return array Flat array of all time option strings
    */
@@ -189,22 +200,36 @@ class TimeSpecifications
     $timeOptions = self::getTimeOptions();
     $allOptions = [];
 
-    // Flatten all time option categories.
-    foreach (['minutes', 'hours', 'days', 'weeks'] as $category) {
-      $allOptions = array_merge($allOptions, $timeOptions[$category]);
+    // Generate minute options (Nm).
+    foreach ($timeOptions['minutes'] as $num) {
+      $allOptions[] = "{$num}m";
+    }
+
+    // Generate hour options (Nh).
+    foreach ($timeOptions['hours'] as $num) {
+      $allOptions[] = "{$num}h";
+    }
+
+    // Generate day options (Nd - lowercase, relative).
+    foreach ($timeOptions['days'] as $num) {
+      $allOptions[] = "{$num}d";
+    }
+
+    // Generate week options (Nw).
+    foreach ($timeOptions['weeks'] as $num) {
+      $allOptions[] = "{$num}w";
+    }
+
+    // Generate specific day options (ND - uppercase, full day periods).
+    foreach ($timeOptions['specific_days'] as $num) {
+      $allOptions[] = "{$num}D";
     }
 
     // Add aliases.
     $allOptions = array_merge($allOptions, array_keys($timeOptions['aliases']));
 
-    // Add special days.
-    $allOptions = array_merge($allOptions, $timeOptions['special_days']);
-
-    // Add dynamic day ranges.
-    [$startDay, $endDay] = $timeOptions['day_range'];
-    for ($day = $startDay; $day <= $endDay; $day++) {
-      $allOptions[] = "{$day}D";
-    }
+    // Add special options.
+    $allOptions = array_merge($allOptions, $timeOptions['special']);
 
     return $allOptions;
   }
