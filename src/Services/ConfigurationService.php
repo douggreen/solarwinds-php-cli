@@ -34,6 +34,9 @@
  * - blocking.trusted_bots: User-agent patterns for known good bots (supplements defaults)
  * - blocking.thresholds: Customizable thresholds for blocking decisions
  *
+ * **Database Configuration:**
+ * - database.path: Path to SQLite database file (default: ~/.solarwinds/logs.db)
+ *
  * @section site_mapping Site Mapping System
  *
  * The service provides three types of site mappings:
@@ -358,5 +361,16 @@ class ConfigurationService
     $configured = $this->config['blocking']['thresholds'] ?? [];
 
     return array_merge($defaults, $configured);
+  }
+
+  /**
+   * Get database path for SQLite storage.
+   *
+   * @return string Absolute path to SQLite database file
+   */
+  public function getDatabasePath(): string
+  {
+    $default = $_SERVER['HOME'] . '/.solarwinds/logs.db';
+    return $this->config['database']['path'] ?? $default;
   }
 }

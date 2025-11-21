@@ -103,7 +103,6 @@ namespace SolarWinds\Application;
 use Symfony\Component\Console\Application;
 use SolarWinds\Commands\BotCommand;
 use SolarWinds\Commands\ExploitsCommand;
-use SolarWinds\Commands\ThreatsCommand;
 use SolarWinds\Commands\SearchCommand;
 use SolarWinds\Commands\StatusCommand;
 use SolarWinds\Commands\AliasCommand;
@@ -124,7 +123,6 @@ class SolarWindsApplication extends Application
     $this->addCommands([
       new BotCommand(),
       new ExploitsCommand(),
-      new ThreatsCommand(),
       new SearchCommand(),
       new StatusCommand(),
     ]);

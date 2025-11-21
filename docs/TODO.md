@@ -119,14 +119,40 @@ The following commands require new core implementations as they cannot be effect
    - Implement automated validation of backward compatibility
    - Set up continuous integration testing pipeline
 
+2. **SQLite Local Database Architecture (IN PROGRESS)**
+   - **NEW APPROACH:** Store all SolarWinds data locally in SQLite database
+   - **Key Changes:**
+     - SQLite with JSON column storage (handles HTTP + Drupal logs)
+     - Generated columns with indexes for fast queries (client_ip, req_method, resp_status, type, severity)
+     - Auto-sync: Automatically fetch missing data before queries
+     - Local-first: All queries run against SQLite (fast!)
+     - Retention: Keep 2 weeks max (SolarWinds API limit) + indefinite for bad actors
+   - **New Query Syntax:**
+     - Aliases use SQL WHERE clause conditions (simplified)
+     - Example: `search req_method='POST' AND resp_status=200 --1d --host`
+     - Code wraps in: `SELECT * FROM logs WHERE time >= ... AND ({user_conditions})`
+     - Time flags (--1d, --15m, --2w) automatically add time filters
+   - **Benefits:**
+     - 100x faster queries (local DB vs API calls)
+     - Offline analysis capability
+     - Historical data preservation (backup before SolarWinds deletes)
+     - Complex SQL queries possible (joins, aggregations)
+     - Reduced API calls to SolarWinds
+   - **Implementation Status:**
+     - ✅ DatabaseService created with JSON schema
+     - 🔄 Integrating with CacheService
+     - ⏳ Auto-sync logic
+     - ⏳ SearchCommand SQL WHERE clause support
+     - ⏳ Alias migration to new syntax
+
 ### Display and Output Improvements
 
-2. **Query Display Control**: Only show query output when debug mode is enabled
+3. **Query Display Control**: Only show query output when debug mode is enabled
 
 ### Code Refactoring
 
-6. **Display Service Consolidation**: Refactor color and formatting logic for consistency
-7. **Enhanced Debugging Framework**: Add comprehensive API request/response details and query transformation tracking
+4. **Display Service Consolidation**: Refactor color and formatting logic for consistency
+5. **Enhanced Debugging Framework**: Add comprehensive API request/response details and query transformation tracking
 
 ## Future Enhancements (Lower Priority)
 

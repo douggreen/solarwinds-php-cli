@@ -42,8 +42,8 @@
  * @code{.php}
  * $apiService = new ApiService($configService);
  *
+ * // Fetch ALL logs (universal sync - no filter)
  * $results = $apiService->searchLogs(
- *     '{ json.resp_status:500 }',
  *     '1 hour ago',
  *     'now',
  *     function($progress) { echo "Progress: $progress\n"; },
@@ -115,9 +115,12 @@ class ApiService
   }
 
   /**
-   * Search logs with pagination - exact port from working bash script.
+   * Search logs with pagination - fetches ALL logs (universal sync).
    *
-   * @param string $query The search query
+   * With the universal sync architecture, this method always fetches ALL logs
+   * (HTTP + Drupal + everything) by not providing a filter parameter to the API.
+   * Commands filter the results client-side based on their specific needs.
+   *
    * @param string $startTime Start time (human readable)
    * @param string $endTime End time (human readable)
    * @param callable|NULL $progressCallback Callback for progress updates
@@ -126,7 +129,6 @@ class ApiService
    * @throws GuzzleException
    */
   public function searchLogs(
-    string $query,
     string $startTime,
     string $endTime,
     ?callable $progressCallback = NULL,
@@ -154,10 +156,10 @@ class ApiService
       }
 
       if ($isFirstPage) {
-        // First page: build parameters exactly like bash script.
+        // First page: build parameters for universal sync (no filter).
+        // This fetches ALL logs: HTTP traffic + Drupal logs + everything.
         $requestParams = [
-          'filter' => $query,
-          'pageSize' => 1000,  // Exactly like bash script.
+          'pageSize' => 1000,
           'startTime' => $startTimeIso,
           'endTime' => $endTimeIso
         ];
@@ -166,13 +168,13 @@ class ApiService
         if ($debugCallback) {
           $debugCallback("Fetching page $pageCount...");
           $debugCallback("  Time range: $startTimeIso to $endTimeIso");
+          $debugCallback("  Filter: (none - fetching ALL logs)");
 
-          // Show equivalent curl command like original framework.
+          // Show equivalent curl command.
           $baseUri = rtrim($this->httpClient->getConfig('base_uri'), '/');
           $authHeader = 'Bearer [HIDDEN]';
           $debugCallback("  Executing curl command:");
           $debugCallback("    curl -s -G \"$baseUri/v1/logs\" \\");
-          $debugCallback("      --data-urlencode \"filter=$query\" \\");
           $debugCallback("      --data-urlencode \"pageSize=1000\" \\");
           $debugCallback("      --data-urlencode \"startTime=$startTimeIso\" \\");
           $debugCallback("      --data-urlencode \"endTime=$endTimeIso\" \\");
