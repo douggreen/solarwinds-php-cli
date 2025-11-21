@@ -135,16 +135,45 @@ SQL
       );
 
       $inserted = 0;
+      $fixed = 0;
       foreach ($logs as $log) {
         $message = $log['message'] ?? '';
+
+        // Validate and fix JSON if needed.
+        if (!empty($message)) {
+          json_decode($message);
+          if (json_last_error() !== JSON_ERROR_NONE) {
+            // JSON is malformed - attempt to fix it.
+            // Common issues: control characters, unescaped quotes, truncation.
+
+            // Try to fix control characters by removing/escaping them.
+            $fixed++;
+            $message = preg_replace('/[\x00-\x1F\x7F]/u', '', $message);
+
+            // If still invalid, try to decode and re-encode to fix escaping.
+            json_decode($message);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+              // Last resort: store the original as a JSON-escaped string.
+              $message = json_encode(['raw' => $message, 'error' => json_last_error_msg()]);
+            }
+          }
+        }
 
         $stmt->execute([
           ':id' => $log['id'] ?? '',
           ':time' => $log['time'] ?? '',
-          ':data' => $message,  // Store entire JSON as-is
+          ':data' => $message,  // Store JSON (fixed if needed)
         ]);
 
         $inserted++;
+      }
+
+      // Log fixed entries if any.
+      if ($fixed > 0) {
+        error_log(sprintf(
+          'Fixed %d log entries with malformed JSON from API',
+          $fixed
+        ));
       }
 
       $this->db->commit();
