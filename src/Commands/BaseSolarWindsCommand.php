@@ -91,6 +91,7 @@ use SolarWinds\Services\ConfigurationService;
 use SolarWinds\Services\ApiService;
 use SolarWinds\Services\DisplayService;
 use SolarWinds\Services\CacheService;
+use SolarWinds\Services\DatabaseService;
 use SolarWinds\Services\TimeSpecifications;
 
 /**
@@ -105,6 +106,7 @@ abstract class BaseSolarWindsCommand extends Command
   protected ApiService $apiService;
   protected DisplayService $displayService;
   protected CacheService $cacheService;
+  protected DatabaseService $databaseService;
   protected SymfonyStyle $io;
 
   // Default values that child classes can override.
@@ -156,6 +158,7 @@ abstract class BaseSolarWindsCommand extends Command
     $this->apiService = new ApiService($this->config);
     $this->displayService = new DisplayService($this->config);
     $this->cacheService = new CacheService();
+    $this->databaseService = new DatabaseService($this->config);
   }
 
   /**
