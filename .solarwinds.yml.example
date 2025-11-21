@@ -1,0 +1,42 @@
+# SolarWinds PHP CLI Configuration Example
+# Copy this file to ~/.solarwinds.yml and customize
+
+# Required: SolarWinds API credentials
+token: "your-api-token-here"
+base_url: "https://api.na-01.cloud.solarwinds.com"
+
+# Optional: Behavior settings
+debug: false
+progress: true
+validate: false
+
+# Optional: Site definitions for multi-site filtering
+sites:
+  - name: "example"
+    label: "Example Site"
+    hosts: ["example.com", "www.example.com"]
+
+# Optional: Custom command aliases
+aliases:
+  errors: 'search "error" --status --1h'
+  quickbot: 'bot --1h --ua'
+
+# Optional: IP blocking configuration
+blocking:
+  # IPs/ranges that should NEVER be blocked (allowlist)
+  allowlist:
+    - "10.0.0.0/8"          # Internal network example
+    - "192.168.1.0/24"      # Another internal range
+    - "203.0.113.50"        # Specific trusted IP
+
+  # Additional trusted bot user-agents (beyond defaults)
+  # Default list includes: Googlebot, bingbot, Slackbot, facebookexternalhit, etc.
+  trusted_bots:
+    - "MyCustomBot"
+    - "PartnerCrawler"
+
+  # Blocking decision thresholds (optional - these are the defaults)
+  thresholds:
+    min_requests: 100                 # Minimum exploit attempts before flagging for blocking
+    min_duration_hours: 2             # Attack must be sustained over this period
+    high_confidence_40x_ratio: 0.8    # 80%+ failed requests = high confidence malicious

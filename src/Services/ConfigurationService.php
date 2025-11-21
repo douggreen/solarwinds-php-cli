@@ -29,6 +29,11 @@
  * **Dynamic Commands:**
  * - aliases: Key-value pairs defining custom command shortcuts
  *
+ * **Blocking Configuration:**
+ * - blocking.allowlist: IP addresses/CIDR ranges that should never be blocked
+ * - blocking.trusted_bots: User-agent patterns for known good bots (supplements defaults)
+ * - blocking.thresholds: Customizable thresholds for blocking decisions
+ *
  * @section site_mapping Site Mapping System
  *
  * The service provides three types of site mappings:
@@ -296,5 +301,62 @@ class ConfigurationService
   public function getAliases(): array
   {
     return $this->config['aliases'] ?? [];
+  }
+
+  /**
+   * Get IP allowlist (IPs/ranges that should never be blocked).
+   *
+   * @return array Array of IP addresses and CIDR ranges
+   */
+  public function getBlockingAllowlist(): array
+  {
+    return $this->config['blocking']['allowlist'] ?? [];
+  }
+
+  /**
+   * Get trusted bot user-agent patterns.
+   *
+   * @return array Array of regex patterns for known good bots
+   */
+  public function getTrustedBots(): array
+  {
+    $defaultBots = [
+      'Googlebot',
+      'bingbot',
+      'Slackbot',
+      'facebookexternalhit',
+      'Twitterbot',
+      'LinkedInBot',
+      'WhatsApp',
+      'TelegramBot',
+      'DuckDuckBot',
+      'Baiduspider',
+      'YandexBot',
+      'Applebot',
+      'Discordbot',
+    ];
+
+    $configuredBots = $this->config['blocking']['trusted_bots'] ?? [];
+
+    // Merge default bots with user-configured ones.
+    return array_unique(array_merge($defaultBots, $configuredBots));
+  }
+
+  /**
+   * Get blocking threshold configuration.
+   *
+   * @return array Associative array of threshold values
+   */
+  public function getBlockingThresholds(): array
+  {
+    $defaults = [
+      'min_requests' => 100,
+      'min_duration_hours' => 2,
+      'high_confidence_40x_ratio' => 0.8,
+    ];
+
+    $configured = $this->config['blocking']['thresholds'] ?? [];
+
+    return array_merge($defaults, $configured);
   }
 }

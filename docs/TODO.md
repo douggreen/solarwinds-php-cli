@@ -65,6 +65,20 @@ The following commands require new core implementations as they cannot be effect
 
 ## ExploitsCommand Enhancements
 
+### Current Issues to Review
+
+1. **Review SCANNER Detection False Positives**
+   - IAHarvester (Internet Archive) being flagged as SCANNER for legitimate image requests
+   - Example: `/sites/default/files/styles/whole_max/public/images/580extensionmap.jpg.webp?itok=...&cb=...`
+   - User-Agent: `IAHarvester/1.0 (+https://archive-it.org/organizations/...)`
+   - Response: 100% successful (2xx), no failed requests
+   - Issue: 12 requests out of 12,831 total flagged as scanner activity
+   - Need to investigate why these specific paths trigger SCANNER detection
+   - Possible causes:
+     - Query parameter patterns matching scanner regex?
+     - Overly broad scanner detection patterns?
+     - Should trusted bots (like IAHarvester) bypass scan detection entirely?
+
 ### Add functionality from ThreatsCommand
 
 1. **Add DDoS Detection (`detectDDoSPatterns()`)**
