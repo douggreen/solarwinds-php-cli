@@ -114,57 +114,6 @@ class TimeSpecifications
   }
 
   /**
-   * Convert time argument to seconds.
-   */
-  public static function convertToSeconds(string $timeArg): int
-  {
-    $timeOptions = self::getTimeOptions();
-    $timeRanges = [];
-
-    // Calculate seconds for minutes.
-    foreach ($timeOptions['minutes'] as $option) {
-      $minutes = substr($option, 0, -1);
-      $timeRanges[$option] = $minutes * 60;
-    }
-
-    // Calculate seconds for hours.
-    foreach ($timeOptions['hours'] as $option) {
-      $hours = substr($option, 0, -1);
-      $timeRanges[$option] = $hours * 3600;
-    }
-
-    // Calculate seconds for days.
-    foreach ($timeOptions['days'] as $option) {
-      $days = $option[0]; // We know it's single digit.
-      $timeRanges[$option] = $days * 86400;
-    }
-
-    // Calculate seconds for weeks.
-    foreach ($timeOptions['weeks'] as $option) {
-      $weeks = $option[0]; // We know it's single digit.
-      $timeRanges[$option] = $weeks * 604800;
-    }
-
-    // Set alias mappings (redirect to their base values).
-    foreach ($timeOptions['aliases'] as $alias => $baseOption) {
-      $timeRanges[$alias] = $timeRanges[$baseOption];
-    }
-
-    // Set special day ranges (all use 1 day as the range).
-    foreach ($timeOptions['special_days'] as $specialDay) {
-      $timeRanges[$specialDay] = 86400;
-    }
-
-    // Add dynamic day ranges (2D through 14D, all use 1 day as range).
-    [$startDay, $endDay] = $timeOptions['day_range'];
-    for ($day = $startDay; $day <= $endDay; $day++) {
-      $timeRanges["{$day}D"] = 86400;
-    }
-
-    return $timeRanges[$timeArg] ?? 86400; // Default to 1 day.
-  }
-
-  /**
    * Convert time argument to human-readable time range.
    */
   public static function convertToTimeRange(string $timeArg): ?array

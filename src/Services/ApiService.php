@@ -311,25 +311,4 @@ class ApiService
     return gmdate('Y-m-d\TH:i:s\Z', $timestamp);
   }
 
-  /**
-   * Test API connectivity.
-   */
-  public function testConnection(): bool
-  {
-    try {
-      $response = $this->httpClient->get('/v1/logs', [
-        'query' => [
-          'filter' => 'test',
-          'pageSize' => 1,
-          'startTime' => gmdate('Y-m-d\TH:i:s\Z', strtotime('-1 hour')),
-          'endTime' => gmdate('Y-m-d\TH:i:s\Z')
-        ]
-      ]);
-
-      return $response->getStatusCode() === 200;
-    }
-    catch (GuzzleException $e) {
-      return FALSE;
-    }
-  }
 }

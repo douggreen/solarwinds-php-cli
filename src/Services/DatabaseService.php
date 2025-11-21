@@ -278,7 +278,7 @@ SQL
       $gaps[] = [
         'start' => $requestedStart,
         'end' => $coverage['earliest'],
-        'reason' => 'before_existing_data',
+        'reason' => 'historical',
       ];
     }
 
@@ -287,7 +287,7 @@ SQL
       $gaps[] = [
         'start' => $coverage['latest'],
         'end' => $requestedEnd,
-        'reason' => 'after_existing_data',
+        'reason' => 'recent',
       ];
     }
 
@@ -298,23 +298,4 @@ SQL
     ];
   }
 
-  /**
-   * Get database statistics.
-   *
-   * @return array Statistics
-   */
-  public function getStats(): array
-  {
-    $stmt = $this->db->query('SELECT COUNT(*) as count FROM logs');
-    $logCount = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-
-    $fileSize = file_exists($this->dbPath) ? filesize($this->dbPath) : 0;
-
-    return [
-      'log_count' => $logCount,
-      'file_size' => $fileSize,
-      'file_size_mb' => round($fileSize / 1024 / 1024, 2),
-      'db_path' => $this->dbPath,
-    ];
-  }
 }

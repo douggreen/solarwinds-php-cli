@@ -588,29 +588,6 @@ class DisplayService
   }
 
   /**
-   * Check if we're getting unknown fields for the requested display options.
-   */
-  protected function hasUnknownFields(array $log, array $displayOptions): bool
-  {
-    if (!empty($displayOptions['host'])) {
-      $host = $log['orig_host'] ?? $log['host'] ?? $log['hostname'] ?? NULL;
-      if ($host === NULL) return TRUE;
-    }
-
-    if (!empty($displayOptions['status'])) {
-      $status = $log['resp_status'] ?? $log['status'] ?? $log['response_status'] ?? NULL;
-      if ($status === NULL) return TRUE;
-    }
-
-    if (!empty($displayOptions['path'])) {
-      $path = $log['req_uri'] ?? $log['uri'] ?? $log['request_uri'] ?? $log['path'] ?? NULL;
-      if ($path === NULL) return TRUE;
-    }
-
-    return FALSE;
-  }
-
-  /**
    * Display raw JSON output.
    */
   protected function displayRawJson(array $logs, SymfonyStyle $io): void

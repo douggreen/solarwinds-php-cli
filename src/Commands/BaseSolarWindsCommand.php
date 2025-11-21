@@ -542,40 +542,6 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Format applied filters for display.
-   */
-  protected function formatAppliedFilters(array $options): string
-  {
-    $appliedFilters = [];
-
-    if (!empty($options['filters']['country_filter'])) {
-      $appliedFilters[] = "--country-filter=" . $options['filters']['country_filter'];
-    }
-
-    if (!empty($options['filters']['city_filter'])) {
-      $appliedFilters[] = "--city-filter=" . $options['filters']['city_filter'];
-    }
-
-    if (!empty($options['filters']['status_code_filter'])) {
-      $appliedFilters[] = "--status-code-filter=" . $options['filters']['status_code_filter'];
-    }
-
-    if (!empty($options['filters']['user_agent_filter'])) {
-      $appliedFilters[] = "--user-agent-filter=" . $options['filters']['user_agent_filter'];
-    }
-
-    if (!empty($options['filters']['path_filter'])) {
-      $appliedFilters[] = "--path-filter=" . $options['filters']['path_filter'];
-    }
-
-    if (!empty($options['filters']['ip_filter'])) {
-      $appliedFilters[] = "--ip-filter=" . $options['filters']['ip_filter'];
-    }
-
-    return empty($appliedFilters) ? '' : implode(' ', $appliedFilters);
-  }
-
-  /**
    * Apply client-side regex filters to results.
    *
    * Filters logs based on --filter options in format "field:regex".
@@ -765,19 +731,6 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     return Command::SUCCESS;
-  }
-
-  /**
-   * Extract time argument from human readable string.
-   */
-  protected function extractTimeArgFromHumanReadable(string $humanReadable): string
-  {
-    // Extract the time part from strings like "last 1h", "last 1d (default)", etc.
-    if (preg_match('/last (\w+)/', $humanReadable, $matches)) {
-      return $matches[1];
-    }
-
-    return '1d'; // Default fallback.
   }
 
   /**
@@ -1024,74 +977,4 @@ abstract class BaseSolarWindsCommand extends Command
     echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
   }
 
-  /**
-   * Get user-friendly error message based on exception type and status code.
-   */
-  protected function getErrorMessage(GuzzleException $e): string
-  {
-    // Check if the exception has a response (HTTP error).
-    if (method_exists($e, 'hasResponse') && $e->hasResponse()) {
-      $response = $e->getResponse();
-      $statusCode = $response->getStatusCode();
-
-      // 5xx errors - Server-side issues.
-      if ($statusCode >= 500 && $statusCode < 600) {
-        return sprintf(
-          "SolarWinds API is experiencing server issues (HTTP %d). Please try again later or check their status page.",
-          $statusCode
-        );
-      }
-
-      // 401/403 - Authentication/Authorization issues.
-      if ($statusCode === 401 || $statusCode === 403) {
-        return sprintf(
-          "Authentication failed (HTTP %d). Please check your API token configuration.",
-          $statusCode
-        );
-      }
-
-      // 400 - Bad Request (likely query syntax issue).
-      if ($statusCode === 400) {
-        return sprintf(
-          "Invalid request (HTTP %d): %s. Check your query syntax.",
-          $statusCode,
-          $e->getMessage()
-        );
-      }
-
-      // 429 - Rate limiting.
-      if ($statusCode === 429) {
-        return "Rate limit exceeded (HTTP 429). Please wait a few minutes before trying again.";
-      }
-
-      // Other 4xx errors.
-      if ($statusCode >= 400 && $statusCode < 500) {
-        return sprintf(
-          "Client error (HTTP %d): %s",
-          $statusCode,
-          $e->getMessage()
-        );
-      }
-
-      // Other HTTP errors.
-      return sprintf(
-        "API request failed (HTTP %d): %s",
-        $statusCode,
-        $e->getMessage()
-      );
-    }
-
-    // Network/connectivity errors (no HTTP response).
-    $message = $e->getMessage();
-    if (stripos($message, 'timeout') !== FALSE) {
-      return "Request timed out. The SolarWinds API may be slow or unreachable.";
-    }
-
-    if (stripos($message, 'connection') !== FALSE || stripos($message, 'resolve') !== FALSE) {
-      return "Network error: Unable to connect to SolarWinds API. Check your internet connection.";
-    }
-
-    // Generic fallback.
-    return "API request failed: " . $message;
-  }
 }

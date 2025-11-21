@@ -140,52 +140,6 @@ class ConfigurationService
   }
 
   /**
-   * Get API token (backward compatible with original 'token' key).
-   */
-  public function getApiToken(): string
-  {
-    $token = $this->config['token'] ?? $this->config['api_token'] ?? '';
-
-    if (empty($token)) {
-      throw new \RuntimeException(
-        "API token not configured. Please set 'token' in {$this->configPath}\n" .
-        "Example configuration:\n\n" .
-        "token: your-api-token-here\n" .
-        "base_url: https://api.na-01.cloud.solarwinds.com\n" .
-        "progress: TRUE\n" .
-        "debug: FALSE\n\n" .
-        "Common base URLs:\n" .
-        "  North America: https://api.na-01.cloud.solarwinds.com\n" .
-        "  Europe: https://api.eu-01.cloud.solarwinds.com"
-      );
-    }
-
-    return $token;
-  }
-
-  /**
-   * Get API base URL.
-   */
-  public function getApiBaseUrl(): string
-  {
-    $baseUrl = $this->config['base_url'] ?? $this->config['api_base_url'] ?? '';
-
-    if (empty($baseUrl)) {
-      throw new \RuntimeException(
-        "API base URL not configured. Please set 'base_url' in {$this->configPath}\n" .
-        "Example configurations:\n\n" .
-        "# North American region (most common)\n" .
-        "base_url: https://api.na-01.cloud.solarwinds.com\n\n" .
-        "# European region\n" .
-        "base_url: https://api.eu-01.cloud.solarwinds.com\n\n" .
-        "# Or your specific SolarWinds instance URL"
-      );
-    }
-
-    return rtrim($baseUrl, '/');
-  }
-
-  /**
    * Get debug mode setting.
    */
   public function isDebugEnabled(): bool
@@ -193,13 +147,6 @@ class ConfigurationService
     return $this->getBooleanValue('debug');
   }
 
-  /**
-   * Get validation mode setting.
-   */
-  public function isValidationEnabled(): bool
-  {
-    return $this->getBooleanValue('validate');
-  }
 
   /**
    * Get progress mode setting.
