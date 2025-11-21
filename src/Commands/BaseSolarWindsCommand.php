@@ -223,14 +223,14 @@ abstract class BaseSolarWindsCommand extends Command
       'status' => 'Show HTTP status codes',
       'host' => 'Show originating hosts',
       'ua' => 'Show user agents',
-      'ip' => 'Show IP addresses',
+      'ip' => 'Show IP addresses (or filter to specific IP: --ip=ADDRESS)',
       'country' => 'Show country information',
       'region' => 'Show region information',
       'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping',
       'vars' => 'Show variable replacements (all variables, or specify: user,ip,post.name). Supports deep array references with dot notation (e.g., post.name, geoip.country_code2)'
     ];
     foreach ($displayOptions as $option => $description) {
-      if ($option === 'vars') {
+      if ($option === 'vars' || $option === 'ip') {
         $this->addOption($option, NULL, InputOption::VALUE_OPTIONAL, $description, FALSE);
       }
       else {

@@ -89,6 +89,19 @@ When the user asks to "show me the TODO list" or similar:
 - **Use protected instead of private** - Better extensibility
 - **Comments are sentences** - Start with capital, end with period
 - **Clean trailing whitespace** - `sed -i 's/ *$//' filename` on ALL PHP files
+- **Format long arrays on separate lines** - Arrays with multiple items should have each item on its own line with a trailing comma (even the last item). Example:
+  ```php
+  // Bad:
+  'regex' => ['/_profiler', '/_wdt', '/debug', '/trace'],
+
+  // Good:
+  'regex' => [
+    '/_profiler',
+    '/_wdt',
+    '/debug',
+    '/trace',
+  ],
+  ```
 
 ## HISTORICAL LESSONS (Reference Only)
 

@@ -67,7 +67,16 @@ The following commands require new core implementations as they cannot be effect
 
 ### Current Issues to Review
 
-1. **Review SCANNER Detection False Positives**
+1. **Review Low-Volume Traffic Classification**
+   - 8 requests over 1.9 days (0.2/hour) being classified as "High-Volume Traffic" and appearing in blocking recommendations
+   - Need minimum request threshold before classifying IPs as threats worthy of blocking consideration
+   - `classifyThreatType()` currently returns 'High-Volume Traffic' as default for any traffic that doesn't match other patterns
+   - Should either:
+     - Add minimum threshold check (e.g., 50+ requests) before returning threat classification
+     - Filter out low-volume IPs earlier in campaign creation
+     - Change default from "High-Volume Traffic" to something more appropriate for edge cases
+
+2. **Review SCANNER Detection False Positives**
    - IAHarvester (Internet Archive) being flagged as SCANNER for legitimate image requests
    - Example: `/sites/default/files/styles/whole_max/public/images/580extensionmap.jpg.webp?itok=...&cb=...`
    - User-Agent: `IAHarvester/1.0 (+https://archive-it.org/organizations/...)`
