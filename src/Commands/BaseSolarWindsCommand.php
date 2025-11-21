@@ -974,10 +974,11 @@ abstract class BaseSolarWindsCommand extends Command
     $endEpoch = strtotime($options['time']['end_time']);
     $totalSeconds = $endEpoch - $startEpoch;
     $lastMessage = '';
-    $samples = [];  // Rolling window: [realTime => coveredSeconds]
-    $lastSampleMinute = 0;
+    $dayRates = [];  // Rolling average of seconds per day: [realTimeForDay]
+    $lastDayBoundary = $endEpoch;  // Track when we cross 24-hour boundaries
+    $lastDayStartTime = NULL;  // Real time when current day started
 
-    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$samples, &$lastSampleMinute) {
+    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$dayRates, &$lastDayBoundary, &$lastDayStartTime) {
       // Update progress based on time range covered (oldest timestamp in current page).
       $coveredSeconds = 0;
       if (!empty($pageLogs)) {
@@ -989,82 +990,135 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
 
-      // Calculate elapsed time and estimate remaining.
+      // Calculate elapsed time and detect 24-hour boundaries.
       $elapsed = time() - $progressBar->getStartTime();
-      $currentMinute = floor($elapsed / 60);
 
-      // Collect samples for rolling average (one per minute, max 10 samples).
-      if ($currentMinute > $lastSampleMinute && $coveredSeconds > 0) {
-        $samples[$elapsed] = $coveredSeconds;
-        $lastSampleMinute = $currentMinute;
+      // Detect when we cross a 24-hour boundary in the fetched data.
+      if (!empty($pageLogs)) {
+        $currentTimestamp = strtotime($pageLogs[0]['time']);
+        $daysBehind = floor(($lastDayBoundary - $currentTimestamp) / 86400);
 
-        // Keep only last 10 minutes of samples.
-        if (count($samples) > 10) {
-          array_shift($samples);
+        // If we've crossed into a new day (fetched 24+ hours of data).
+        if ($daysBehind >= 1) {
+          if ($lastDayStartTime !== NULL) {
+            // Record how long this 24-hour period took in real time.
+            $realTimeForDay = $elapsed - $lastDayStartTime;
+            $dayRates[] = $realTimeForDay;
+
+            // Keep only last 3 days for rolling average.
+            if (count($dayRates) > 3) {
+              array_shift($dayRates);
+            }
+          }
+
+          // Start tracking the new 24-hour period.
+          $lastDayBoundary = $currentTimestamp;
+          $lastDayStartTime = $elapsed;
+        }
+        elseif ($lastDayStartTime === NULL && $coveredSeconds > 0) {
+          // First page - start tracking the first day.
+          $lastDayStartTime = $elapsed;
         }
       }
 
-      // Format elapsed time as minutes and seconds (e.g., "1m6s").
+      // Format elapsed time as clock format (0:44, 4:44, 1:23:44).
       if ($elapsed < 60) {
-        $elapsedStr = $elapsed . 's';
+        $elapsedStr = '0:' . sprintf('%02d', $elapsed);
       }
       elseif ($elapsed < 3600) {
         $mins = floor($elapsed / 60);
         $secs = $elapsed % 60;
-        $elapsedStr = $secs > 0 ? "{$mins}m{$secs}s" : "{$mins}m";
+        $elapsedStr = $mins . ':' . sprintf('%02d', $secs);
       }
       else {
         $hours = floor($elapsed / 3600);
         $mins = floor(($elapsed % 3600) / 60);
-        $elapsedStr = $mins > 0 ? "{$hours}h{$mins}m" : "{$hours}h";
+        $secs = $elapsed % 60;
+        $elapsedStr = $hours . ':' . sprintf('%02d', $mins) . ':' . sprintf('%02d', $secs);
       }
 
-      // Format results count (use k for thousands).
-      $resultsStr = $totalResults >= 1000 ? round($totalResults / 1000) . 'k' : $totalResults;
+      // Format data completeness: "13h of 14d" or "2d3h of 7d".
+      $totalHours = $totalSeconds / 3600;
+      $retrievedHours = $coveredSeconds / 3600;
+
+      // Format retrieved amount.
+      if ($retrievedHours < 24) {
+        $retrievedPart = round($retrievedHours) . 'h';
+      }
+      else {
+        $days = floor($retrievedHours / 24);
+        $hours = (int) round(fmod($retrievedHours, 24));
+        if ($hours >= 24) {
+          $days++;
+          $hours = 0;
+        }
+        $retrievedPart = $hours > 0 ? "{$days}d{$hours}h" : "{$days}d";
+      }
+
+      // Format total amount.
+      if ($totalHours < 24) {
+        $totalPart = round($totalHours) . 'h';
+      }
+      else {
+        $days = floor($totalHours / 24);
+        $hours = (int) round(fmod($totalHours, 24));
+        if ($hours >= 24) {
+          $days++;
+          $hours = 0;
+        }
+        $totalPart = $hours > 0 ? "{$days}d{$hours}h" : "{$days}d";
+      }
+
+      $completenessStr = "$retrievedPart of $totalPart";
 
       // Estimate remaining time if enough data.
       $remainingStr = 'estimating';
       if ($elapsed >= 5 && $coveredSeconds > 0) {
-        // Use rolling average if we have multiple samples, otherwise use overall average.
-        if (count($samples) >= 2) {
-          // Calculate rate from oldest to newest sample in window.
-          $oldestElapsed = array_key_first($samples);
-          $oldestCovered = $samples[$oldestElapsed];
-          $timeDiff = $elapsed - $oldestElapsed;
-          $coverageDiff = $coveredSeconds - $oldestCovered;
-          $coverageRate = $timeDiff > 0 ? $coverageDiff / $timeDiff : $coveredSeconds / $elapsed;
-        }
-        else {
-          // Fall back to overall average if not enough samples yet.
-          $coverageRate = $coveredSeconds / $elapsed;
-        }
-
         $remainingSeconds = $totalSeconds - $coveredSeconds;
-        $estimatedTimeRemaining = $remainingSeconds / $coverageRate;
 
-        if ($estimatedTimeRemaining < 60) {
-          $remainingStr = '< 1m';
-        }
-        elseif ($estimatedTimeRemaining < 3600) {
-          $minutes = round($estimatedTimeRemaining / 60);
-          $remainingStr = $minutes . 'm';
-        }
-        elseif ($estimatedTimeRemaining < 86400) {
-          $hours = round($estimatedTimeRemaining / 3600, 1);
-          $remainingStr = $hours . 'h';
+        // Use 24-hour day rates if we have completed day data.
+        if (!empty($dayRates)) {
+          // Average the last 1-3 completed days.
+          $avgSecondsPerDay = array_sum($dayRates) / count($dayRates);
+          $remainingDays = $remainingSeconds / 86400;
+          $estimatedTimeRemaining = $remainingDays * $avgSecondsPerDay;
         }
         else {
-          $days = round($estimatedTimeRemaining / 86400, 1);
-          $remainingStr = $days . 'd';
+          // Fall back to overall average if haven't completed a full day yet.
+          $coverageRate = $coveredSeconds / $elapsed;
+          $estimatedTimeRemaining = $remainingSeconds / $coverageRate;
+        }
+
+        // Calculate ETA as actual wall clock time.
+        $etaTimestamp = time() + (int) $estimatedTimeRemaining;
+        $etaTime = date('g:ia', $etaTimestamp);
+
+        // Determine if ETA is today, tomorrow, or a future date.
+        $todayStart = strtotime('today');
+        $tomorrowStart = strtotime('tomorrow');
+        $dayAfterStart = strtotime('+2 days', $todayStart);
+
+        if ($etaTimestamp < $tomorrowStart) {
+          $remainingStr = $etaTime . ' ETA';
+        }
+        elseif ($etaTimestamp < $dayAfterStart) {
+          $remainingStr = $etaTime . ' tomorrow';
+        }
+        else {
+          $etaDate = date('n/j', $etaTimestamp);
+          $remainingStr = $etaTime . ' on ' . $etaDate;
         }
       }
 
-      // Build progress message with optional fixed count.
-      $message = "$elapsedStr elapsed ($resultsStr results)";
-      if ($totalFixed > 0) {
-        $message .= ", $totalFixed fixed";
+      // Build progress message: "13h of 14d / 12:40am ETA / 4:59 elapsed".
+      $message = $completenessStr;
+      if ($remainingStr !== 'estimating') {
+        $message .= " / $remainingStr";
       }
-      $message .= ", $remainingStr remaining";
+      if ($totalFixed > 0) {
+        $message .= " / $totalFixed fixed";
+      }
+      $message .= " / $elapsedStr elapsed";
 
       // Only update terminal if message changed (avoid redundant I/O).
       if ($message !== $lastMessage) {
