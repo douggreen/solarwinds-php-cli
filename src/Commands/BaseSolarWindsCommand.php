@@ -732,7 +732,7 @@ abstract class BaseSolarWindsCommand extends Command
   /**
    * Execute search using database-backed universal sync.
    *
-   * This simplified implementation fetches data via searchLogsWithProgress()
+   * This simplified implementation fetches data via syncLogsToDatabase()
    * which automatically handles database storage and API syncing.
    *
    * @param string $query Search query string
@@ -752,7 +752,7 @@ abstract class BaseSolarWindsCommand extends Command
       $this->io->newLine();
     }
 
-    $results = $this->searchLogsWithProgress($query, $options);
+    $results = $this->syncLogsToDatabase($options);
 
     // Apply client-side filters.
     $originalCount = count($results);
@@ -913,27 +913,26 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Execute searchLogs with automatic progress bar and database storage.
+   * Sync logs from API to database with automatic gap detection.
    *
    * Implements universal sync: fetches ALL logs for time range from database or API,
-   * with automatic gap detection and incremental updates.
+   * with automatic gap detection and incremental page-by-page saves.
    *
-   * @param string $query The search query (unused in universal sync, kept for compatibility)
    * @param array $options Query options containing time range
    * @param bool $showCacheMessage Whether to show database hit message (default: TRUE)
-   * @return array Array of log entries
+   * @return array Array of log entries from database
    */
-  protected function searchLogsWithProgress(string $query, array $options, bool $showCacheMessage = TRUE): array
+  protected function syncLogsToDatabase(array $options, bool $showCacheMessage = TRUE): array
   {
     // Convert time range to ISO 8601 for database queries.
     $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
     $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
 
-    // Detect gaps in database coverage.
-    $gapAnalysis = $this->databaseService->detectGaps($startTime, $endTime);
+    // Detect missing ranges in database coverage.
+    $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
 
-    // No gaps - return existing database data.
-    if (empty($gapAnalysis['gaps'])) {
+    // No missing ranges - return existing database data.
+    if (empty($rangeAnalysis['gaps'])) {
       $results = $this->databaseService->getLogs($startTime, $endTime);
       if ($showCacheMessage && !$this->jsonMode) {
         $this->io->note("Using database results (" . count($results) . " logs)");
@@ -941,32 +940,64 @@ abstract class BaseSolarWindsCommand extends Command
       return $results;
     }
 
-    // We have gaps - fetch missing data from API.
-    $gapResults = [];
-    foreach ($gapAnalysis['gaps'] as $gap) {
+    // We have missing ranges - fetch from API with incremental saves.
+    $totalNewLogs = 0;
+    foreach ($rangeAnalysis['gaps'] as $gap) {
       if (!$this->jsonMode && $showCacheMessage) {
         $this->io->writeln("<comment>Fetching gap: {$gap['start']} to {$gap['end']} ({$gap['reason']})</comment>");
       }
 
-      $progressBar = $this->createSearchProgressBar($options);
-      $gapData = $this->apiService->searchLogs(
-        $gap['start'],
-        $gap['end'],
-        $this->getProgressCallback($progressBar, $options)
-      );
-      $this->finishProgressBar($progressBar);
+      // Create progress bar using gap range (not requested range).
+      $gapOptions = $options;
+      $gapOptions['time'] = [
+        'start_time' => $gap['start'],
+        'end_time' => $gap['end'],
+      ];
+      $progressBar = $this->createSearchProgressBar($gapOptions);
 
-      // Save gap data to database.
-      $this->databaseService->insertLogs($gapData);
+      // Create save callback to insert each page immediately.
+      $saveCallback = function(array $pageLogs) use (&$totalNewLogs) {
+        $inserted = $this->databaseService->insertLogs($pageLogs);
+        $totalNewLogs += $inserted;
+      };
 
-      $gapResults = array_merge($gapResults, $gapData);
+      try {
+        // Fetch gap data with incremental saving.
+        $this->apiService->retrieveLogs(
+          $gap['start'],
+          $gap['end'],
+          $this->getProgressCallback($progressBar, $gapOptions),
+          NULL,  // No debug callback
+          $saveCallback  // Save each page immediately
+        );
+        $this->finishProgressBar($progressBar);
+      }
+      catch (\Exception $e) {
+        $this->finishProgressBar($progressBar);
+
+        if (!$this->jsonMode) {
+          $this->io->error(sprintf(
+            'Failed to fetch gap %s to %s: %s',
+            $gap['start'],
+            $gap['end'],
+            $e->getMessage()
+          ));
+
+          if ($totalNewLogs > 0) {
+            $this->io->note("Partial data saved: $totalNewLogs logs were successfully saved to database before error");
+          }
+        }
+
+        // Re-throw to let caller handle it.
+        throw $e;
+      }
     }
 
-    // Get complete dataset from database (now includes gap data).
+    // Get complete dataset from database (now includes newly fetched data).
     $results = $this->databaseService->getLogs($startTime, $endTime);
 
-    if ($showCacheMessage && !$this->jsonMode && $gapAnalysis['has_data']) {
-      $this->io->note("Merged " . count($gapResults) . " new logs with existing database data (total: " . count($results) . " logs)");
+    if ($showCacheMessage && !$this->jsonMode && $rangeAnalysis['has_data']) {
+      $this->io->note("Merged $totalNewLogs new logs with existing database data (total: " . count($results) . " logs)");
     }
 
     return $results;

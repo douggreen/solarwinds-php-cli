@@ -123,7 +123,7 @@ class ApiService
   }
 
   /**
-   * Search logs with pagination - fetches ALL logs (universal sync).
+   * Retrieve logs from API with pagination - fetches ALL logs (universal sync).
    *
    * With the universal sync architecture, this method always fetches ALL logs
    * (HTTP + Drupal + everything) by not providing a filter parameter to the API.
@@ -133,14 +133,16 @@ class ApiService
    * @param string $endTime End time (human readable)
    * @param callable|NULL $progressCallback Callback for progress updates
    * @param callable|NULL $debugCallback Callback for debug output
+   * @param callable|NULL $saveCallback Callback to save each page immediately (receives array of logs)
    * @return array Array of log entries
    * @throws GuzzleException
    */
-  public function searchLogs(
+  public function retrieveLogs(
     string $startTime,
     string $endTime,
     ?callable $progressCallback = NULL,
-    ?callable $debugCallback = NULL
+    ?callable $debugCallback = NULL,
+    ?callable $saveCallback = NULL
   ): array {
     // Convert human-readable times to ISO format.
     $startTimeIso = $this->convertToIsoTime($startTime);
@@ -163,47 +165,62 @@ class ApiService
         break;
       }
 
-      if ($isFirstPage) {
-        // First page: build parameters for universal sync (no filter).
-        // This fetches ALL logs: HTTP traffic + Drupal logs + everything.
-        $requestParams = [
-          'pageSize' => 1000,
-          'startTime' => $startTimeIso,
-          'endTime' => $endTimeIso
-        ];
+      try {
+        if ($isFirstPage) {
+          // First page: build parameters for universal sync (no filter).
+          // This fetches ALL logs: HTTP traffic + Drupal logs + everything.
+          $requestParams = [
+            'pageSize' => 1000,
+            'startTime' => $startTimeIso,
+            'endTime' => $endTimeIso
+          ];
 
-        // Debug output for first page request.
-        if ($debugCallback) {
-          $debugCallback("Fetching page $pageCount...");
-          $debugCallback("  Time range: $startTimeIso to $endTimeIso");
-          $debugCallback("  Filter: (none - fetching ALL logs)");
+          // Debug output for first page request.
+          if ($debugCallback) {
+            $debugCallback("Fetching page $pageCount...");
+            $debugCallback("  Time range: $startTimeIso to $endTimeIso");
+            $debugCallback("  Filter: (none - fetching ALL logs)");
 
-          // Show equivalent curl command.
-          $baseUri = rtrim($this->httpClient->getConfig('base_uri'), '/');
-          $authHeader = 'Bearer [HIDDEN]';
-          $debugCallback("  Executing curl command:");
-          $debugCallback("    curl -s -G \"$baseUri/v1/logs\" \\");
-          $debugCallback("      --data-urlencode \"pageSize=1000\" \\");
-          $debugCallback("      --data-urlencode \"startTime=$startTimeIso\" \\");
-          $debugCallback("      --data-urlencode \"endTime=$endTimeIso\" \\");
-          $debugCallback("      -H \"accept: application/json\" \\");
-          $debugCallback("      -H \"Authorization: $authHeader\"");
+            // Show equivalent curl command.
+            $baseUri = rtrim($this->httpClient->getConfig('base_uri'), '/');
+            $authHeader = 'Bearer [HIDDEN]';
+            $debugCallback("  Executing curl command:");
+            $debugCallback("    curl -s -G \"$baseUri/v1/logs\" \\");
+            $debugCallback("      --data-urlencode \"pageSize=1000\" \\");
+            $debugCallback("      --data-urlencode \"startTime=$startTimeIso\" \\");
+            $debugCallback("      --data-urlencode \"endTime=$endTimeIso\" \\");
+            $debugCallback("      -H \"accept: application/json\" \\");
+            $debugCallback("      -H \"Authorization: $authHeader\"");
+          }
+
+          $response = $this->httpClient->get('/v1/logs', [
+            'query' => $requestParams
+          ]);
+          $isFirstPage = FALSE;
         }
+        else {
+          // Subsequent pages: use nextPage URL exactly like bash script.
+          if ($debugCallback) {
+            $debugCallback("Fetching page $pageCount...");
+            $debugCallback("  Using nextPage: $nextPageUrl");
+          }
 
-        $response = $this->httpClient->get('/v1/logs', [
-          'query' => $requestParams
-        ]);
-        $isFirstPage = FALSE;
+          // Note: nextPageUrl from SolarWinds API is relative to base URL.
+          $response = $this->httpClient->get($nextPageUrl);
+        }
       }
-      else {
-        // Subsequent pages: use nextPage URL exactly like bash script.
-        if ($debugCallback) {
-          $debugCallback("Fetching page $pageCount...");
-          $debugCallback("  Using nextPage: $nextPageUrl");
-        }
-
-        // Note: nextPageUrl from SolarWinds API is relative to base URL.
-        $response = $this->httpClient->get($nextPageUrl);
+      catch (\Exception $e) {
+        // API request failed - throw with context about which page failed.
+        throw new \RuntimeException(
+          sprintf(
+            'API request failed on page %d (fetched %d logs so far): %s',
+            $pageCount,
+            $totalResults,
+            $e->getMessage()
+          ),
+          0,
+          $e
+        );
       }
 
       // Debug API response status.
@@ -284,6 +301,11 @@ class ApiService
       // Call progress callback if provided.
       if ($progressCallback) {
         $progressCallback($pageCount, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults);
+      }
+
+      // Save page data immediately if callback provided.
+      if ($saveCallback && !empty($pageLogs)) {
+        $saveCallback($pageLogs);
       }
 
       // Check for nextPage token exactly like bash script.

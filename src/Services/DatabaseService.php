@@ -236,16 +236,19 @@ SQL
   }
 
   /**
-   * Detect missing time ranges (gaps) in the database.
+   * Detect missing data ranges at beginning/end of requested time range.
    *
    * Analyzes what data exists in the database for the requested time range
-   * and identifies gaps that need to be fetched from the API.
+   * and identifies missing ranges that need to be fetched from the API.
+   *
+   * NOTE: This implementation only detects missing data at the beginning
+   * and end of the requested range. It does NOT detect gaps in the middle.
    *
    * @param string $requestedStart Start of requested range (ISO 8601)
    * @param string $requestedEnd End of requested range (ISO 8601)
-   * @return array Array with 'coverage' info and 'gaps' to fetch
+   * @return array Array with 'has_data', 'coverage' info and 'gaps' (missing ranges) to fetch
    */
-  public function detectGaps(string $requestedStart, string $requestedEnd): array
+  public function detectMissingRanges(string $requestedStart, string $requestedEnd): array
   {
     // Get the actual time range covered by data in database.
     $stmt = $this->db->prepare(<<<'SQL'

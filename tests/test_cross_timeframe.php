@@ -2,286 +2,256 @@
 <?php
 
 /**
- * Test script for cross-timeframe cache reuse
+ * Test script for cross-timeframe database sync
  *
  * Tests the scenario: --1d, wait, --2d, wait, --1w
+ * Verifies that gap detection works correctly when expanding time ranges
+ * and that we only fetch missing data (not re-fetch existing data).
  */
 
 require_once __DIR__ . '/../vendor/autoload.php';
 
-use SolarWinds\Services\CacheService;
+use SolarWinds\Services\ConfigurationService;
+use SolarWinds\Services\DatabaseService;
 
-echo "=== Cross-Timeframe Cache Reuse Test ===\n\n";
+echo "=== Cross-Timeframe Database Sync Test ===\n\n";
 
-// Create isolated test environment
-$testCacheDir = '/tmp/solarwinds-cache-crosstime-test-' . uniqid();
-@mkdir($testCacheDir, 0755, TRUE);
-echo "Test cache directory: $testCacheDir\n\n";
+// Create test database
+$testDbPath = '/tmp/solarwinds-test-crosstime-' . uniqid() . '.db';
+echo "Test database: $testDbPath\n\n";
 
-// Mock API service
-class MockApiService
-{
-  private int $callCount = 0;
-  private array $queryLog = [];
+// Create mock ConfigurationService that returns our test DB path
+$mockConfig = new class($testDbPath) extends ConfigurationService {
+  private string $testDbPath;
 
-  public function searchLogs(string $query, string $startTime, string $endTime, ?callable $progressCallback = NULL, ?callable $debugCallback = NULL): array
-    {
-      $this->callCount++;
-      $this->queryLog[] = [
-          'query' => $query,
-          'start' => $startTime,
-          'end' => $endTime,
-          'call' => $this->callCount,
-      ];
-
-      // Generate fake log entries based on time range
-      $start = strtotime($startTime);
-      $end = strtotime($endTime);
-      $duration = $end - $start;
-      $numEntries = (int) ($duration / 3600); // 1 entry per hour
-
-      $results = [];
-      for ($i = 0; $i < $numEntries; $i++) {
-          $timestamp = date('Y-m-d\TH:i:s\Z', $start + ($i * 3600));
-          $results[] = [
-              'id' => "log-{$timestamp}",
-              'message' => "Mock log entry at {$timestamp}",
-              'time' => $timestamp,
-          ];
-      }
-
-      return $results;
+  public function __construct(string $testDbPath) {
+    $this->testDbPath = $testDbPath;
   }
 
-  public function getCallCount(): int
-    {
-      return $this->callCount;
+  public function getDatabasePath(): string {
+    return $this->testDbPath;
   }
+};
 
-  public function getQueryLog(): array
-    {
-      return $this->queryLog;
-  }
+$db = new DatabaseService($mockConfig);
 
-  public function resetCallCount(): void
-    {
-      $this->callCount = 0;
-      $this->queryLog = [];
-  }
-}
+// Helper to simulate data sync
+function simulateSync(DatabaseService $db, string $requestedStart, string $requestedEnd, string $label): array {
+  echo "--- {$label}: Sync from {$requestedStart} to {$requestedEnd} ---\n";
 
-// Create services
-$cacheService = new CacheService($testCacheDir);
-$mockApi = new MockApiService();
+  $result = $db->detectMissingRanges($requestedStart, $requestedEnd);
 
-// Simulate query
-function simulateQuery(
-    MockApiService $api,
-    CacheService $cache,
-    string $query,
-    string $startTime,
-    string $endTime,
-    string $label
-): array {
-    echo "--- {$label}: Query from {$startTime} to {$endTime} ---\n";
-
-    $scriptName = 'test-command';
-    $cacheKey = $cache->generateCacheKey($scriptName, $query, '');
-
-    $timeRangeSeconds = strtotime($endTime) - strtotime($startTime);
-
-    // Try incremental update
-    $useIncremental = $cache->shouldUseIncrementalUpdate($cacheKey, $startTime, $endTime, $timeRangeSeconds);
-
-  if ($useIncremental) {
-      echo "[CACHE] Incremental update opportunity detected\n";
-
-      $cachedResults = $cache->loadFromCache($cacheKey);
-      $gaps = $cache->calculateGapQueries($cacheKey, $startTime, $endTime);
-
-      $freshResults = [];
-    if ($gaps['before'] !== NULL) {
-        $gapStart = strtotime($gaps['before']['start_time']);
-        $gapEnd = strtotime($gaps['before']['end_time']);
-        $gapHours = ($gapEnd - $gapStart) / 3600;
-        echo "[CACHE] Fetching before gap: {$gapHours}h ({$gaps['before']['start_time']} to {$gaps['before']['end_time']})\n";
-        $beforeResults = $api->searchLogs($query, $gaps['before']['start_time'], $gaps['before']['end_time']);
-        $freshResults = array_merge($freshResults, $beforeResults);
-    }
-    if ($gaps['after'] !== NULL) {
-        $gapStart = strtotime($gaps['after']['start_time']);
-        $gapEnd = strtotime($gaps['after']['end_time']);
-        $gapHours = ($gapEnd - $gapStart) / 3600;
-        echo "[CACHE] Fetching after gap: {$gapHours}h ({$gaps['after']['start_time']} to {$gaps['after']['end_time']})\n";
-        $afterResults = $api->searchLogs($query, $gaps['after']['start_time'], $gaps['after']['end_time']);
-        $freshResults = array_merge($freshResults, $afterResults);
-    }
-
-      $results = $cache->mergeAndDeduplicateResults($cachedResults, $freshResults);
-      echo "[CACHE] Merged " . count($cachedResults) . " cached + " . count($freshResults) . " fresh = " . count($results) . " total\n";
+  if (!$result['has_data']) {
+    echo "[NO DATA] Database is empty, need to fetch entire range\n";
+    $gaps = $result['gaps'];
+  } elseif (count($result['gaps']) === 0) {
+    echo "[COMPLETE] Database has all requested data, no API calls needed\n";
+    return ['gaps_fetched' => 0, 'hours_fetched' => 0];
   } else {
-      echo "[API] Full query (no cache or cache not applicable)\n";
-      $results = $api->searchLogs($query, $startTime, $endTime);
-      echo "[API] Fetched " . count($results) . " results\n";
+    echo "[PARTIAL] Database has some data, need to fetch gaps:\n";
+    echo "  Existing coverage: {$result['coverage']['earliest']} to {$result['coverage']['latest']}\n";
+    echo "  Record count: {$result['coverage']['count']}\n";
+    $gaps = $result['gaps'];
   }
 
-    // Save to cache
-    $cache->saveToCache(
-        $cacheKey,
-        $results,
-        0,
-        $startTime,
-        $endTime,
-        $timeRangeSeconds,
-        md5($query),
-        $scriptName
-    );
-    echo "[CACHE] Saved to cache\n";
+  $totalHoursFetched = 0;
+  $gapsFetched = 0;
 
-    return $results;
+  foreach ($gaps as $gap) {
+    $gapStart = strtotime($gap['start']);
+    $gapEnd = strtotime($gap['end']);
+    $gapHours = ($gapEnd - $gapStart) / 3600;
+
+    echo "  Gap: {$gap['start']} to {$gap['end']} ({$gapHours}h, {$gap['reason']})\n";
+
+    // Simulate API fetch by inserting test data for the gap
+    $testLogs = [];
+    for ($t = $gapStart; $t <= $gapEnd; $t += 3600) {
+      $timestamp = date('Y-m-d\TH:i:s\Z', $t);
+      $testLogs[] = [
+        'id' => "log-{$t}",
+        'time' => $timestamp,
+        'message' => json_encode([
+          'client_ip' => '1.2.3.4',
+          'req_uri' => '/test',
+          'time' => $timestamp,
+        ]),
+      ];
+    }
+
+    $inserted = $db->insertLogs($testLogs);
+    echo "  [API] Fetched and inserted {$inserted} logs\n";
+
+    $totalHoursFetched += $gapHours;
+    $gapsFetched++;
+  }
+
+  echo "Summary: Fetched {$gapsFetched} gap(s), {$totalHoursFetched}h of data\n\n";
+
+  return ['gaps_fetched' => $gapsFetched, 'hours_fetched' => $totalHoursFetched];
 }
 
 // Simulate time progression
 $now = time();
 
-// TEST 1: Run --1d query
+// TEST 1: Run --1d query (initial sync)
 echo "=== TEST 1: Initial --1d Query ===\n";
 $oneDayAgo = $now - 86400;
 $startTime1d = date('Y-m-d\TH:i:s\Z', $oneDayAgo);
 $endTime1d = date('Y-m-d\TH:i:s\Z', $now);
 
-$results1d = simulateQuery($mockApi, $cacheService, 'test query', $startTime1d, $endTime1d, '--1d query');
-$apiCalls1d = $mockApi->getCallCount();
+$result1d = simulateSync($db, $startTime1d, $endTime1d, '--1d query');
 
-echo "\nResult: {$apiCalls1d} API call(s), " . count($results1d) . " results\n";
-if ($apiCalls1d === 1) {
-    echo "✅ PASS: First --1d made 1 API call (full query)\n";
+if ($result1d['gaps_fetched'] === 1 && $result1d['hours_fetched'] >= 23 && $result1d['hours_fetched'] <= 25) {
+  echo "✅ PASS: First --1d fetched 1 gap (~24h)\n";
 } else {
-    echo "❌ FAIL: Expected 1 API call, got {$apiCalls1d}\n";
+  echo "❌ FAIL: Expected 1 gap of ~24h, got {$result1d['gaps_fetched']} gap(s) with {$result1d['hours_fetched']}h\n";
 }
 echo "\n";
 
-// Simulate 2 minutes passing
-sleep(1);
-$mockApi->resetCallCount();
+// Verify database has 1 day of data
+$allLogs = $db->getLogs($startTime1d, $endTime1d);
+echo "Database now contains " . count($allLogs) . " logs\n\n";
 
-// Manually age the cache to simulate 2 minutes
-$cacheKey = $cacheService->generateCacheKey('test-command', 'test query', '');
-$metadata = $cacheService->loadMetadata($cacheKey);
-$twoMinutesAgo = $now - 120;
-$metadata['created_at'] = $twoMinutesAgo;
-$cacheService->saveMetadata($cacheKey, $metadata);
+// TEST 2: Run --2d query (should only fetch missing older day)
+echo "=== TEST 2: Subsequent --2d Query ===\n";
 
-// TEST 2: Run --2d query (should fetch 1d older data + 2min recent data)
-echo "=== TEST 2: Subsequent --2d Query (2 minutes later) ===\n";
-$newNow = $now + 120;
-$twoDaysAgo = $newNow - (2 * 86400);
+$twoDaysAgo = $now - (2 * 86400);
 $startTime2d = date('Y-m-d\TH:i:s\Z', $twoDaysAgo);
-$endTime2d = date('Y-m-d\TH:i:s\Z', $newNow);
+$endTime2d = date('Y-m-d\TH:i:s\Z', $now);
 
-$results2d = simulateQuery($mockApi, $cacheService, 'test query', $startTime2d, $endTime2d, '--2d query');
-$apiCalls2d = $mockApi->getCallCount();
+$result2d = simulateSync($db, $startTime2d, $endTime2d, '--2d query');
 
-echo "\nResult: {$apiCalls2d} API call(s), " . count($results2d) . " results\n";
+// Should fetch 1 gap (historical only, both use same end time "now")
+$expectedGaps = 1;
+$totalHours = $result2d['hours_fetched'];
 
-// Should make 2 API calls: one for older data (1d), one for recent data (2min)
-$queryLog = $mockApi->getQueryLog();
-$hasBeforeGap = FALSE;
-$hasAfterGap = FALSE;
+if ($result2d['gaps_fetched'] === $expectedGaps) {
+  echo "✅ PASS: --2d fetched {$expectedGaps} gap (historical only)\n";
 
-foreach ($queryLog as $q) {
-    $duration = strtotime($q['end']) - strtotime($q['start']);
-    $hours = $duration / 3600;
-
-  if ($hours >= 23 && $hours <= 25) {
-      $hasBeforeGap = TRUE;
-      echo "✅ PASS: Found before gap query (~24h for older data)\n";
+  // Verify roughly 24h of new data
+  if ($totalHours >= 23 && $totalHours <= 25) {
+    echo "✅ PASS: Fetched ~24h of new data (didn't re-fetch existing day)\n";
+  } else {
+    echo "⚠️  WARNING: Expected ~24h, got {$totalHours}h\n";
   }
-  if ($hours < 1) {
-      $hasAfterGap = TRUE;
-      echo "✅ PASS: Found after gap query (<1h for recent data)\n";
-  }
-}
-
-if ($apiCalls2d === 2 && $hasBeforeGap && $hasAfterGap) {
-    echo "✅ PASS: --2d made 2 gap queries (before + after)\n";
 } else {
-    echo "❌ FAIL: Expected 2 gap queries (before + after), got {$apiCalls2d}\n";
-}
-
-// Verify total results
-$expected2d = 48; // 48 hours
-if (count($results2d) === $expected2d) {
-    echo "✅ PASS: Got {$expected2d} results for --2d\n";
-} else {
-    echo "❌ FAIL: Expected {$expected2d} results, got " . count($results2d) . "\n";
+  echo "❌ FAIL: Expected {$expectedGaps} gap, got {$result2d['gaps_fetched']} gap(s)\n";
 }
 echo "\n";
 
-// Simulate more time passing
-sleep(1);
-$mockApi->resetCallCount();
+// TEST 3: Run --1w query (should fetch 5 more days)
+echo "=== TEST 3: Subsequent --1w Query ===\n";
 
-// Age cache more
-$metadata = $cacheService->loadMetadata($cacheKey);
-$tenMinutesAgo = $now - 600;
-$metadata['created_at'] = $tenMinutesAgo;
-$cacheService->saveMetadata($cacheKey, $metadata);
-
-// TEST 3: Run --1w query (should fetch 5d older data + 10min recent data)
-echo "=== TEST 3: Subsequent --1w Query (10 minutes later) ===\n";
-$newNow = $now + 600;
-$oneWeekAgo = $newNow - (7 * 86400);
+$oneWeekAgo = $now - (7 * 86400);
 $startTime1w = date('Y-m-d\TH:i:s\Z', $oneWeekAgo);
-$endTime1w = date('Y-m-d\TH:i:s\Z', $newNow);
+$endTime1w = date('Y-m-d\TH:i:s\Z', $now);
 
-$results1w = simulateQuery($mockApi, $cacheService, 'test query', $startTime1w, $endTime1w, '--1w query');
-$apiCalls1w = $mockApi->getCallCount();
+$result1w = simulateSync($db, $startTime1w, $endTime1w, '--1w query');
 
-echo "\nResult: {$apiCalls1w} API call(s), " . count($results1w) . " results\n";
+// Should fetch 1 gap (historical only - 5 days we don't have yet)
+$expectedGaps = 1;
+$totalHours = $result1w['hours_fetched'];
+$expectedHours = 5 * 24; // ~120h
 
-// Should make 2 API calls: one for older 5d, one for recent 10min
-$queryLog = $mockApi->getQueryLog();
-$hasBeforeGap = FALSE;
-$hasAfterGap = FALSE;
+if ($result1w['gaps_fetched'] === $expectedGaps) {
+  echo "✅ PASS: --1w fetched {$expectedGaps} gap (historical only)\n";
 
-foreach ($queryLog as $q) {
-    $duration = strtotime($q['end']) - strtotime($q['start']);
-    $hours = $duration / 3600;
-    $days = $duration / 86400;
-
-  if ($days >= 4.9 && $days <= 5.1) {
-      $hasBeforeGap = TRUE;
-      echo "✅ PASS: Found before gap query (~5d for older data)\n";
+  // Verify roughly 5 days of new data
+  if ($totalHours >= 119 && $totalHours <= 121) {
+    echo "✅ PASS: Fetched ~5d of new data (didn't re-fetch existing 2 days)\n";
+  } else {
+    echo "⚠️  WARNING: Expected ~120h (5d), got {$totalHours}h\n";
   }
-  if ($hours < 1) {
-      $hasAfterGap = TRUE;
-      echo "✅ PASS: Found after gap query (<1h for recent data)\n";
+} else {
+  echo "❌ FAIL: Expected {$expectedGaps} gap, got {$result1w['gaps_fetched']} gap(s)\n";
+}
+echo "\n";
+
+// TEST 4: Run same --1w query again immediately - should fetch nothing
+// Use same time range as previous query (no time progression)
+echo "=== TEST 4: Repeat --1w Query (Immediately After) ===\n";
+
+$result1wRepeat = simulateSync($db, $startTime1w, $endTime1w, '--1w query (repeat)');
+
+if ($result1wRepeat['gaps_fetched'] === 0) {
+  echo "✅ PASS: Repeat query fetched 0 gaps (all data already in database)\n";
+} else {
+  echo "❌ FAIL: Expected 0 gaps, got {$result1wRepeat['gaps_fetched']} gap(s)\n";
+}
+echo "\n";
+
+// TEST 5: Query for subset of existing data - should fetch nothing
+echo "=== TEST 5: Query Subset (--3d, which is within existing --1w data) ===\n";
+
+$threeDaysAgo = $now - (3 * 86400);
+$startTime3d = date('Y-m-d\TH:i:s\Z', $threeDaysAgo);
+$endTime3d = date('Y-m-d\TH:i:s\Z', $now);
+
+$result3d = simulateSync($db, $startTime3d, $endTime3d, '--3d query');
+
+if ($result3d['gaps_fetched'] === 0) {
+  echo "✅ PASS: Subset query fetched 0 gaps (data already exists)\n";
+} else {
+  echo "❌ FAIL: Expected 0 gaps, got {$result3d['gaps_fetched']} gap(s)\n";
+}
+echo "\n";
+
+// TEST 6: Expand beyond existing range - should only fetch new portion
+echo "=== TEST 6: Expand Range (--2w, which extends beyond existing --1w) ===\n";
+
+$twoWeeksAgo = $now - (14 * 86400);
+$startTime2w = date('Y-m-d\TH:i:s\Z', $twoWeeksAgo);
+$endTime2w = date('Y-m-d\TH:i:s\Z', $now);
+
+$result2w = simulateSync($db, $startTime2w, $endTime2w, '--2w query');
+
+// Should fetch 1 gap at beginning (the additional older week)
+$expectedGaps = 1;
+$expectedHours = 7 * 24; // ~168h
+
+if ($result2w['gaps_fetched'] === $expectedGaps) {
+  echo "✅ PASS: Expanded range fetched {$expectedGaps} gap (historical only)\n";
+
+  $totalHours = $result2w['hours_fetched'];
+  if ($totalHours >= 167 && $totalHours <= 169) {
+    echo "✅ PASS: Fetched ~7d of new data (didn't re-fetch existing week)\n";
+  } else {
+    echo "⚠️  WARNING: Expected ~168h (7d), got {$totalHours}h\n";
   }
-}
-
-if ($apiCalls1w === 2 && $hasBeforeGap && $hasAfterGap) {
-    echo "✅ PASS: --1w made 2 gap queries (before + after)\n";
 } else {
-    echo "❌ FAIL: Expected 2 gap queries (before + after), got {$apiCalls1w}\n";
+  echo "❌ FAIL: Expected {$expectedGaps} gap, got {$result2w['gaps_fetched']} gap(s)\n";
 }
+echo "\n";
 
-// Verify total results
-$expected1w = 168; // 168 hours
-if (count($results1w) === $expected1w) {
-    echo "✅ PASS: Got {$expected1w} results for --1w\n";
+// Verify total database coverage
+echo "=== Final Database Coverage ===\n";
+$allLogs = $db->getLogs($startTime2w, $endTime2w);
+$totalLogs = count($allLogs);
+$expectedLogs = 14 * 24 + 1; // 14 days * 24 hours + 1 (inclusive end)
+
+echo "Total logs in database: {$totalLogs}\n";
+echo "Expected logs (~14 days): {$expectedLogs}\n";
+
+if ($totalLogs >= $expectedLogs - 5 && $totalLogs <= $expectedLogs + 5) {
+  echo "✅ PASS: Database contains ~2 weeks of data\n";
 } else {
-    echo "❌ FAIL: Expected {$expected1w} results, got " . count($results1w) . "\n";
+  echo "❌ FAIL: Expected ~{$expectedLogs} logs, got {$totalLogs}\n";
 }
 echo "\n";
 
 // Cleanup
 echo "=== Cleanup ===\n";
-$files = glob($testCacheDir . '/*');
-foreach ($files as $file) {
-    unlink($file);
-}
-rmdir($testCacheDir);
-echo "Cleaned up test directory\n\n";
+@unlink($testDbPath);
+@unlink($testDbPath . '-shm');
+@unlink($testDbPath . '-wal');
+echo "Cleaned up test database\n";
 
-echo "=== Cross-Timeframe Test Complete ===\n";
+echo "\n=== Cross-Timeframe Test Complete ===\n";
+echo "\nKey Findings:\n";
+echo "  - Initial --1d sync: " . ($result1d['gaps_fetched'] === 1 ? "✅ PASS" : "❌ FAIL") . "\n";
+echo "  - Expand to --2d: " . ($result2d['gaps_fetched'] === 1 ? "✅ PASS" : "❌ FAIL") . "\n";
+echo "  - Expand to --1w: " . ($result1w['gaps_fetched'] === 1 ? "✅ PASS" : "❌ FAIL") . "\n";
+echo "  - Repeat --1w: " . ($result1wRepeat['gaps_fetched'] === 0 ? "✅ PASS" : "❌ FAIL") . "\n";
+echo "  - Subset --3d: " . ($result3d['gaps_fetched'] === 0 ? "✅ PASS" : "❌ FAIL") . "\n";
+echo "  - Expand to --2w: " . ($result2w['gaps_fetched'] === 1 ? "✅ PASS" : "❌ FAIL") . "\n";
