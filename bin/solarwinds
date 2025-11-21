@@ -11,6 +11,18 @@
 // Set unlimited memory for CLI usage - prevents memory limit errors with large datasets
 ini_set('memory_limit', -1);
 
+// Set timezone to system timezone (fixes ETA display in progress bars).
+// PHP defaults to UTC, but we want to use the system's local timezone.
+$systemTimezone = @readlink('/etc/localtime');
+if ($systemTimezone && preg_match('#zoneinfo/(.+)$#', $systemTimezone, $matches)) {
+  date_default_timezone_set($matches[1]);
+}
+else {
+  // Fallback: try to detect from system date command.
+  $tz = trim(shell_exec('date +%Z 2>/dev/null') ?: 'UTC');
+  @date_default_timezone_set($tz);
+}
+
 // Require Composer autoloader
 require_once __DIR__ . '/../vendor/autoload.php';
 
