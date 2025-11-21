@@ -271,11 +271,11 @@ SQL
    * and identifies missing ranges that need to be fetched from the API.
    *
    * NOTE: This implementation only detects missing data at the beginning
-   * and end of the requested range. It does NOT detect gaps in the middle.
+   * and end of the requested range. It does NOT detect ranges in the middle.
    *
    * @param string $requestedStart Start of requested range (ISO 8601)
    * @param string $requestedEnd End of requested range (ISO 8601)
-   * @return array Array with 'has_data', 'coverage' info and 'gaps' (missing ranges) to fetch
+   * @return array Array with 'has_data', 'coverage' info and 'ranges' (missing ranges) to fetch
    */
   public function detectMissingRanges(string $requestedStart, string $requestedEnd): array
   {
@@ -301,7 +301,7 @@ SQL
           'latest' => NULL,
           'count' => 0,
         ],
-        'gaps' => [
+        'ranges' => [
           [
             'start' => $requestedStart,
             'end' => $requestedEnd,
@@ -311,21 +311,21 @@ SQL
       ];
     }
 
-    // We have some data - check for gaps at the beginning and/or end.
-    $gaps = [];
+    // We have some data - check for ranges at the beginning and/or end.
+    $ranges = [];
 
-    // Gap before existing data?
+    // Range before existing data?
     if ($coverage['earliest'] > $requestedStart) {
-      $gaps[] = [
+      $ranges[] = [
         'start' => $requestedStart,
         'end' => $coverage['earliest'],
         'reason' => 'historical',
       ];
     }
 
-    // Gap after existing data?
+    // Range after existing data?
     if ($coverage['latest'] < $requestedEnd) {
-      $gaps[] = [
+      $ranges[] = [
         'start' => $coverage['latest'],
         'end' => $requestedEnd,
         'reason' => 'recent',
@@ -335,7 +335,7 @@ SQL
     return [
       'has_data' => TRUE,
       'coverage' => $coverage,
-      'gaps' => $gaps,
+      'ranges' => $ranges,
     ];
   }
 

@@ -855,7 +855,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Format gap message in human-readable format.
+   * Format range message in human-readable format.
    *
    * Converts ISO timestamps to readable format and calculates duration.
    * Examples:
@@ -864,26 +864,27 @@ abstract class BaseSolarWindsCommand extends Command
    *
    * @param string $startTime Start time (ISO 8601)
    * @param string $endTime End time (ISO 8601)
-   * @param string $reason Gap reason (historical, recent, no_data)
-   * @return string Human-readable gap message
+   * @param string $reason Range reason (historical, recent, no_data)
+   * @return string Human-readable range message
    */
-  protected function formatGapMessage(string $startTime, string $endTime, string $reason): string
+  protected function formatRangeMessage(string $startTime, string $endTime, string $reason): string
   {
     $start = strtotime($startTime);
     $end = strtotime($endTime);
     $duration = $end - $start;
 
     // Calculate duration in human-readable format.
+    // Use floor() to avoid rounding up (18 hours shouldn't say "1 day").
     if ($duration < 3600) {
-      $minutes = round($duration / 60);
+      $minutes = max(1, floor($duration / 60));
       $durationStr = "$minutes minute" . ($minutes != 1 ? 's' : '');
     }
     elseif ($duration < 86400) {
-      $hours = round($duration / 3600);
+      $hours = max(1, floor($duration / 3600));
       $durationStr = "$hours hour" . ($hours != 1 ? 's' : '');
     }
     else {
-      $days = round($duration / 86400);
+      $days = max(1, floor($duration / 86400));
       $durationStr = "$days day" . ($days != 1 ? 's' : '');
     }
 
@@ -1077,10 +1078,57 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Sync logs from API to database with automatic gap detection.
+   * Split large time range into smaller 1-day chunks.
+   *
+   * Prevents memory issues and performance degradation during long fetches.
+   *
+   * IMPORTANT: Chunks are returned in REVERSE order (newest to oldest) to avoid
+   * creating middle gaps if interrupted. This ensures interrupted fetches only have
+   * missing historical data at the beginning, which range detection handles naturally.
+   *
+   * @param string $start Start time (ISO 8601)
+   * @param string $end End time (ISO 8601)
+   * @return array Array of chunk definitions with 'start' and 'end' times (newest first)
+   */
+  protected function splitRangeIntoChunks(string $start, string $end): array
+  {
+    $chunks = [];
+    $chunkSize = 86400; // 1 day in seconds
+
+    $startTs = strtotime($start);
+    $endTs = strtotime($end);
+    $duration = $endTs - $startTs;
+
+    // If range is less than 1 day, no need to chunk.
+    if ($duration <= $chunkSize) {
+      return [['start' => $start, 'end' => $end]];
+    }
+
+    // Split into 1-day chunks, working backwards from newest to oldest.
+    // This prevents middle gaps if interrupted (only old data will be missing).
+    $currentEnd = $endTs;
+    while ($currentEnd > $startTs) {
+      $currentStart = max($currentEnd - $chunkSize, $startTs);
+
+      $chunks[] = [
+        'start' => gmdate('Y-m-d\TH:i:s\Z', $currentStart),
+        'end' => gmdate('Y-m-d\TH:i:s\Z', $currentEnd),
+      ];
+
+      $currentEnd = $currentStart;
+    }
+
+    return $chunks;
+  }
+
+  /**
+   * Sync logs from API to database with automatic range detection.
    *
    * Implements universal sync: fetches ALL logs for time range from database or API,
-   * with automatic gap detection and incremental page-by-page saves.
+   * with automatic range detection and incremental page-by-page saves.
+   *
+   * Long ranges (>1 day) are automatically split into 1-day chunks to prevent
+   * memory issues and performance degradation.
    *
    * @param array $options Query options containing time range
    * @param bool $showCacheMessage Whether to show database hit message (default: TRUE)
@@ -1096,19 +1144,20 @@ abstract class BaseSolarWindsCommand extends Command
     $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
 
     // No missing ranges - return existing database data.
-    if (empty($rangeAnalysis['gaps'])) {
+    if (empty($rangeAnalysis['ranges'])) {
       $results = $this->databaseService->getLogs($startTime, $endTime);
       if ($showCacheMessage && !$this->jsonMode) {
-        $this->io->note("Using database results (" . count($results) . " logs)");
+        $this->io->note("Using database results (" . $this->formatNumber(count($results)) . " logs)");
       }
       return $results;
     }
 
     // We have missing ranges - fetch from API with incremental saves.
+    // Process ranges in REVERSE order (recent first) to avoid middle gaps if interrupted.
     $totalNewLogs = 0;
     $interrupted = FALSE;
-    foreach ($rangeAnalysis['gaps'] as $gap) {
-      // Check for interruption before processing each gap.
+    foreach (array_reverse($rangeAnalysis['ranges']) as $range) {
+      // Check for interruption before processing each range.
       if (self::isInterrupted()) {
         $interrupted = TRUE;
         if (!$this->jsonMode) {
@@ -1118,18 +1167,22 @@ abstract class BaseSolarWindsCommand extends Command
         break;
       }
 
+      // Split large ranges into 1-day chunks to prevent memory issues.
+      // Chunking is an internal optimization - show user a single progress bar for entire range.
+      $chunks = $this->splitRangeIntoChunks($range['start'], $range['end']);
+
       if (!$this->jsonMode && $showCacheMessage) {
-        $gapMessage = $this->formatGapMessage($gap['start'], $gap['end'], $gap['reason']);
-        $this->io->writeln("<comment>$gapMessage</comment>");
+        $rangeMessage = $this->formatRangeMessage($range['start'], $range['end'], $range['reason']);
+        $this->io->writeln("<comment>$rangeMessage</comment>");
       }
 
-      // Create progress bar using gap range (not requested range).
-      $gapOptions = $options;
-      $gapOptions['time'] = [
-        'start_time' => $gap['start'],
-        'end_time' => $gap['end'],
+      // Create single progress bar for entire range (not per-chunk).
+      $rangeOptions = $options;
+      $rangeOptions['time'] = [
+        'start_time' => $range['start'],
+        'end_time' => $range['end'],
       ];
-      $progressBar = $this->createSearchProgressBar($gapOptions);
+      $progressBar = $this->createSearchProgressBar($rangeOptions);
 
       // Create save callback to insert each page immediately.
       $saveCallback = function(array $pageLogs) use (&$totalNewLogs) {
@@ -1137,48 +1190,64 @@ abstract class BaseSolarWindsCommand extends Command
         $totalNewLogs += $inserted;
       };
 
-      try {
-        // Fetch gap data with incremental saving.
-        $this->apiService->retrieveLogs(
-          $gap['start'],
-          $gap['end'],
-          $this->getProgressCallback($progressBar, $gapOptions),
-          NULL,  // No debug callback
-          $saveCallback  // Save each page immediately
-        );
-        $this->finishProgressBar($progressBar);
-      }
-      catch (\Exception $e) {
-        $this->finishProgressBar($progressBar);
-
-        // Check if this was an interruption - if so, break loop and continue gracefully.
+      // Process each chunk separately (internal optimization).
+      foreach ($chunks as $chunkIndex => $chunk) {
+        // Check for interruption before each chunk.
         if (self::isInterrupted()) {
           $interrupted = TRUE;
           if (!$this->jsonMode) {
             $this->io->writeln('');
             $this->io->warning('Sync interrupted - continuing with partial data');
           }
-          break;  // Break loop and continue to analysis (don't re-throw).
+          break 2; // Break out of both chunk and range loops.
         }
 
-        // Non-interruption error - report and re-throw.
-        if (!$this->jsonMode) {
-          $this->io->error(sprintf(
-            'Failed to fetch gap %s to %s: %s',
-            $gap['start'],
-            $gap['end'],
-            $e->getMessage()
-          ));
+        try {
+          // Fetch chunk data with incremental saving.
+          // Progress bar continues across all chunks showing overall progress.
+          $this->apiService->retrieveLogs(
+            $chunk['start'],
+            $chunk['end'],
+            $this->getProgressCallback($progressBar, $rangeOptions),
+            NULL,  // No debug callback
+            $saveCallback  // Save each page immediately
+          );
+        }
+        catch (\Exception $e) {
+          $this->finishProgressBar($progressBar);
 
-          if ($totalNewLogs > 0) {
-            $this->io->note("Partial data saved: $totalNewLogs logs were successfully saved to database before error");
+          // Check if this was an interruption - if so, break loop and continue gracefully.
+          if (self::isInterrupted()) {
+            $interrupted = TRUE;
+            if (!$this->jsonMode) {
+              $this->io->writeln('');
+              $this->io->warning('Sync interrupted - continuing with partial data');
+            }
+            break 2;  // Break out of both chunk and range loops.
           }
-        }
 
-        // Re-throw non-interruption errors to let caller handle them.
-        throw $e;
-      }
-    }
+          // Non-interruption error - report and re-throw.
+          if (!$this->jsonMode) {
+            $this->io->error(sprintf(
+              'Failed to fetch range %s to %s: %s',
+              $range['start'],
+              $range['end'],
+              $e->getMessage()
+            ));
+
+            if ($totalNewLogs > 0) {
+              $this->io->note("Partial data saved: " . $this->formatNumber($totalNewLogs) . " logs were successfully saved to database before error");
+            }
+          }
+
+          // Re-throw non-interruption errors to let caller handle them.
+          throw $e;
+        }
+      } // End chunk loop
+
+      // Finish progress bar after all chunks complete.
+      $this->finishProgressBar($progressBar);
+    } // End range loop
 
     // Get complete dataset from database (now includes newly fetched data).
     $results = $this->databaseService->getLogs($startTime, $endTime);

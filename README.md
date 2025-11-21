@@ -349,10 +349,10 @@ bin/solarwinds search "error" --filter="req_uri:/admin" --filter="resp_status:50
 
 **Automatic Database Storage** - All fetched logs are permanently stored in a SQLite database for fast querying.
 
-**Intelligent Gap Detection** - The system automatically detects missing time ranges in the database:
+**Intelligent Range Detection** - The system automatically detects missing time ranges in the database:
 - Queries the database for existing data in the requested time range
-- Identifies gaps before existing data (historical logs)
-- Identifies gaps after existing data (recent logs)
+- Identifies ranges before existing data (historical logs)
+- Identifies ranges after existing data (recent logs)
 - Fetches ONLY the missing time ranges from the API
 - Merges new data with existing database records
 

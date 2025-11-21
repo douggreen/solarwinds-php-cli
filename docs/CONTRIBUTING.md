@@ -34,7 +34,7 @@ This project migrated from a collection of shell scripts to a modern PHP/Symfony
 - **`ConfigurationService`** - YAML configuration parsing and site mapping
 - **`ApiService`** - SolarWinds API communication with pagination
 - **`DisplayService`** - Output formatting, coloring, and display modes
-- **`DatabaseService`** - SQLite storage with intelligent gap detection and auto-sync
+- **`DatabaseService`** - SQLite storage with intelligent range detection and auto-sync
 
 **Base Class Inheritance:** `BaseSolarWindsCommand` provides common functionality while allowing command-specific implementations through abstract methods.
 
@@ -73,7 +73,7 @@ public function __construct(
 - Configuration parsing and validation
 - API communication and response handling
 - Display formatting and color schemes
-- Database storage with gap detection and auto-sync
+- Database storage with range detection and auto-sync
 
 ### Configuration System
 
@@ -294,7 +294,7 @@ The original shell scripts are preserved for reference and provide authoritative
 **Debug Mode:** Use `--debug` flag to see:
 - Raw SolarWinds queries being executed
 - API request/response details
-- Database gap detection information
+- Database range detection information
 - Service initialization and configuration
 
 **Validation Mode:** Use `--validate` flag to:
