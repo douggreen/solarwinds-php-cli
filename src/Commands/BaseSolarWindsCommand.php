@@ -1048,6 +1048,35 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
+   * Format a number for human-readable display.
+   *
+   * Formats numbers with appropriate abbreviations (k for thousands, M for millions).
+   * Examples: 5000 -> "5k", 1500000 -> "1.5M", 500 -> "500"
+   *
+   * @param int $number The number to format
+   * @return string Formatted number string
+   */
+  protected function formatNumber(int $number): string
+  {
+    if ($number >= 1000000) {
+      // Millions: show one decimal place
+      return round($number / 1000000, 1) . 'M';
+    }
+    elseif ($number >= 1000) {
+      // Thousands: show one decimal place if not a round number
+      $k = $number / 1000;
+      if ($k == floor($k)) {
+        return floor($k) . 'k';
+      }
+      return round($k, 1) . 'k';
+    }
+    else {
+      // Under 1000: show as-is
+      return (string) $number;
+    }
+  }
+
+  /**
    * Sync logs from API to database with automatic gap detection.
    *
    * Implements universal sync: fetches ALL logs for time range from database or API,
@@ -1162,10 +1191,10 @@ abstract class BaseSolarWindsCommand extends Command
           $earliest = $results[0]['time'] ?? NULL;
           $latest = $results[count($results) - 1]['time'] ?? NULL;
           if ($earliest && $latest) {
-            $this->io->warning("Partial results (" . count($results) . " logs covering " . date('M j g:ia', strtotime($earliest)) . " to " . date('M j g:ia', strtotime($latest)) . ")");
+            $this->io->warning("Partial results (" . $this->formatNumber(count($results)) . " logs covering " . date('M j g:ia', strtotime($earliest)) . " to " . date('M j g:ia', strtotime($latest)) . ")");
           }
           else {
-            $this->io->warning("Partial results (" . count($results) . " logs)");
+            $this->io->warning("Partial results (" . $this->formatNumber(count($results)) . " logs)");
           }
         }
         else {
@@ -1173,7 +1202,7 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
       elseif ($rangeAnalysis['has_data']) {
-        $this->io->note("Merged $totalNewLogs new logs with existing database data (total: " . count($results) . " logs)");
+        $this->io->note("Merged " . $this->formatNumber($totalNewLogs) . " new logs with existing database data (total: " . $this->formatNumber(count($results)) . " logs)");
       }
     }
 
