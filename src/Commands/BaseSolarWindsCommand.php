@@ -1004,17 +1004,18 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
 
-      // Format elapsed time with tenths to reduce message churn (updates every ~6s instead of every 1s).
+      // Format elapsed time as minutes and seconds (e.g., "1m6s").
       if ($elapsed < 60) {
-        $elapsedStr = '< 1m';
+        $elapsedStr = $elapsed . 's';
       }
       elseif ($elapsed < 3600) {
-        $mins = round($elapsed / 60, 1);
-        $elapsedStr = "{$mins}m";
+        $mins = floor($elapsed / 60);
+        $secs = $elapsed % 60;
+        $elapsedStr = $secs > 0 ? "{$mins}m{$secs}s" : "{$mins}m";
       }
       else {
         $hours = floor($elapsed / 3600);
-        $mins = round(($elapsed % 3600) / 60);
+        $mins = floor(($elapsed % 3600) / 60);
         $elapsedStr = $mins > 0 ? "{$hours}h{$mins}m" : "{$hours}h";
       }
 
