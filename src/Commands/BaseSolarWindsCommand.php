@@ -122,7 +122,6 @@ abstract class BaseSolarWindsCommand extends Command
 
   // JSON output mode.
   protected bool $jsonMode = FALSE;
-  protected array $executionMetadata = [];
 
   /**
    */
@@ -444,8 +443,6 @@ abstract class BaseSolarWindsCommand extends Command
     return [
       'min_count' => (int) $input->getOption('min-count'),
       'use_cached' => $useCached,
-      'cache_infinite' => FALSE,  // No longer used with database system
-      'cache_seconds' => NULL,    // No longer used with database system
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
       'json' => $input->getOption('json'),

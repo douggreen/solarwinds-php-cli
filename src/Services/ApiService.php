@@ -67,7 +67,7 @@
  *
  * @see ConfigurationService For API credentials and endpoint configuration
  * @see BaseSolarWindsCommand For query construction and execution
- * @see CacheService For result caching integration
+ * @see DatabaseService For database-backed log storage
  *
  * @note This implementation is a direct port of the working bash script pagination logic
  * @warning Requires valid API token and base_url configuration for operation
