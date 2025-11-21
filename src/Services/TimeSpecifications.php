@@ -79,7 +79,7 @@
  *
  * @see BaseSolarWindsCommand For time option parsing integration
  * @see ApiService For time range to ISO format conversion
- * @see CacheService For time-based cache duration calculations
+ * @see DatabaseService For time-based database storage
  *
  * @warning Time calculations assume server and client are in compatible timezones
  */
@@ -90,7 +90,6 @@ namespace SolarWinds\Services;
  * Time Specifications
  *
  * Single source of truth for all time-related configurations and conversions.
- * Eliminates duplication between BaseSolarWindsCommand and CacheService.
  */
 class TimeSpecifications
 {
@@ -115,7 +114,7 @@ class TimeSpecifications
   }
 
   /**
-   * Convert time argument to seconds for cache staleness calculation.
+   * Convert time argument to seconds.
    */
   public static function convertToSeconds(string $timeArg): int
   {

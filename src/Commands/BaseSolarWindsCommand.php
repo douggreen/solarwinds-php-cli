@@ -90,7 +90,6 @@ use Symfony\Component\Yaml\Yaml;
 use SolarWinds\Services\ConfigurationService;
 use SolarWinds\Services\ApiService;
 use SolarWinds\Services\DisplayService;
-use SolarWinds\Services\CacheService;
 use SolarWinds\Services\DatabaseService;
 use SolarWinds\Services\TimeSpecifications;
 
@@ -105,7 +104,6 @@ abstract class BaseSolarWindsCommand extends Command
   protected ConfigurationService $config;
   protected ApiService $apiService;
   protected DisplayService $displayService;
-  protected CacheService $cacheService;
   protected DatabaseService $databaseService;
   protected SymfonyStyle $io;
 
@@ -157,7 +155,6 @@ abstract class BaseSolarWindsCommand extends Command
 
     $this->apiService = new ApiService($this->config);
     $this->displayService = new DisplayService($this->config);
-    $this->cacheService = new CacheService();
     $this->databaseService = new DatabaseService($this->config);
   }
 
@@ -218,7 +215,6 @@ abstract class BaseSolarWindsCommand extends Command
       'ip' => 'Show IP addresses',
       'country' => 'Show country information',
       'region' => 'Show region information',
-      'cache' => 'Show cache status',
       'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping',
       'vars' => 'Show variable replacements (all variables, or specify: user,ip,post.name). Supports deep array references with dot notation (e.g., post.name, geoip.country_code2)'
     ];
@@ -237,7 +233,6 @@ abstract class BaseSolarWindsCommand extends Command
       // Other options.
       ->addOption('min-count', NULL, InputOption::VALUE_REQUIRED, 'Minimum count threshold', 1)
       ->addOption('cached', NULL, InputOption::VALUE_OPTIONAL, 'Use cached results (optionally specify max age)', FALSE)
-      ->addOption('no-cache', NULL, InputOption::VALUE_NONE, 'Skip cache and force fresh query')
       ->addOption('limit', NULL, InputOption::VALUE_REQUIRED, 'Maximum number of results', 1000)
       ->addOption('debug', NULL, InputOption::VALUE_NONE, 'Enable debug output')
       ->addOption('json', NULL, InputOption::VALUE_NONE, 'Output results as JSON (suppresses progress and interactive messages)')
@@ -403,7 +398,7 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     // Then check for explicit options and track them.
-    $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'cache', 'drupal'];
+    $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'drupal'];
     foreach ($displayFlags as $flag) {
       if ($input->getOption($flag)) {
         $display[$flag] = TRUE;
@@ -445,28 +440,16 @@ abstract class BaseSolarWindsCommand extends Command
   {
     $cachedOption = $input->getOption('cached');
     $useCached = $cachedOption !== FALSE;
-    $cacheOptions = ['infinite' => FALSE, 'seconds' => NULL];
-
-    if ($useCached && $cachedOption !== NULL) {
-      // Parse cache value using CacheService.
-      try {
-        $cacheOptions = $this->cacheService->parseCacheOptions((string) $cachedOption);
-      }
-      catch (\InvalidArgumentException $e) {
-        throw new \InvalidArgumentException("Cache option error: " . $e->getMessage());
-      }
-    }
 
     return [
       'min_count' => (int) $input->getOption('min-count'),
       'use_cached' => $useCached,
-      'cache_infinite' => $cacheOptions['infinite'],
-      'cache_seconds' => $cacheOptions['seconds'],
+      'cache_infinite' => FALSE,  // No longer used with database system
+      'cache_seconds' => NULL,    // No longer used with database system
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
       'json' => $input->getOption('json'),
       'no_group' => $input->getOption('no-group'),
-      'no_cache' => $input->getOption('no-cache'),
       'substitute_vars' => $input->getOption('substitute-vars'),
       'country_filter' => $input->getOption('country-filter'),
       'city_filter' => $input->getOption('city-filter'),
@@ -785,7 +768,7 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Extract time argument from human readable string for cache key generation.
+   * Extract time argument from human readable string.
    */
   protected function extractTimeArgFromHumanReadable(string $humanReadable): string
   {
@@ -909,23 +892,20 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function searchLogsWithProgress(string $query, array $options, bool $showCacheMessage = TRUE): array
   {
-    // Skip database if --no-cache flag is set.
-    if (!$options['filters']['no_cache']) {
-      // Try to load from database first.
-      $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
-      $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+    // Try to load from database first.
+    $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
+    $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
 
-      $results = $this->databaseService->getLogs($startTime, $endTime);
+    $results = $this->databaseService->getLogs($startTime, $endTime);
 
-      if (!empty($results)) {
-        if ($showCacheMessage && !$this->jsonMode) {
-          $this->io->note("Using database results (" . count($results) . " logs) - use --no-cache to force fresh query");
-        }
-        return $results;
+    if (!empty($results)) {
+      if ($showCacheMessage && !$this->jsonMode) {
+        $this->io->note("Using database results (" . count($results) . " logs)");
       }
+      return $results;
     }
 
-    // Database miss or --no-cache - fetch from API with progress bar.
+    // Database miss - fetch from API with progress bar.
     $progressBar = $this->createSearchProgressBar($options);
     $results = $this->apiService->searchLogs(
       $options['time']['start_time'],
@@ -934,227 +914,12 @@ abstract class BaseSolarWindsCommand extends Command
     );
     $this->finishProgressBar($progressBar);
 
-    // Save to database (unless --no-cache).
-    if (!$options['filters']['no_cache']) {
-      $this->databaseService->insertLogs($results, '', $options);
-    }
+    // Save to database.
+    $this->databaseService->insertLogs($results);
 
     return $results;
   }
 
-  /**
-   * Try to use incremental cache update.
-   *
-   * @param string $query The search query
-   * @param array $options Query options
-   * @param bool $showCacheMessage Whether to show cache messages
-   * @return array|null Merged results or NULL if incremental not applicable
-   */
-  protected function tryIncrementalCacheUpdate(string $query, array $options, bool $showCacheMessage = TRUE): ?array
-  {
-    // Skip if --no-cache flag is set.
-    if ($options['filters']['no_cache']) {
-      return NULL;
-    }
-
-    // Generate cache key (time-arg agnostic for cross-timeframe reuse).
-    $scriptName = $this->getName() ?? 'unknown';
-    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
-
-    // Calculate time range and convert to ISO 8601.
-    $startTimeRaw = $options['time']['start_time'];
-    $endTimeRaw = $options['time']['end_time'];
-
-    $startTimeTimestamp = strtotime($startTimeRaw);
-    $endTimeTimestamp = strtotime($endTimeRaw);
-    $timeRangeSeconds = $endTimeTimestamp - $startTimeTimestamp;
-
-    $startTime = date('Y-m-d\TH:i:s\Z', $startTimeTimestamp);
-    $endTime = date('Y-m-d\TH:i:s\Z', $endTimeTimestamp);
-
-    // Check if incremental update should be used.
-    if (!$this->cacheService->shouldUseIncrementalUpdate($cacheKey, $startTime, $endTime, $timeRangeSeconds)) {
-      return NULL;
-    }
-
-    // Load cached results.
-    $cachedResults = $this->cacheService->loadFromCache($cacheKey);
-    if ($cachedResults === NULL) {
-      return NULL;
-    }
-
-    // Calculate gap queries (before and after cached range).
-    $gaps = $this->cacheService->calculateGapQueries($cacheKey, $startTime, $endTime);
-    if ($gaps['before'] === NULL && $gaps['after'] === NULL) {
-      // No gaps to fetch - cached range fully covers query.
-      return $cachedResults;
-    }
-
-    // Fetch gap data.
-    $gapResults = [];
-    $totalGapSeconds = 0;
-
-    if ($gaps['before'] !== NULL) {
-      $gapStart = strtotime($gaps['before']['start_time']);
-      $gapEnd = strtotime($gaps['before']['end_time']);
-      $totalGapSeconds += ($gapEnd - $gapStart);
-
-      $progressBar = $this->createSearchProgressBar($options);
-      $beforeResults = $this->apiService->searchLogs(
-        $gaps['before']['start_time'],
-        $gaps['before']['end_time'],
-        $this->getProgressCallback($progressBar, $options)
-      );
-      $this->finishProgressBar($progressBar);
-      $gapResults = array_merge($gapResults, $beforeResults);
-    }
-
-    if ($gaps['after'] !== NULL) {
-      $gapStart = strtotime($gaps['after']['start_time']);
-      $gapEnd = strtotime($gaps['after']['end_time']);
-      $totalGapSeconds += ($gapEnd - $gapStart);
-
-      $progressBar = $this->createSearchProgressBar($options);
-      $afterResults = $this->apiService->searchLogs(
-        $gaps['after']['start_time'],
-        $gaps['after']['end_time'],
-        $this->getProgressCallback($progressBar, $options)
-      );
-      $this->finishProgressBar($progressBar);
-      $gapResults = array_merge($gapResults, $afterResults);
-    }
-
-    // Show debug message.
-    if ($showCacheMessage && !$this->jsonMode) {
-      $cacheAge = $this->cacheService->getCacheAge($cacheKey);
-
-      // Format gap duration appropriately.
-      if ($totalGapSeconds < 60) {
-        $gapDisplay = $totalGapSeconds . 's';
-      } elseif ($totalGapSeconds < 3600) {
-        $gapMinutes = round($totalGapSeconds / 60);
-        $gapDisplay = $gapMinutes . 'm';
-      } else {
-        $gapHours = round($totalGapSeconds / 3600, 1);
-        $gapDisplay = $gapHours . 'h';
-      }
-
-      $gapDesc = [];
-      if ($gaps['before'] !== NULL) {
-        $gapDesc[] = 'older data';
-      }
-      if ($gaps['after'] !== NULL) {
-        $gapDesc[] = 'recent data';
-      }
-      $gapDescStr = implode(' + ', $gapDesc);
-
-      $this->io->writeln("<comment>[CACHE] Incremental update: Using cached data ($cacheAge old) + fetching {$gapDisplay} gap ({$gapDescStr})</comment>");
-    }
-
-    // Merge and deduplicate (order matters: before + cached + after).
-    $mergedResults = $this->cacheService->mergeAndDeduplicateResults($cachedResults, $gapResults);
-
-    // Show merge statistics.
-    if ($showCacheMessage && !$this->jsonMode) {
-      $cachedCount = count($cachedResults);
-      $freshCount = count($gapResults);
-      $mergedCount = count($mergedResults);
-      $duplicates = ($cachedCount + $freshCount) - $mergedCount;
-
-      $this->io->writeln("<comment>[CACHE] Merged {$cachedCount} cached + {$freshCount} fresh = {$mergedCount} total ({$duplicates} duplicates removed)</comment>");
-    }
-
-    // Save merged results back to cache with updated time range.
-    $this->saveResultsToCache($query, $options, $mergedResults, 0);
-
-    return $mergedResults;
-  }
-
-  /**
-   * Try to load results from cache.
-   *
-   * @param string $query The search query
-   * @param array $options Query options
-   * @param bool &$cacheUsed Output parameter set to TRUE if cache was used
-   * @param string|null &$cacheAge Output parameter set to cache age string
-   * @return array|null Cached results or NULL if not available
-   */
-  protected function tryLoadFromCache(string $query, array $options, bool &$cacheUsed, ?string &$cacheAge): ?array
-  {
-    // Don't use cache if --no-cache flag is set.
-    if ($options['filters']['no_cache']) {
-      return NULL;
-    }
-
-    // Generate cache key (time-arg agnostic for cross-timeframe reuse).
-    $scriptName = $this->getName() ?? 'unknown';
-    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
-
-    // Check if cache is fresh.
-    $currentTimeArg = $this->extractTimeArgFromHumanReadable($options['time']['human_readable']);
-
-    if (!$this->cacheService->isCacheFresh(
-      $cacheKey,
-      $currentTimeArg,
-      $options['filters']['cache_infinite'],
-      $options['filters']['cache_seconds']
-    )) {
-      return NULL;
-    }
-
-    // Load from cache.
-    $results = $this->cacheService->loadFromCache($cacheKey);
-    if ($results !== NULL) {
-      $cacheUsed = TRUE;
-      $cacheAge = $this->cacheService->getCacheAge($cacheKey);
-      return $results;
-    }
-
-    return NULL;
-  }
-
-  /**
-   * Save results to cache.
-   *
-   * @param string $query The search query
-   * @param array $options Query options
-   * @param array $results Results to cache
-   * @param int $searchDuration Search duration in seconds (0 for immediate caching)
-   */
-  protected function saveResultsToCache(string $query, array $options, array $results, int $searchDuration = 0): void
-  {
-    $scriptName = $this->getName() ?? 'unknown';
-    $siteArgs = implode(',', array_map(fn($site) => "--$site", $options['sites']));
-    $cacheKey = $this->cacheService->generateCacheKey($scriptName, $query, $siteArgs);
-
-    // Calculate time range in seconds for enhanced metadata.
-    $startTimeRaw = $options['time']['start_time'];
-    $endTimeRaw = $options['time']['end_time'];
-
-    // Convert relative time strings to ISO 8601 timestamps.
-    $startTimeTimestamp = strtotime($startTimeRaw);
-    $endTimeTimestamp = strtotime($endTimeRaw);
-    $timeRangeSeconds = $endTimeTimestamp - $startTimeTimestamp;
-
-    $startTime = date('Y-m-d\TH:i:s\Z', $startTimeTimestamp);
-    $endTime = date('Y-m-d\TH:i:s\Z', $endTimeTimestamp);
-
-    // Generate query hash for validation.
-    $queryHash = md5($query . implode(',', $options['sites']));
-
-    $this->cacheService->saveToCache(
-      $cacheKey,
-      $results,
-      $searchDuration,
-      $startTime,
-      $endTime,
-      $timeRangeSeconds,
-      $queryHash,
-      $scriptName
-    );
-  }
 
   /**
    * Build the search query (must be implemented by child classes).

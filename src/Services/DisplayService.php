@@ -41,7 +41,6 @@
  * - --ip: IP addresses
  * - --country: Geographic country information
  * - --region: Geographic region information
- * - --cache: Cache status information
  * - --by-hour: Hourly time-based grouping
  *
  * @section format_resolution Format Resolution

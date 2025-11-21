@@ -97,16 +97,6 @@ CREATE INDEX IF NOT EXISTS idx_req_method ON logs(req_method) WHERE req_method I
 CREATE INDEX IF NOT EXISTS idx_resp_status ON logs(resp_status) WHERE resp_status IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_log_type ON logs(log_type) WHERE log_type IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_log_severity ON logs(log_severity) WHERE log_severity IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS cache_metadata (
-  cache_key TEXT PRIMARY KEY,
-  query TEXT,
-  time_range TEXT,
-  query_start TEXT,
-  query_end TEXT,
-  created_at TEXT,
-  result_count INTEGER
-);
 SQL;
 
     $this->db->exec($sql);
@@ -118,11 +108,9 @@ SQL;
    * Stores entire log as JSON. Generated columns automatically extract indexed fields.
    *
    * @param array $logs Array of log entries from SolarWinds API
-   * @param string $cacheKey Cache key for metadata tracking
-   * @param array $options Query options
    * @return int Number of inserted records
    */
-  public function insertLogs(array $logs, string $cacheKey, array $options): int
+  public function insertLogs(array $logs): int
   {
     if (empty($logs)) {
       return 0;
@@ -150,9 +138,6 @@ SQL
         $inserted++;
       }
 
-      // Store cache metadata.
-      $this->storeCacheMetadata($cacheKey, $options, $inserted);
-
       $this->db->commit();
       return $inserted;
     }
@@ -163,36 +148,7 @@ SQL
   }
 
   /**
-   * Store cache metadata.
-   *
-   * @param string $cacheKey Cache key
-   * @param array $options Query options
-   * @param int $count Result count
-   */
-  protected function storeCacheMetadata(string $cacheKey, array $options, int $count): void
-  {
-    $stmt = $this->db->prepare(<<<'SQL'
-INSERT OR REPLACE INTO cache_metadata (
-  cache_key, query, time_range, query_start, query_end, created_at, result_count
-) VALUES (
-  :cache_key, :query, :time_range, :query_start, :query_end, :created_at, :result_count
-)
-SQL
-    );
-
-    $stmt->execute([
-      ':cache_key' => $cacheKey,
-      ':query' => $options['query'] ?? '',
-      ':time_range' => is_array($options['time'] ?? '') ? json_encode($options['time']) : ($options['time'] ?? ''),
-      ':query_start' => $options['since'] ?? '',
-      ':query_end' => $options['until'] ?? '',
-      ':created_at' => date('Y-m-d H:i:s'),
-      ':result_count' => $count,
-    ]);
-  }
-
-  /**
-   * Get all logs within a time range.
+   * Get logs from database.
    *
    * @param string|null $since Start time (ISO 8601)
    * @param string|null $until End time (ISO 8601)
@@ -271,31 +227,6 @@ SQL
   }
 
   /**
-   * Check if cache exists for a given key.
-   *
-   * @param string $cacheKey Cache key
-   * @return array|null Cache metadata or NULL if not found
-   */
-  public function getCacheMetadata(string $cacheKey): ?array
-  {
-    $stmt = $this->db->prepare('SELECT * FROM cache_metadata WHERE cache_key = :key');
-    $stmt->execute([':key' => $cacheKey]);
-
-    $result = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $result ?: NULL;
-  }
-
-  /**
-   * Clear all data from database.
-   */
-  public function clearAll(): void
-  {
-    $this->db->exec('DELETE FROM logs');
-    $this->db->exec('DELETE FROM cache_metadata');
-    $this->db->exec('VACUUM');
-  }
-
-  /**
    * Get database statistics.
    *
    * @return array Statistics
@@ -305,14 +236,10 @@ SQL
     $stmt = $this->db->query('SELECT COUNT(*) as count FROM logs');
     $logCount = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
 
-    $stmt = $this->db->query('SELECT COUNT(*) as count FROM cache_metadata');
-    $cacheCount = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-
     $fileSize = file_exists($this->dbPath) ? filesize($this->dbPath) : 0;
 
     return [
       'log_count' => $logCount,
-      'cache_count' => $cacheCount,
       'file_size' => $fileSize,
       'file_size_mb' => round($fileSize / 1024 / 1024, 2),
       'db_path' => $this->dbPath,
