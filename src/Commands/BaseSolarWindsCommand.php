@@ -1031,7 +1031,7 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
 
-      $progressBar->setMessage("$elapsedStr elapsed, $remainingStr remaining ($resultsStr results)");
+      $progressBar->setMessage("$elapsedStr elapsed ($resultsStr results), $remainingStr remaining");
     };
   }
 
