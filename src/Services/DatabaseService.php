@@ -83,6 +83,10 @@ class DatabaseService
    * with generated columns for common indexed fields.
    *
    * Creates logs table with generated virtual columns and indexes for fast queries.
+   *
+   * New columns:
+   * - retrieved_at: Timestamp when log was fetched from API (for freshness tracking)
+   * - url_arguments: Pre-parsed JSON of URL query parameters (for fast exploit detection)
    */
   protected function createSchema(): void
   {
@@ -90,6 +94,7 @@ class DatabaseService
 CREATE TABLE IF NOT EXISTS logs (
   id TEXT PRIMARY KEY,
   time TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   data JSON NOT NULL,
   client_ip TEXT GENERATED ALWAYS AS (json_extract(data, '$.client_ip')) VIRTUAL,
   req_method TEXT GENERATED ALWAYS AS (json_extract(data, '$.req_method')) VIRTUAL,
@@ -97,7 +102,8 @@ CREATE TABLE IF NOT EXISTS logs (
   req_user_agent TEXT GENERATED ALWAYS AS (json_extract(data, '$.req_user_agent')) VIRTUAL,
   resp_status INTEGER GENERATED ALWAYS AS (json_extract(data, '$.resp_status')) VIRTUAL,
   log_type TEXT GENERATED ALWAYS AS (json_extract(data, '$.type')) VIRTUAL,
-  log_severity TEXT GENERATED ALWAYS AS (json_extract(data, '$.severity')) VIRTUAL
+  log_severity TEXT GENERATED ALWAYS AS (json_extract(data, '$.severity')) VIRTUAL,
+  url_arguments JSON GENERATED ALWAYS AS (json_extract(data, '$.url_arguments')) VIRTUAL
 );
 
 CREATE INDEX IF NOT EXISTS idx_time ON logs(time);
@@ -115,6 +121,7 @@ SQL;
    * Insert log entries into database.
    *
    * Stores entire log as JSON. Generated columns automatically extract indexed fields.
+   * Parses URL query parameters into url_arguments column for fast exploit detection.
    *
    * @param array $logs Array of log entries from SolarWinds API
    * @return int Number of inserted records
@@ -159,10 +166,21 @@ SQL
           }
         }
 
+        // Parse and inject URL arguments into JSON data for fast exploit detection.
+        $logData = json_decode($message, TRUE);
+        if ($logData && isset($logData['req_uri'])) {
+          $urlArguments = $this->parseUrlArguments($logData['req_uri']);
+          if ($urlArguments !== NULL) {
+            // Inject url_arguments into the JSON data.
+            $logData['url_arguments'] = json_decode($urlArguments, TRUE);
+            $message = json_encode($logData);
+          }
+        }
+
         $stmt->execute([
           ':id' => $log['id'] ?? '',
           ':time' => $log['time'] ?? '',
-          ':data' => $message,  // Store JSON (fixed if needed)
+          ':data' => $message,  // Store JSON with url_arguments injected
         ]);
 
         $inserted++;
@@ -337,6 +355,30 @@ SQL
       'coverage' => $coverage,
       'ranges' => $ranges,
     ];
+  }
+
+  /**
+   * Parse URL query parameters from URI.
+   *
+   * Extracts and returns query parameters as JSON for fast exploit detection.
+   * Returns NULL if no query string present.
+   *
+   * @param string $uri Request URI
+   * @return string|null JSON-encoded query parameters or NULL
+   */
+  protected function parseUrlArguments(string $uri): ?string
+  {
+    // Parse URL and extract query string.
+    $parts = parse_url($uri);
+    if (!isset($parts['query']) || empty($parts['query'])) {
+      return NULL;
+    }
+
+    // Parse query string into associative array.
+    parse_str($parts['query'], $params);
+
+    // Return as JSON for storage.
+    return json_encode($params);
   }
 
 }
