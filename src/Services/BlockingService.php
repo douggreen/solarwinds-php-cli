@@ -21,6 +21,11 @@ namespace SolarWinds\Services;
  */
 class BlockingService
 {
+  /**
+   * Constructor.
+   *
+   * @param ConfigurationService $config Configuration service for allowlist and bot patterns
+   */
   public function __construct(protected ConfigurationService $config)
   {
   }

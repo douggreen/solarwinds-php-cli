@@ -89,6 +89,14 @@ class ApiService
   protected Client $httpClient;
   protected string $apiToken;
 
+  /**
+   * Constructor.
+   *
+   * Initializes HTTP client with SolarWinds API credentials and configuration.
+   *
+   * @param ConfigurationService $config Configuration service with API credentials
+   * @throws \InvalidArgumentException If base_url or token is missing
+   */
   public function __construct(ConfigurationService $config)
   {
     $baseUrl = $config->get('base_url') ?? $config->get('api_base_url');
@@ -300,6 +308,12 @@ class ApiService
 
   /**
    * Convert human-readable time to ISO-8601 format.
+   *
+   * Parses natural language time expressions and converts to API-compatible format.
+   *
+   * @param string $timeString Human-readable time string (e.g., "1 hour ago", "now")
+   * @return string ISO-8601 formatted timestamp
+   * @throws \InvalidArgumentException If time string cannot be parsed
    */
   protected function convertToIsoTime(string $timeString): string
   {

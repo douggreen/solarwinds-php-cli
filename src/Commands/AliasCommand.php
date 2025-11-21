@@ -149,6 +149,13 @@ class AliasCommand extends Command
   protected string $targetCommand;
   protected array $aliasArgs;
 
+  /**
+   * Constructor.
+   *
+   * @param string $aliasName Name for the alias command
+   * @param string $targetCommand Target command to execute
+   * @param array $aliasArgs Pre-configured arguments for the alias
+   */
   public function __construct(string $aliasName, string $targetCommand, array $aliasArgs)
   {
     $this->targetCommand = $targetCommand;
@@ -162,6 +169,10 @@ class AliasCommand extends Command
 
   /**
    * Copy target command's definition after application is available.
+   *
+   * Inherits all options and arguments from the target command.
+   *
+   * @param Application|null $application Symfony console application
    */
   public function setApplication($application = NULL): void
   {
@@ -187,6 +198,16 @@ class AliasCommand extends Command
     }
   }
 
+  /**
+   * Execute the alias command.
+   *
+   * Merges alias arguments with user arguments and executes target command.
+   *
+   * @param InputInterface $input Command input interface
+   * @param OutputInterface $output Command output interface
+   * @return int Exit code from target command execution
+   * @throws \RuntimeException If application not set
+   */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
     $application = $this->getApplication();

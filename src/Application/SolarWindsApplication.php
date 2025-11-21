@@ -115,6 +115,11 @@ use SolarWinds\Services\ConfigurationService;
  */
 class SolarWindsApplication extends Application
 {
+  /**
+   * Constructor.
+   *
+   * Initializes application and registers all core commands and aliases.
+   */
   public function __construct()
   {
     parent::__construct('SolarWinds Log Analysis Tools', '2.0.0');
@@ -136,6 +141,8 @@ class SolarWindsApplication extends Application
 
   /**
    * Register aliases from configuration.
+   *
+   * Loads and registers dynamic alias commands from YAML configuration.
    */
   protected function registerAliases(): void
   {
@@ -154,6 +161,10 @@ class SolarWindsApplication extends Application
 
   /**
    * Create and register an alias command.
+   *
+   * @param string $aliasName Name of the alias command
+   * @param string $aliasDefinition Alias definition string from configuration
+   * @throws \RuntimeException If alias conflicts with built-in command or target is unknown
    */
   protected function createAliasCommand(string $aliasName, string $aliasDefinition): void
   {
@@ -183,6 +194,11 @@ class SolarWindsApplication extends Application
 
   /**
    * Parse alias definition into command and arguments.
+   *
+   * Handles quoted arguments and splits definition into command parts.
+   *
+   * @param string $definition Alias definition string
+   * @return array Array of command parts [command, arg1, arg2, ...]
    */
   protected function parseAliasDefinition(string $definition): array
   {

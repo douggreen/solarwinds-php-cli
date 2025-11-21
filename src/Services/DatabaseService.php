@@ -33,7 +33,10 @@ class DatabaseService
   /**
    * Constructor.
    *
+   * Initializes database connection and ensures schema exists.
+   *
    * @param ConfigurationService $config Configuration service
+   * @throws \RuntimeException If database initialization fails
    */
   public function __construct(protected ConfigurationService $config)
   {
@@ -51,6 +54,10 @@ class DatabaseService
 
   /**
    * Initialize SQLite database and create schema if needed.
+   *
+   * Sets up PDO connection with WAL mode for better concurrency.
+   *
+   * @throws \RuntimeException If database initialization fails
    */
   protected function initializeDatabase(): void
   {
@@ -74,6 +81,8 @@ class DatabaseService
    *
    * Uses JSON column to store heterogeneous log types (HTTP logs, Drupal logs, etc.)
    * with generated columns for common indexed fields.
+   *
+   * Creates logs table with generated virtual columns and indexes for fast queries.
    */
   protected function createSchema(): void
   {

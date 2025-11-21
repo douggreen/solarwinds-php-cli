@@ -83,12 +83,20 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  */
 class DisplayService
 {
+  /**
+   * Constructor.
+   *
+   * @param ConfigurationService $config Configuration service for site mappings
+   */
   public function __construct(protected ConfigurationService $config)
   {
   }
 
   /**
    * Colorize unknown/missing data values in red for consistent styling.
+   *
+   * @param string $value Value to colorize if unknown
+   * @return string Colorized value or original value
    */
   protected function colorizeUnknownValue(string $value): string
   {
@@ -153,6 +161,8 @@ class DisplayService
 
   /**
    * Get all display column headers mapping.
+   *
+   * @return array Column name to header label mappings
    */
   protected function getDisplayColumnHeaders(): array
   {
@@ -169,6 +179,9 @@ class DisplayService
 
   /**
    * Get list of enabled display columns from display options.
+   *
+   * @param array $displayOptions Display configuration array
+   * @return array List of enabled column names
    */
   protected function getEnabledDisplayColumns(array $displayOptions): array
   {
@@ -185,6 +198,9 @@ class DisplayService
 
   /**
    * Get display header name for a column.
+   *
+   * @param string $column Column name
+   * @return string Display header label
    */
   protected function getDisplayColumnHeader(string $column): string
   {
@@ -193,6 +209,12 @@ class DisplayService
 
   /**
    * Extract and format display column value from log entry.
+   *
+   * @param string $column Column name to extract
+   * @param array $log Log entry data
+   * @param array $displayOptions Display configuration
+   * @param string|null $searchTerm Optional search term for highlighting
+   * @return string Formatted column value
    */
   protected function extractDisplayColumnValue(string $column, array $log, array $displayOptions, ?string $searchTerm = NULL): string
   {
@@ -296,6 +318,11 @@ class DisplayService
 
   /**
    * Format grouped results for JSON output.
+   *
+   * @param array $grouped Grouped results
+   * @param array $displayOptions Display configuration
+   * @param array $filters Filter options
+   * @return array JSON-formatted results structure
    */
   protected function formatGroupedResultsForJson(array $grouped, array $displayOptions, array $filters = []): array
   {
@@ -357,6 +384,12 @@ class DisplayService
 
   /**
    * Format auto time-regrouped results for JSON output.
+   *
+   * @param array $logs Log entries
+   * @param array $displayOptions Display configuration
+   * @param array $grouped Grouped results
+   * @param array $filters Filter options
+   * @return array JSON-formatted results structure
    */
   protected function formatAutoTimeRegroupingForJson(array $logs, array $displayOptions, array $grouped, array $filters = []): array
   {
@@ -367,6 +400,11 @@ class DisplayService
 
   /**
    * Format Drupal errors for JSON output.
+   *
+   * @param array $logs Log entries
+   * @param array $displayOptions Display configuration
+   * @param array $filters Filter options
+   * @return array JSON-formatted Drupal error results
    */
   protected function formatDrupalErrorsForJson(array $logs, array $displayOptions, array $filters = []): array
   {
@@ -517,6 +555,15 @@ class DisplayService
 
   /**
    * Display results based on display options.
+   *
+   * Main entry point for result formatting and display.
+   *
+   * @param array $logs Log entries to display
+   * @param array $displayOptions Display configuration
+   * @param SymfonyStyle $io Symfony console I/O helper
+   * @param bool $debugMode Enable debug output
+   * @param array $filters Filter options
+   * @param string|null $searchTerm Optional search term for highlighting
    */
   public function displayResults(array $logs, array $displayOptions, SymfonyStyle $io, bool $debugMode = FALSE, array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -589,6 +636,9 @@ class DisplayService
 
   /**
    * Display raw JSON output.
+   *
+   * @param array $logs Log entries to display
+   * @param SymfonyStyle $io Symfony console I/O helper
    */
   protected function displayRawJson(array $logs, SymfonyStyle $io): void
   {
@@ -599,6 +649,10 @@ class DisplayService
 
   /**
    * Group results based on display options.
+   *
+   * @param array $logs Log entries to group
+   * @param array $displayOptions Display configuration
+   * @return array Grouped results with counts and samples
    */
   protected function groupResults(array $logs, array $displayOptions): array
   {
@@ -631,6 +685,9 @@ class DisplayService
 
   /**
    * Parse the log message field if it contains JSON data.
+   *
+   * @param array $log Log entry with potential JSON message field
+   * @return array Parsed log entry with merged message data
    */
   protected function parseLogMessage(array $log): array
   {
@@ -649,6 +706,10 @@ class DisplayService
 
   /**
    * Build grouping key based on display options.
+   *
+   * @param array $log Log entry to generate key for
+   * @param array $displayOptions Display configuration
+   * @return string Grouping key string
    */
   protected function buildGroupingKey(array $log, array $displayOptions): string
   {
@@ -725,6 +786,12 @@ class DisplayService
 
   /**
    * Display grouped results in a table format.
+   *
+   * @param array $grouped Grouped results array
+   * @param array $displayOptions Display configuration
+   * @param SymfonyStyle $io Symfony console I/O helper
+   * @param array $filters Filter options
+   * @param string|null $searchTerm Optional search term for highlighting
    */
   protected function displayGroupedResults(array $grouped, array $displayOptions, SymfonyStyle $io, array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -783,6 +850,14 @@ class DisplayService
 
   /**
    * Handle automatic time-based regrouping when only one group is found.
+   *
+   * @param array $logs Log entries
+   * @param array $displayOptions Display configuration
+   * @param SymfonyStyle $io Symfony console I/O helper
+   * @param array $singleGroup Single group data
+   * @param string $groupKey Group identifier
+   * @param array $filters Filter options
+   * @param string|null $searchTerm Optional search term for highlighting
    */
   protected function handleAutoTimeRegrouping(array $logs, array $displayOptions, SymfonyStyle $io, array $singleGroup, string $groupKey = 'all', array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -857,6 +932,9 @@ class DisplayService
 
   /**
    * Extract day from timestamp in YYYY-MM-DD format.
+   *
+   * @param string $timestamp ISO timestamp string
+   * @return string Day in YYYY-MM-DD format or 'unknown'
    */
   protected function extractDayFromTimestamp(string $timestamp): string
   {
@@ -881,6 +959,9 @@ class DisplayService
 
   /**
    * Extract hour from timestamp in HH:00 format.
+   *
+   * @param string $timestamp ISO timestamp string
+   * @return string Hour in HH:00 format or 'unknown'
    */
   protected function extractHourFromTimestamp(string $timestamp): string
   {
@@ -903,6 +984,9 @@ class DisplayService
 
   /**
    * Extract minute from timestamp in HH:MM format.
+   *
+   * @param string $timestamp ISO timestamp string
+   * @return string Minute in HH:MM format or 'unknown'
    */
   protected function extractMinuteFromTimestamp(string $timestamp): string
   {
@@ -925,6 +1009,9 @@ class DisplayService
 
   /**
    * Get display label for a hostname (for grouping purposes).
+   *
+   * @param string $host Hostname to map
+   * @return string Display label or original hostname
    */
   protected function getDisplayLabelForHost(string $host): string
   {
@@ -949,6 +1036,9 @@ class DisplayService
 
   /**
    * Shorten hostname using configured display mappings and colorize.
+   *
+   * @param string $host Hostname to shorten and colorize
+   * @return string Colorized short hostname
    */
   protected function shortenHostname(string $host): string
   {
@@ -973,6 +1063,9 @@ class DisplayService
 
   /**
    * Colorize HTTP status codes based on response type.
+   *
+   * @param string $status HTTP status code
+   * @return string Colorized status code
    */
   protected function colorizeStatus(string $status): string
   {
@@ -998,6 +1091,10 @@ class DisplayService
 
   /**
    * Highlight search term in user agent strings.
+   *
+   * @param string $ua User agent string
+   * @param string|null $searchTerm Search term to highlight (defaults to "bot")
+   * @return string User agent with highlighted search term
    */
   protected function highlightSearchTermInUserAgent(string $ua, ?string $searchTerm = NULL): string
   {
@@ -1020,6 +1117,9 @@ class DisplayService
 
   /**
    * Format timestamp for display using compact m-d H:i:s format.
+   *
+   * @param string $timestamp ISO timestamp to format
+   * @return string Formatted timestamp
    */
   protected function formatTimestamp(string $timestamp): string
   {
@@ -1034,6 +1134,10 @@ class DisplayService
 
   /**
    * Format time range for display (combines first and last seen).
+   *
+   * @param string $firstSeen First timestamp
+   * @param string $lastSeen Last timestamp
+   * @return string Formatted time range
    */
   protected function formatTimeRange(string $firstSeen, string $lastSeen): string
   {
@@ -1064,6 +1168,12 @@ class DisplayService
 
   /**
    * Display Drupal/PHP watchdog errors with file:line grouping.
+   *
+   * @param array $logs Log entries
+   * @param array $displayOptions Display configuration
+   * @param SymfonyStyle $io Symfony console I/O helper
+   * @param array $filters Filter options
+   * @param string|null $searchTerm Optional search term for highlighting
    */
   protected function displayDrupalErrors(array $logs, array $displayOptions, SymfonyStyle $io, array $filters = [], ?string $searchTerm = NULL): void
   {
@@ -1262,6 +1372,9 @@ class DisplayService
 
   /**
    * Colorize Drupal severity levels.
+   *
+   * @param string $severity Drupal severity level
+   * @return string Colorized severity level
    */
   protected function colorizeDrupalSeverity(string $severity): string
   {

@@ -124,6 +124,24 @@ abstract class BaseSolarWindsCommand extends Command
   protected bool $jsonMode = FALSE;
 
   /**
+   * Constructor.
+   *
+   * Initializes configuration service and parent command, then sets up
+   * API, display, and database services for command execution.
+   */
+  public function __construct()
+  {
+    // Initialize config FIRST, before parent constructor which calls configure().
+    $this->config = new ConfigurationService();
+
+    parent::__construct();
+
+    $this->apiService = new ApiService($this->config);
+    $this->displayService = new DisplayService($this->config);
+    $this->databaseService = new DatabaseService($this->config);
+  }
+
+  /**
    * Get time mappings for all supported time options.
    *
    * @return array Time mappings array
@@ -148,20 +166,11 @@ abstract class BaseSolarWindsCommand extends Command
     return self::$timeMappings;
   }
 
-  public function __construct()
-  {
-    // Initialize config FIRST, before parent constructor which calls configure().
-    $this->config = new ConfigurationService();
-
-    parent::__construct();
-
-    $this->apiService = new ApiService($this->config);
-    $this->displayService = new DisplayService($this->config);
-    $this->databaseService = new DatabaseService($this->config);
-  }
-
   /**
    * Configure common options for all SolarWinds commands.
+   *
+   * Sets up all standard command options including time ranges, site filters,
+   * display options, and global filters. Called automatically by Symfony Console.
    */
   protected function configure(): void
   {
@@ -261,6 +270,13 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Execute the command - template method that child classes customize.
+   *
+   * Implements the main execution flow: parse arguments, build query,
+   * validate, and execute search with results display.
+   *
+   * @param InputInterface $input Command input interface
+   * @param OutputInterface $output Command output interface
+   * @return int Exit code (Command::SUCCESS or Command::FAILURE)
    */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
@@ -302,6 +318,12 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Parse all input arguments and options into a structured array.
+   *
+   * Consolidates time options, site filters, display preferences, and
+   * command-specific options into a unified structure.
+   *
+   * @param InputInterface $input Command input interface
+   * @return array Structured options array with keys: time, sites, display, filters, script_specific
    */
   protected function parseArguments(InputInterface $input): array
   {
@@ -318,6 +340,13 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Parse time-related options.
+   *
+   * Resolves time range from --since/--until, time flags (--1h, --1d),
+   * or --time option, with fallback to command default.
+   *
+   * @param InputInterface $input Command input interface
+   * @return array Time options with keys: start_time, end_time, human_readable
+   * @throws \InvalidArgumentException If no valid time option is specified
    */
   protected function parseTimeOptions(InputInterface $input): array
   {
@@ -374,6 +403,11 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Parse site filtering options.
+   *
+   * Checks all configured site flags and returns active site names.
+   *
+   * @param InputInterface $input Command input interface
+   * @return array Array of active site names
    */
   protected function parseSiteOptions(InputInterface $input): array
   {
@@ -388,6 +422,12 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Parse display formatting options.
+   *
+   * Builds display configuration from default options and explicit user flags,
+   * tracking which options were explicitly set.
+   *
+   * @param InputInterface $input Command input interface
+   * @return array Display options with _explicit tracking sub-array
    */
   protected function parseDisplayOptions(InputInterface $input): array
   {
@@ -437,6 +477,12 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Parse filtering and other options.
+   *
+   * Extracts all filter options including min_count, cache settings,
+   * global filters, and client-side filters.
+   *
+   * @param InputInterface $input Command input interface
+   * @return array Filter options array
    */
   protected function parseFilterOptions(InputInterface $input): array
   {
@@ -463,6 +509,13 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Apply site filtering to query automatically (base class handles this).
+   *
+   * Adds site-based filtering conditions to the search query using
+   * configured site host mappings.
+   *
+   * @param string $query Base search query
+   * @param array $options Parsed command options including sites array
+   * @return string Modified query with site filtering applied
    */
   protected function applySiteFiltering(string $query, array $options): string
   {
@@ -481,6 +534,14 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Apply global filter options to a query.
+   *
+   * Adds filtering conditions for country, city, status code, user agent,
+   * path, and IP address based on active filter options.
+   *
+   * @param string $baseQuery Base search query
+   * @param array $options Parsed command options
+   * @param array $excludeFilters Filter types to exclude from application
+   * @return string Modified query with filters applied
    */
   protected function applyGlobalFilters(string $baseQuery, array $options, array $excludeFilters = []): string
   {
@@ -547,6 +608,11 @@ abstract class BaseSolarWindsCommand extends Command
    * Filters logs based on --filter options in format "field:regex".
    * Multiple filters are AND'd together (all must match).
    * Field names can be specified with or without 'json.' prefix.
+   *
+   * @param array $logs Array of log entries to filter
+   * @param array $options Parsed command options including filters array
+   * @return array Filtered log entries
+   * @throws \InvalidArgumentException If filter format is invalid or regex is malformed
    */
   protected function filterResults(array $logs, array $options): array
   {
@@ -668,6 +734,10 @@ abstract class BaseSolarWindsCommand extends Command
    *
    * This simplified implementation fetches data via searchLogsWithProgress()
    * which automatically handles database storage and API syncing.
+   *
+   * @param string $query Search query string
+   * @param array $options Parsed command options
+   * @return int Command exit code (Command::SUCCESS)
    */
   protected function executeSearch(string $query, array $options): int
   {
@@ -735,6 +805,10 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Handle interrupt signals (SIGINT/SIGTERM).
+   *
+   * Sets interrupted flag on first signal, forces exit on second signal.
+   *
+   * @param int $signo Signal number received
    */
   public static function handleSignal(int $signo): void
   {
@@ -747,6 +821,10 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Check if execution has been interrupted.
+   *
+   * Processes pending signals and returns interrupt status.
+   *
+   * @return bool TRUE if interrupted, FALSE otherwise
    */
   public static function isInterrupted(): bool
   {
@@ -759,6 +837,8 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Register signal handlers for graceful interruption.
+   *
+   * Sets up SIGINT and SIGTERM handlers if pcntl extension is available.
    */
   protected function registerSignalHandlers(): void
   {
@@ -895,11 +975,19 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Build the search query (must be implemented by child classes).
+   *
+   * @param array $options Parsed command options
+   * @return string Search query string for SolarWinds API
    */
   abstract protected function buildSearchQuery(array $options): string;
 
   /**
    * Parse script-specific options (default implementation returns empty array).
+   *
+   * Child classes override this to extract command-specific arguments and options.
+   *
+   * @param InputInterface $input Command input interface
+   * @return array Command-specific options
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
@@ -908,6 +996,12 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Validate the query and options (default implementation does no validation).
+   *
+   * Child classes override this to implement command-specific validation logic.
+   *
+   * @param string $query Built search query
+   * @param array $options Parsed command options
+   * @throws \InvalidArgumentException If validation fails
    */
   protected function validateQuery(string $query, array $options): void
   {
@@ -916,6 +1010,12 @@ abstract class BaseSolarWindsCommand extends Command
 
   /**
    * Extract search term from command options for highlighting.
+   *
+   * Attempts to identify a simple search term from command-specific options
+   * for result highlighting purposes.
+   *
+   * @param array $options Parsed command options
+   * @return string|null Search term for highlighting, or NULL if none applicable
    */
   protected function extractSearchTerm(array $options): ?string
   {
@@ -947,6 +1047,8 @@ abstract class BaseSolarWindsCommand extends Command
    *
    * Debug output should always go to stderr to avoid polluting stdout,
    * especially when using --json mode where stdout must be valid JSON.
+   *
+   * @param string $message Debug message to output
    */
   protected function debugOutput(string $message): void
   {

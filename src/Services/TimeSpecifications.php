@@ -95,6 +95,8 @@ class TimeSpecifications
 {
   /**
    * Get all time option categories and their values.
+   *
+   * @return array Time option categories with their supported values
    */
   public static function getTimeOptions(): array
   {
@@ -115,6 +117,11 @@ class TimeSpecifications
 
   /**
    * Convert time argument to human-readable time range.
+   *
+   * Converts time options like --1h, --yesterday to [start, end] time strings.
+   *
+   * @param string $timeArg Time option string (e.g., '1h', 'yesterday', '5m')
+   * @return array|null Array with [start_time, end_time] or NULL if not recognized
    */
   public static function convertToTimeRange(string $timeArg): ?array
   {
@@ -172,6 +179,10 @@ class TimeSpecifications
 
   /**
    * Get all available time options as a flat array for command configuration.
+   *
+   * Returns complete list of supported time options for dynamic command setup.
+   *
+   * @return array Flat array of all time option strings
    */
   public static function getAllTimeOptions(): array
   {

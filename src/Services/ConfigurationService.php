@@ -95,6 +95,13 @@ class ConfigurationService
 {
   protected array $config = [];
 
+  /**
+   * Constructor.
+   *
+   * Initializes configuration service and loads settings from YAML file.
+   *
+   * @param string $configPath Optional path to configuration file (defaults to ~/.solarwinds.yml)
+   */
   public function __construct(protected string $configPath = '')
   {
     $this->configPath = $this->configPath ?: ($_SERVER['HOME'] . '/.solarwinds.yml');
@@ -103,6 +110,10 @@ class ConfigurationService
 
   /**
    * Load configuration from YAML file.
+   *
+   * Parses YAML configuration and applies defaults for missing settings.
+   *
+   * @throws \RuntimeException If YAML parsing fails
    */
   protected function loadConfiguration(): void
   {
@@ -141,6 +152,8 @@ class ConfigurationService
 
   /**
    * Get debug mode setting.
+   *
+   * @return bool TRUE if debug mode is enabled
    */
   public function isDebugEnabled(): bool
   {
@@ -150,6 +163,8 @@ class ConfigurationService
 
   /**
    * Get progress mode setting.
+   *
+   * @return bool TRUE if progress bars should be displayed
    */
   public function isProgressEnabled(): bool
   {
@@ -158,6 +173,11 @@ class ConfigurationService
 
   /**
    * Helper to convert various boolean representations to actual boolean.
+   *
+   * Handles string values like 'true', '1', 'yes', 'on' and numeric values.
+   *
+   * @param string $key Configuration key to retrieve
+   * @return bool Boolean value of the configuration setting
    */
   protected function getBooleanValue(string $key): bool
   {
@@ -181,6 +201,8 @@ class ConfigurationService
 
   /**
    * Get site configurations from YAML.
+   *
+   * @return array Site configuration array
    */
   public function getSites(): array
   {
@@ -189,6 +211,10 @@ class ConfigurationService
 
   /**
    * Get site host mappings for command option generation.
+   *
+   * Builds array of site names to host/description mappings for --site-name flags.
+   *
+   * @return array Site host mappings array
    */
   public function getSiteHostMappings(): array
   {
@@ -212,6 +238,10 @@ class ConfigurationService
 
   /**
    * Get hostname to display label mappings for output shortening.
+   *
+   * Maps full hostnames to short display labels for result formatting.
+   *
+   * @return array Hostname to display label mappings
    */
   public function getHostDisplayMappings(): array
   {
@@ -231,6 +261,8 @@ class ConfigurationService
 
   /**
    * Get full configuration array.
+   *
+   * @return array Complete configuration array
    */
   public function getConfig(): array
   {
@@ -239,6 +271,10 @@ class ConfigurationService
 
   /**
    * Get a specific configuration value.
+   *
+   * @param string $key Configuration key to retrieve
+   * @param mixed $default Default value if key not found
+   * @return mixed Configuration value or default
    */
   public function get(string $key, mixed $default = NULL): mixed
   {
@@ -247,6 +283,8 @@ class ConfigurationService
 
   /**
    * Get configured aliases.
+   *
+   * @return array Command aliases array
    */
   public function getAliases(): array
   {
