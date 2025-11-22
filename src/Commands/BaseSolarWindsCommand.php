@@ -287,17 +287,14 @@ abstract class BaseSolarWindsCommand extends Command
       // Parse and validate arguments.
       $queryOptions = $this->parseArguments($input);
 
-      // Build the search query (implemented by child classes).
-      $query = $this->buildSearchQuery($queryOptions);
-
-      // Apply site filtering automatically (base class handles this).
-      $query = $this->applySiteFiltering($query, $queryOptions);
+      // Build the SQL WHERE clause (implemented by child classes).
+      $sqlQuery = $this->buildSearchQuery($queryOptions);
 
       // Validate the query and options.
-      $this->validateQuery($query, $queryOptions);
+      $this->validateQuery($sqlQuery, $queryOptions);
 
       // Execute the search and display results.
-      return $this->executeSearch($query, $queryOptions);
+      return $this->executeSearch($sqlQuery, $queryOptions);
 
     }
     catch (\Exception $e) {
@@ -732,27 +729,35 @@ abstract class BaseSolarWindsCommand extends Command
   /**
    * Execute search using database-backed universal sync.
    *
-   * This simplified implementation fetches data via syncLogsToDatabase()
-   * which automatically handles database storage and API syncing.
+   * Syncs data to database, then queries with SQL WHERE clause.
    *
-   * @param string $query Search query string
+   * @param array $sqlQuery Array with 'where' (SQL WHERE clause) and 'params' (PDO parameters)
    * @param array $options Parsed command options
    * @return int Command exit code (Command::SUCCESS)
    */
-  protected function executeSearch(string $query, array $options): int
+  protected function executeSearch(array $sqlQuery, array $options): int
   {
     // Register signal handlers for graceful interruption.
     $this->registerSignalHandlers();
 
-    // Fetch data (from database or API via universal sync).
+    // Display query information.
     if (!$this->jsonMode) {
       $this->io->section('Searching SolarWinds Logs');
       $this->io->text("Time range: {$options['time']['human_readable']}");
-      $this->io->text("Query: $query");
+      if ($options['filters']['debug'] || $this->config->isDebugEnabled()) {
+        $this->io->text("SQL WHERE: {$sqlQuery['where']}");
+        if (!empty($sqlQuery['params'])) {
+          $this->io->text("SQL Params: " . json_encode($sqlQuery['params']));
+        }
+      }
       $this->io->newLine();
     }
 
-    $results = $this->syncLogsToDatabase($options);
+    // Step 1: Sync data to database.
+    $this->syncLogsToDatabase($options);
+
+    // Step 2: Query database with SQL WHERE clause.
+    $results = $this->queryDatabase($options, $sqlQuery['where'], $sqlQuery['params']);
 
     // Apply client-side filters.
     $originalCount = count($results);
@@ -772,7 +777,7 @@ abstract class BaseSolarWindsCommand extends Command
         $searchTerm
       );
       $this->outputJson('success', $formattedResults, [
-        'query' => $query,
+        'sql_where' => $sqlQuery['where'],
         'time_range' => $options['time'],
         'filters' => [
           'original_count' => $originalCount,
@@ -1217,17 +1222,19 @@ abstract class BaseSolarWindsCommand extends Command
   /**
    * Sync logs from API to database with automatic range detection.
    *
-   * Implements universal sync: fetches ALL logs for time range from database or API,
+   * Implements universal sync: fetches ALL logs for time range to database,
    * with automatic range detection and incremental page-by-page saves.
    *
    * Long ranges (>1 day) are automatically split into 1-day chunks to prevent
    * memory issues and performance degradation.
    *
+   * NOTE: This method ONLY syncs data. It does NOT return results.
+   * Call queryDatabase() after sync to retrieve filtered results.
+   *
    * @param array $options Query options containing time range
-   * @param bool $showCacheMessage Whether to show database hit message (default: TRUE)
-   * @return array Array of log entries from database
+   * @param bool $showCacheMessage Whether to show database hit/sync messages (default: TRUE)
    */
-  protected function syncLogsToDatabase(array $options, bool $showCacheMessage = TRUE): array
+  protected function syncLogsToDatabase(array $options, bool $showCacheMessage = TRUE): void
   {
     // Convert time range to ISO 8601 for database queries.
     $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
@@ -1236,13 +1243,12 @@ abstract class BaseSolarWindsCommand extends Command
     // Detect missing ranges in database coverage.
     $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
 
-    // No missing ranges - return existing database data.
+    // No missing ranges - data already in database.
     if (empty($rangeAnalysis['ranges'])) {
-      $results = $this->databaseService->getLogs($startTime, $endTime);
       if ($showCacheMessage && !$this->jsonMode) {
-        $this->io->note("Using database results (" . $this->formatNumber(count($results)) . " logs)");
+        $this->io->note("Data already in database");
       }
-      return $results;
+      return;
     }
 
     // We have missing ranges - fetch from API with incremental saves.
@@ -1346,43 +1352,48 @@ abstract class BaseSolarWindsCommand extends Command
       $this->finishProgressBar($progressBar);
     } // End range loop
 
-    // Get complete dataset from database (now includes newly fetched data).
-    $results = $this->databaseService->getLogs($startTime, $endTime);
-
-    // Show result summary.
+    // Show sync summary.
     if ($showCacheMessage && !$this->jsonMode) {
       if ($interrupted) {
-        // Show partial results message with time coverage.
-        if (!empty($results)) {
-          $earliest = $results[0]['time'] ?? NULL;
-          $latest = $results[count($results) - 1]['time'] ?? NULL;
-          if ($earliest && $latest) {
-            $this->io->warning("Partial results (" . $this->formatNumber(count($results)) . " logs covering " . date('M j g:ia', strtotime($earliest)) . " to " . date('M j g:ia', strtotime($latest)) . ")");
-          }
-          else {
-            $this->io->warning("Partial results (" . $this->formatNumber(count($results)) . " logs)");
-          }
-        }
-        else {
-          $this->io->warning("No results (interrupted before any data was fetched)");
-        }
+        $this->io->warning("Sync interrupted - partial data saved (" . $this->formatNumber($totalNewLogs) . " logs)");
       }
       elseif ($rangeAnalysis['has_data']) {
-        $this->io->note("Merged " . $this->formatNumber($totalNewLogs) . " new logs with existing database data (total: " . $this->formatNumber(count($results)) . " logs)");
+        $this->io->note("Synced " . $this->formatNumber($totalNewLogs) . " new logs to database");
+      }
+      else {
+        $this->io->note("Synced " . $this->formatNumber($totalNewLogs) . " logs to database");
       }
     }
-
-    return $results;
   }
 
+  /**
+   * Query database with SQL WHERE clause.
+   *
+   * Retrieves logs from database filtered by SQL WHERE clause and time range.
+   * Should be called AFTER syncLogsToDatabase().
+   *
+   * @param array $options Query options containing time range
+   * @param string|null $sqlWhere SQL WHERE clause (without WHERE keyword)
+   * @param array $sqlParams PDO parameters for SQL WHERE clause
+   * @return array Array of log entries matching the query
+   */
+  protected function queryDatabase(array $options, ?string $sqlWhere = NULL, array $sqlParams = []): array
+  {
+    // Convert time range to ISO 8601 for database queries.
+    $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
+    $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+
+    // Query database with SQL WHERE clause.
+    return $this->databaseService->getLogsWithQuery($sqlWhere, $sqlParams, $startTime, $endTime);
+  }
 
   /**
-   * Build the search query (must be implemented by child classes).
+   * Build the SQL WHERE clause (must be implemented by child classes).
    *
    * @param array $options Parsed command options
-   * @return string Search query string for SolarWinds API
+   * @return array Array with 'where' (SQL WHERE clause) and 'params' (PDO parameters)
    */
-  abstract protected function buildSearchQuery(array $options): string;
+  abstract protected function buildSearchQuery(array $options): array;
 
   /**
    * Parse script-specific options (default implementation returns empty array).
@@ -1398,15 +1409,15 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Validate the query and options (default implementation does no validation).
+   * Validate the SQL query and options (default implementation does no validation).
    *
    * Child classes override this to implement command-specific validation logic.
    *
-   * @param string $query Built search query
+   * @param array $sqlQuery Array with 'where' and 'params'
    * @param array $options Parsed command options
    * @throws \InvalidArgumentException If validation fails
    */
-  protected function validateQuery(string $query, array $options): void
+  protected function validateQuery(array $sqlQuery, array $options): void
   {
     // Default implementation performs no additional validation.
   }

@@ -149,7 +149,8 @@ class SearchCommand extends BaseSolarWindsCommand
         <info>solarwinds search "api error" --country</info>            # Text search by country
         ')
       ->addArgument('search_term', InputArgument::OPTIONAL, 'Text pattern to search for in logs')
-      ->addOption('query', NULL, InputOption::VALUE_REQUIRED, 'Raw query to send to API (overrides search_term)')
+      ->addOption('query', NULL, InputOption::VALUE_REQUIRED, 'SolarWinds query syntax (will be translated to SQL)')
+      ->addOption('sql-where', NULL, InputOption::VALUE_REQUIRED, 'Direct SQL WHERE clause (advanced)')
     ;
 
     // Call parent to set up common options.
@@ -163,29 +164,39 @@ class SearchCommand extends BaseSolarWindsCommand
   {
     $options = [];
 
-    // Get explicit query or search term.
-    $explicitQuery = $input->getOption('query');
+    // Get SQL WHERE clause, SolarWinds query, or search term.
+    $sqlWhere = $input->getOption('sql-where');
+    $solarwindsQuery = $input->getOption('query');
     $searchTerm = $input->getArgument('search_term');
 
-    if ($explicitQuery) {
-      $options['query'] = $explicitQuery;
+    if ($sqlWhere) {
+      $options['sql_where'] = $sqlWhere;
+      $options['query_type'] = 'sql';
+    }
+    elseif ($solarwindsQuery) {
+      $options['query'] = $solarwindsQuery;
+      $options['query_type'] = 'solarwinds';
     }
     elseif ($searchTerm) {
       $options['query'] = $searchTerm;
+      $options['query_type'] = 'text';
     }
     else {
       $options['query'] = NULL;
+      $options['query_type'] = NULL;
     }
 
     return $options;
   }
 
   /**
-   * Build the search query for general log search.
+   * Build the SQL WHERE clause for general log search.
    */
-  protected function buildSearchQuery(array $options): string
+  protected function buildSearchQuery(array $options): array
   {
-    $query = $options['script_specific']['query'];
+    $queryType = $options['script_specific']['query_type'];
+    $sqlWhere = $options['script_specific']['sql_where'] ?? NULL;
+    $query = $options['script_specific']['query'] ?? NULL;
 
     // Check if any global filters are applied that could provide filtering
     $hasFilters = !empty($options['filters']['country_filter']) ||
@@ -195,42 +206,47 @@ class SearchCommand extends BaseSolarWindsCommand
                   !empty($options['filters']['path_filter']) ||
                   !empty($options['filters']['ip_filter']);
 
-    if (empty($query)) {
-      if ($hasFilters) {
-        // Use empty query when filters are provided - the filters will provide the search criteria
-        $query = "";
-      }
-      else {
-        throw new \InvalidArgumentException("Search query is required. Provide either a search term argument, --query option, or filter options like --ip-filter, --country-filter, etc.");
-      }
+    if (empty($queryType) && !$hasFilters) {
+      throw new \InvalidArgumentException("Search query is required. Provide either a search term argument, --query option, --sql-where, or filter options like --ip-filter, --country-filter, etc.");
     }
 
-    // Apply global filters to the query
-    return $this->applyGlobalFilters($query, $options);
+    // Handle direct SQL WHERE clause.
+    if ($queryType === 'sql') {
+      return [
+        'where' => $sqlWhere,
+        'params' => [],  // SQL WHERE should use named params - not supported yet
+      ];
+    }
+
+    // Handle SolarWinds query syntax - translate to SQL.
+    if ($queryType === 'solarwinds') {
+      $translator = new \SolarWinds\Services\QueryTranslator();
+      return $translator->translate($query);
+    }
+
+    // Handle simple text search.
+    if ($queryType === 'text') {
+      if (strlen(trim($query)) < 2) {
+        throw new \InvalidArgumentException("Search query must be at least 2 characters: '$query'");
+      }
+      return [
+        'where' => 'data LIKE :search',
+        'params' => [':search' => '%' . $query . '%'],
+      ];
+    }
+
+    // No query but has filters - return match-all.
+    return [
+      'where' => '1=1',
+      'params' => [],
+    ];
   }
 
   /**
-   * Validate the query and options for search.
+   * Validate the SQL query and options for search.
    */
-  protected function validateQuery(string $query, array $options): void
+  protected function validateQuery(array $sqlQuery, array $options): void
   {
-    // Check if any global filters are applied
-    $hasFilters = !empty($options['filters']['country_filter']) ||
-                  !empty($options['filters']['city_filter']) ||
-                  !empty($options['filters']['status_code_filter']) ||
-                  !empty($options['filters']['user_agent_filter']) ||
-                  !empty($options['filters']['path_filter']) ||
-                  !empty($options['filters']['ip_filter']);
-
-    // Allow empty query if filters are present, otherwise require at least 2 characters
-    if (empty($query)) {
-      if (!$hasFilters) {
-        throw new \InvalidArgumentException("Search query is required when no filter options are provided");
-      }
-      // Empty query is valid when filters are present
-    }
-    elseif (strlen(trim($query)) < 2) {
-      throw new \InvalidArgumentException("Search query must be at least 2 characters: '$query'");
-    }
+    // Validation is now done in buildSearchQuery.
   }
 }

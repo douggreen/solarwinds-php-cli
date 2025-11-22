@@ -151,32 +151,34 @@ class BotCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Build the search query for bot traffic analysis.
+   * Build the SQL WHERE clause for bot traffic analysis.
    */
-  protected function buildSearchQuery(array $options): string
+  protected function buildSearchQuery(array $options): array
   {
     $agent = $options['script_specific']['agent'];
 
-    // Build match string for bot user agents.
-    return "{ json.req_user_agent:$agent }";
+    // Validate agent pattern.
+    if (empty($agent) || strlen($agent) < 2) {
+      throw new \InvalidArgumentException("Agent pattern must be at least 2 characters: $agent");
+    }
+
+    // Build SQL WHERE clause for user agent matching.
+    return [
+      'where' => 'req_user_agent LIKE :agent',
+      'params' => [':agent' => '%' . $agent . '%'],
+    ];
   }
 
   /**
-   * Validate the query and options for bot.
+   * Validate the SQL query and options for bot.
    */
-  protected function validateQuery(string $query, array $options): void
+  protected function validateQuery(array $sqlQuery, array $options): void
   {
     $explicitOptions = $options['display']['_explicit'] ?? [];
 
     // bot is already about user agents, so --ua flag is redundant.
     if (isset($explicitOptions['ua'])) {
       throw new \InvalidArgumentException("--ua option is redundant for bot (bot is already about user agents). Use other display options like --status, --country, --host instead");
-    }
-
-    // Validate agent pattern.
-    $agent = $options['script_specific']['agent'];
-    if (empty($agent) || strlen($agent) < 2) {
-      throw new \InvalidArgumentException("Agent pattern must be at least 2 characters: $agent");
     }
   }
 }

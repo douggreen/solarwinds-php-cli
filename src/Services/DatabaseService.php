@@ -84,12 +84,21 @@ class DatabaseService
    *
    * Creates logs table with generated virtual columns and indexes for fast queries.
    *
-   * New columns:
+   * Only creates indexes for columns that exist - safe for both new and existing databases.
+   *
+   * Generated columns:
    * - retrieved_at: Timestamp when log was fetched from API (for freshness tracking)
    * - url_arguments: Pre-parsed JSON of URL query parameters (for fast exploit detection)
+   * - program: Program name from syslog/Drupal logs
+   * - orig_host: Original host/site name (commonly used for grouping)
+   * - message: Log message text (Drupal message field)
+   * - hostname: Hostname field (alternative to orig_host)
+   * - country: Country code from geoip data
+   * - city: City name from geoip data
    */
   protected function createSchema(): void
   {
+    // Create table with all columns for new databases.
     $sql = <<<'SQL'
 CREATE TABLE IF NOT EXISTS logs (
   id TEXT PRIMARY KEY,
@@ -103,18 +112,114 @@ CREATE TABLE IF NOT EXISTS logs (
   resp_status INTEGER GENERATED ALWAYS AS (json_extract(data, '$.resp_status')) VIRTUAL,
   log_type TEXT GENERATED ALWAYS AS (json_extract(data, '$.type')) VIRTUAL,
   log_severity TEXT GENERATED ALWAYS AS (json_extract(data, '$.severity')) VIRTUAL,
+  program TEXT GENERATED ALWAYS AS (json_extract(data, '$.program')) VIRTUAL,
+  orig_host TEXT GENERATED ALWAYS AS (json_extract(data, '$.orig_host')) VIRTUAL,
+  hostname TEXT GENERATED ALWAYS AS (json_extract(data, '$.hostname')) VIRTUAL,
+  message TEXT GENERATED ALWAYS AS (json_extract(data, '$.message')) VIRTUAL,
+  country TEXT GENERATED ALWAYS AS (COALESCE(
+    json_extract(data, '$.geoip.country_code2'),
+    json_extract(data, '$.geoip.country_name'),
+    json_extract(data, '$.country'),
+    json_extract(data, '$.geo.country')
+  )) VIRTUAL,
+  city TEXT GENERATED ALWAYS AS (COALESCE(
+    json_extract(data, '$.geoip.city_name'),
+    json_extract(data, '$.city'),
+    json_extract(data, '$.geo.city')
+  )) VIRTUAL,
   url_arguments JSON GENERATED ALWAYS AS (json_extract(data, '$.url_arguments')) VIRTUAL
 );
-
-CREATE INDEX IF NOT EXISTS idx_time ON logs(time);
-CREATE INDEX IF NOT EXISTS idx_client_ip ON logs(client_ip) WHERE client_ip IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_req_method ON logs(req_method) WHERE req_method IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_resp_status ON logs(resp_status) WHERE resp_status IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_log_type ON logs(log_type) WHERE log_type IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_log_severity ON logs(log_severity) WHERE log_severity IS NOT NULL;
 SQL;
 
     $this->db->exec($sql);
+
+    // Get list of existing columns to avoid creating indexes on non-existent columns.
+    $existingColumns = [];
+    $result = $this->db->query("PRAGMA table_info(logs)");
+    while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
+      $existingColumns[] = $row['name'];
+    }
+
+    // Create indexes only for columns that exist.
+    $indexDefinitions = [
+      'idx_time' => 'time',
+      'idx_client_ip' => 'client_ip',
+      'idx_req_method' => 'req_method',
+      'idx_resp_status' => 'resp_status',
+      'idx_log_type' => 'log_type',
+      'idx_log_severity' => 'log_severity',
+      'idx_program' => 'program',
+      'idx_orig_host' => 'orig_host',
+      'idx_hostname' => 'hostname',
+      'idx_country' => 'country',
+      'idx_city' => 'city',
+    ];
+
+    foreach ($indexDefinitions as $indexName => $columnName) {
+      if (in_array($columnName, $existingColumns)) {
+        $this->db->exec("CREATE INDEX IF NOT EXISTS $indexName ON logs($columnName) WHERE $columnName IS NOT NULL");
+      }
+    }
+  }
+
+  /**
+   * Migrate database schema to add new columns and indexes.
+   *
+   * This adds new VIRTUAL columns and indexes to an existing database.
+   * Safe to run multiple times - uses IF NOT EXISTS.
+   *
+   * @return array Statistics about the migration (columns_added, indexes_created)
+   */
+  public function migrateSchema(): array
+  {
+    $stats = ['columns_added' => 0, 'indexes_created' => 0];
+
+    // Get list of existing columns.
+    $existingColumns = [];
+    $result = $this->db->query("PRAGMA table_info(logs)");
+    while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
+      $existingColumns[] = $row['name'];
+    }
+
+    // List of new columns to add.
+    $newColumns = [
+      'program' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.program')) VIRTUAL",
+      'orig_host' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.orig_host')) VIRTUAL",
+      'hostname' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.hostname')) VIRTUAL",
+      'message' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.message')) VIRTUAL",
+      'country' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.country_code2'), json_extract(data, '\$.geoip.country_name'), json_extract(data, '\$.country'), json_extract(data, '\$.geo.country'))) VIRTUAL",
+      'city' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.city_name'), json_extract(data, '\$.city'), json_extract(data, '\$.geo.city'))) VIRTUAL",
+    ];
+
+    // Add missing columns.
+    foreach ($newColumns as $columnName => $columnDef) {
+      if (!in_array($columnName, $existingColumns)) {
+        try {
+          $this->db->exec("ALTER TABLE logs ADD COLUMN $columnName $columnDef");
+          $stats['columns_added']++;
+        }
+        catch (PDOException $e) {
+          // Column might already exist or other error - continue.
+        }
+      }
+    }
+
+    // Create indexes for new columns.
+    // Note: message field has no index - LIKE '%text%' queries don't benefit from indexes.
+    $indexes = [
+      'idx_program' => 'program',
+      'idx_orig_host' => 'orig_host',
+      'idx_hostname' => 'hostname',
+      'idx_country' => 'country',
+      'idx_city' => 'city',
+    ];
+
+    foreach ($indexes as $indexName => $columnName) {
+      $this->db->exec("CREATE INDEX IF NOT EXISTS $indexName ON logs($columnName) WHERE $columnName IS NOT NULL");
+      $stats['indexes_created']++;
+    }
+
+    return $stats;
   }
 
   /**
@@ -208,6 +313,20 @@ SQL
    */
   public function getLogs(?string $since = NULL, ?string $until = NULL): array
   {
+    return $this->getLogsWithQuery(NULL, [], $since, $until);
+  }
+
+  /**
+   * Get logs from database with SQL WHERE clause filtering.
+   *
+   * @param string|null $whereClause SQL WHERE clause (without WHERE keyword)
+   * @param array $whereParams PDO parameters for WHERE clause
+   * @param string|null $since Start time (ISO 8601)
+   * @param string|null $until End time (ISO 8601)
+   * @return array Array of log entries in original format
+   */
+  public function getLogsWithQuery(?string $whereClause, array $whereParams, ?string $since = NULL, ?string $until = NULL): array
+  {
     $sql = 'SELECT id, time, data FROM logs WHERE 1=1';
     $params = [];
 
@@ -219,6 +338,12 @@ SQL
     if ($until) {
       $sql .= ' AND time <= :until';
       $params[':until'] = $until;
+    }
+
+    // Add custom WHERE clause if provided
+    if (!empty($whereClause)) {
+      $sql .= ' AND (' . $whereClause . ')';
+      $params = array_merge($params, $whereParams);
     }
 
     $sql .= ' ORDER BY time ASC';

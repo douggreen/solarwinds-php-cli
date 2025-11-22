@@ -1,0 +1,48 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Database migration script - Adds new VIRTUAL columns and indexes
+ *
+ * Run this after updating the code to add new generated columns
+ * to an existing database without losing data.
+ */
+
+require __DIR__ . '/../vendor/autoload.php';
+
+use SolarWinds\Services\ConfigurationService;
+use SolarWinds\Services\DatabaseService;
+
+// Load configuration.
+$config = new ConfigurationService();
+
+// Create database service.
+$db = new DatabaseService($config);
+
+echo "Starting database migration...\n";
+echo "Database: " . $config->getDatabasePath() . "\n\n";
+
+// Get database file size before.
+$dbPath = $config->getDatabasePath();
+$sizeBefore = file_exists($dbPath) ? filesize($dbPath) : 0;
+echo "Database size before: " . number_format($sizeBefore / 1024 / 1024, 2) . " MB\n\n";
+
+// Run migration.
+echo "Adding new columns and creating indexes...\n";
+echo "This may take several minutes for large databases.\n\n";
+
+$startTime = microtime(TRUE);
+$stats = $db->migrateSchema();
+$elapsed = microtime(TRUE) - $startTime;
+
+// Get database file size after.
+$sizeAfter = filesize($dbPath);
+$sizeIncrease = $sizeAfter - $sizeBefore;
+
+echo "\nMigration complete!\n";
+echo "Time elapsed: " . number_format($elapsed, 1) . " seconds\n";
+echo "Columns added: {$stats['columns_added']}\n";
+echo "Indexes created: {$stats['indexes_created']}\n";
+echo "Database size after: " . number_format($sizeAfter / 1024 / 1024, 2) . " MB\n";
+echo "Size increase: " . number_format($sizeIncrease / 1024 / 1024, 2) . " MB\n";
+echo "\nYour database is now optimized for fast queries!\n";

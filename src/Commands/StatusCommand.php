@@ -230,47 +230,59 @@ class StatusCommand extends BaseSolarWindsCommand
   }
 
   /**
-   * Build the search query for status code analysis.
+   * Build the SQL WHERE clause for status code analysis.
    */
-  protected function buildSearchQuery(array $options): string
+  protected function buildSearchQuery(array $options): array
   {
     // Use shortcut if provided, otherwise fall back to global --status-code-filter.
     $statusFilter = $options['script_specific']['status_filter'] ?: $options['filters']['status_code_filter'];
 
+    $conditions = [];
+    $params = [];
+
     if ($statusFilter) {
+      // Validate status filter format.
+      if (!preg_match('/^\d{1,3}$/', $statusFilter)) {
+        throw new \InvalidArgumentException("Invalid status filter format: $statusFilter. Must be 1-3 digits");
+      }
+
       // Build status code filter based on the filter type.
       if (strlen($statusFilter) === 3 && ctype_digit($statusFilter)) {
         // Exact 3-digit code match.
-        $query = "{ json.resp_status:$statusFilter } -/sites/default/files";
+        $conditions[] = 'resp_status = :status';
+        $params[':status'] = (int) $statusFilter;
       }
       elseif (strlen($statusFilter) === 2 && ctype_digit($statusFilter)) {
         // 2-digit prefix match (e.g., "50" matches 500, 501, 502, etc.).
-        // Use the 2-digit prefix directly - SolarWinds handles this correctly
-        $query = "{ json.resp_status:$statusFilter } -/sites/default/files";
+        $conditions[] = 'resp_status BETWEEN :status_start AND :status_end';
+        $params[':status_start'] = (int) ($statusFilter . '0');
+        $params[':status_end'] = (int) ($statusFilter . '9');
       }
       elseif (strlen($statusFilter) === 1 && ctype_digit($statusFilter)) {
         // 1-digit prefix match (e.g., "5" matches 500-599).
-        // Convert to 2-digit prefix (5 -> 50)
-        $prefix = $statusFilter . '0';
-        $query = "{ json.resp_status:$prefix } -/sites/default/files";
+        $conditions[] = 'resp_status BETWEEN :status_start AND :status_end';
+        $params[':status_start'] = (int) ($statusFilter . '00');
+        $params[':status_end'] = (int) ($statusFilter . '99');
       }
       else {
         throw new \InvalidArgumentException("Invalid status filter format: $statusFilter");
       }
     }
-    else {
-      // No status filter - analyze all status codes.
-      $query = "( -/sites/default/files )";
-    }
 
-    // Apply global filters (except status-code-filter which is handled above).
-    return $this->applyGlobalFilters($query, $options, ['status']);
+    // Exclude static files.
+    $conditions[] = 'req_uri NOT LIKE :static_files';
+    $params[':static_files'] = '%/sites/default/files%';
+
+    return [
+      'where' => implode(' AND ', $conditions),
+      'params' => $params,
+    ];
   }
 
   /**
-   * Validate the query and options for status.
+   * Validate the SQL query and options for status.
    */
-  protected function validateQuery(string $query, array $options): void
+  protected function validateQuery(array $sqlQuery, array $options): void
   {
     $explicitOptions = $options['display']['_explicit'] ?? [];
 

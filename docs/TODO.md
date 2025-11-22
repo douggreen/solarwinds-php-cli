@@ -152,11 +152,11 @@ The following commands require new core implementations as they cannot be effect
      - ✅ Integrated with BaseSolarWindsCommand
      - ✅ Auto-sync logic with range detection
      - ✅ Malformed JSON handling (strip control chars, preserve all data)
-     - ⏳ Add `retrieved_at` metadata (timestamp when log was fetched from API)
-       - Consider: Add as column with migration OR store in JSON data field
-       - Benefits: Track data freshness, debug sync issues, retention policies
-     - ⏳ SearchCommand SQL WHERE clause support
-     - ⏳ Alias migration to new syntax
+     - ✅ Add `retrieved_at` metadata (timestamp when log was fetched from API)
+     - ✅ All commands updated to build SQL WHERE clauses
+     - ✅ SearchCommand supports --sql-where for direct SQL queries
+     - ✅ SearchCommand supports --query for backward compatibility (translates SolarWinds syntax to SQL)
+     - ✅ All aliases migrated to SQL WHERE clause syntax
 
 ### Display and Output Improvements
 
