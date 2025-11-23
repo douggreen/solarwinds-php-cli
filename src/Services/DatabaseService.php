@@ -127,7 +127,8 @@ CREATE TABLE IF NOT EXISTS logs (
     json_extract(data, '$.city'),
     json_extract(data, '$.geo.city')
   )) VIRTUAL,
-  url_arguments JSON GENERATED ALWAYS AS (json_extract(data, '$.url_arguments')) VIRTUAL
+  url_arguments JSON GENERATED ALWAYS AS (json_extract(data, '$.url_arguments')) VIRTUAL,
+  base_path TEXT GENERATED ALWAYS AS (json_extract(data, '$.base_path')) VIRTUAL
 );
 SQL;
 
@@ -153,6 +154,7 @@ SQL;
       'idx_hostname' => 'hostname',
       'idx_country' => 'country',
       'idx_city' => 'city',
+      'idx_base_path' => 'base_path',
     ];
 
     foreach ($indexDefinitions as $indexName => $columnName) {
@@ -189,6 +191,7 @@ SQL;
       'message' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.message')) VIRTUAL",
       'country' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.country_code2'), json_extract(data, '\$.geoip.country_name'), json_extract(data, '\$.country'), json_extract(data, '\$.geo.country'))) VIRTUAL",
       'city' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.city_name'), json_extract(data, '\$.city'), json_extract(data, '\$.geo.city'))) VIRTUAL",
+      'base_path' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.base_path')) VIRTUAL",
     ];
 
     // Add missing columns.
@@ -212,6 +215,7 @@ SQL;
       'idx_hostname' => 'hostname',
       'idx_country' => 'country',
       'idx_city' => 'city',
+      'idx_base_path' => 'base_path',
     ];
 
     foreach ($indexes as $indexName => $columnName) {
@@ -265,7 +269,7 @@ SQL
 
             if (json_last_error() !== JSON_ERROR_NONE) {
               // Last resort: store the original as a JSON-escaped string.
-              $message = json_encode(['raw' => $message, 'error' => json_last_error_msg()]);
+              $message = json_encode(['raw' => $message, 'error' => json_last_error_msg()], JSON_INVALID_UTF8_SUBSTITUTE);
               $logData = NULL;
             }
             else {
@@ -274,13 +278,18 @@ SQL
           }
         }
 
-        // Inject URL arguments into JSON data for fast exploit detection.
+        // Inject URL arguments and base path into JSON data for fast exploit detection.
         if ($logData && isset($logData['req_uri'])) {
-          $urlArguments = $this->parseUrlArguments($logData['req_uri']);
-          if ($urlArguments !== NULL) {
-            // Inject url_arguments into the JSON data.
-            $logData['url_arguments'] = json_decode($urlArguments, TRUE);
-            $message = json_encode($logData);
+          $urlParts = $this->parseUriComponents($logData['req_uri']);
+          if ($urlParts) {
+            if ($urlParts['base_path'] !== NULL) {
+              $logData['base_path'] = $urlParts['base_path'];
+            }
+            if ($urlParts['url_arguments'] !== NULL) {
+              $logData['url_arguments'] = $urlParts['url_arguments'];
+            }
+            // Use JSON_INVALID_UTF8_SUBSTITUTE to handle URIs with special characters.
+            $message = json_encode($logData, JSON_INVALID_UTF8_SUBSTITUTE);
           }
         }
 
@@ -479,27 +488,41 @@ SQL
   }
 
   /**
-   * Parse URL query parameters from URI.
+   * Parse URI components into base path and URL arguments.
    *
-   * Extracts and returns query parameters as JSON for fast exploit detection.
-   * Returns NULL if no query string present.
+   * Parses the URI once and extracts both the base path (path portion)
+   * and URL arguments (query parameters). This is more efficient than
+   * parsing the URL multiple times.
    *
    * @param string $uri Request URI
-   * @return string|null JSON-encoded query parameters or NULL
+   * @return array|null Array with 'base_path' and 'url_arguments', or NULL
    */
-  protected function parseUrlArguments(string $uri): ?string
+  protected function parseUriComponents(string $uri): ?array
   {
-    // Parse URL and extract query string.
+    // Parse URL once.
     $parts = parse_url($uri);
-    if (!isset($parts['query']) || empty($parts['query'])) {
+
+    if ($parts === FALSE) {
       return NULL;
     }
 
-    // Parse query string into associative array.
-    parse_str($parts['query'], $params);
+    $result = [
+      'base_path' => NULL,
+      'url_arguments' => NULL,
+    ];
 
-    // Return as JSON for storage.
-    return json_encode($params);
+    // Extract base path.
+    if (isset($parts['path']) && !empty($parts['path'])) {
+      $result['base_path'] = $parts['path'];
+    }
+
+    // Extract and parse query parameters.
+    if (isset($parts['query']) && !empty($parts['query'])) {
+      parse_str($parts['query'], $params);
+      $result['url_arguments'] = $params;
+    }
+
+    return $result;
   }
 
 }
