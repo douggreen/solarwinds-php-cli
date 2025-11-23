@@ -110,13 +110,15 @@ class TimeSpecifications
       'hours' => range(1, 48),          // 1h through 48h
       'days' => range(1, 90),           // 1d through 90d (lowercase, relative)
       'weeks' => range(1, 8),           // 1w through 8w
+      'months' => range(1, 12),         // 1M through 12M (uppercase, months)
+      'years' => range(1, 10),          // 1y through 10y (years)
       'specific_days' => range(1, 365), // 1D through 365D (uppercase, specific days)
       'aliases' => [
         'hour' => '1h',
         'day' => '1d',
         'week' => '1w'
       ],
-      'special' => ['yesterday'],
+      'special' => ['yesterday', 'all'],
     ];
   }
 
@@ -125,13 +127,16 @@ class TimeSpecifications
    *
    * Converts time options like --1h, --yesterday to [start, end] time strings.
    * Supports dynamic patterns:
-   *   - Nm (any number of minutes)
+   *   - Nm (any number of minutes, lowercase)
    *   - Nh (any number of hours)
-   *   - Nd (any number of days, relative from now)
+   *   - Nd (any number of days, relative from now, lowercase)
    *   - Nw (any number of weeks)
-   *   - ND (any number of days ago, full 24-hour period)
+   *   - NM (any number of months, uppercase) - requires confirmation
+   *   - Ny (any number of years) - requires confirmation
+   *   - ND (any number of days ago, full 24-hour period, uppercase)
+   *   - all (all available data) - requires confirmation
    *
-   * @param string $timeArg Time option string (e.g., '1h', 'yesterday', '5m', '30d')
+   * @param string $timeArg Time option string (e.g., '1h', 'yesterday', '5m', '30d', '2M', '1y', 'all')
    * @return array|null Array with [start_time, end_time] or NULL if not recognized
    */
   public static function convertToTimeRange(string $timeArg): ?array
@@ -139,6 +144,11 @@ class TimeSpecifications
     // Handle special case: yesterday.
     if ($timeArg === 'yesterday') {
       return ['yesterday at 00:00:00', 'yesterday at 23:59:59'];
+    }
+
+    // Handle special case: all data.
+    if ($timeArg === 'all') {
+      return ['10 years ago', 'now'];
     }
 
     // Handle aliases.
@@ -152,24 +162,34 @@ class TimeSpecifications
     }
 
     // Handle pattern-based time options.
-    // Pattern: Nm (minutes), Nh (hours), Nd (days relative), Nw (weeks), ND (days ago full period).
-    if (preg_match('/^(\d+)([mhdw])$/i', $timeArg, $matches)) {
+    // Pattern: Nm (minutes), Nh (hours), Nd (days relative), Nw (weeks), NM (months uppercase), Ny (years), ND (days ago full period).
+    if (preg_match('/^(\d+)([mhdwyMD])$/', $timeArg, $matches)) {
       $number = (int) $matches[1];
-      $unit = strtolower($matches[2]);
-      $isUppercase = $matches[2] === 'D';
+      $unit = $matches[2];
 
       // Handle uppercase D (specific full day).
-      if ($isUppercase) {
+      if ($unit === 'D') {
         $startTime = "{$number} days ago at 00:00:00";
         $endTime = "{$number} days ago at 23:59:59";
         return [$startTime, $endTime];
       }
 
+      // Handle uppercase M (months).
+      if ($unit === 'M') {
+        $unitName = $number == 1 ? 'month' : 'months';
+        return ["{$number} {$unitName} ago", 'now'];
+      }
+
       // Handle lowercase relative time ranges.
       switch ($unit) {
         case 'm':
-          $unitName = $number == 1 ? 'minute' : 'minutes';
-          return ["{$number} {$unitName} ago", 'now'];
+          // Lowercase m = minutes only.
+          if ($number <= 60) {
+            $unitName = $number == 1 ? 'minute' : 'minutes';
+            return ["{$number} {$unitName} ago", 'now'];
+          }
+          // Invalid: > 60 is not supported.
+          return NULL;
 
         case 'h':
           $unitName = $number == 1 ? 'hour' : 'hours';
@@ -182,6 +202,10 @@ class TimeSpecifications
         case 'w':
           $days = $number * 7;
           return ["{$days} days ago", 'now'];
+
+        case 'y':
+          $unitName = $number == 1 ? 'year' : 'years';
+          return ["{$number} {$unitName} ago", 'now'];
       }
     }
 
@@ -220,6 +244,16 @@ class TimeSpecifications
       $allOptions[] = "{$num}w";
     }
 
+    // Generate month options (NM - uppercase months).
+    foreach ($timeOptions['months'] as $num) {
+      $allOptions[] = "{$num}M";
+    }
+
+    // Generate year options (Ny).
+    foreach ($timeOptions['years'] as $num) {
+      $allOptions[] = "{$num}y";
+    }
+
     // Generate specific day options (ND - uppercase, full day periods).
     foreach ($timeOptions['specific_days'] as $num) {
       $allOptions[] = "{$num}D";
@@ -232,5 +266,34 @@ class TimeSpecifications
     $allOptions = array_merge($allOptions, $timeOptions['special']);
 
     return $allOptions;
+  }
+
+  /**
+   * Check if a time option requires user confirmation.
+   *
+   * Confirms for any time range with months (NM uppercase), years, or all data
+   * to prevent accidental expensive queries on large datasets.
+   *
+   * @param string $timeArg Time option string (e.g., '1h', '2M', '1y', 'all')
+   * @return bool TRUE if confirmation required
+   */
+  public static function requiresConfirmation(string $timeArg): bool
+  {
+    // All data always requires confirmation.
+    if ($timeArg === 'all') {
+      return TRUE;
+    }
+
+    // Check for month patterns (NM - uppercase).
+    if (preg_match('/^\d+M$/', $timeArg)) {
+      return TRUE;
+    }
+
+    // Check for year patterns (Ny).
+    if (preg_match('/^\d+y$/i', $timeArg)) {
+      return TRUE;
+    }
+
+    return FALSE;
   }
 }

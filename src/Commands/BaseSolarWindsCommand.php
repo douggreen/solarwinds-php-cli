@@ -249,6 +249,7 @@ abstract class BaseSolarWindsCommand extends Command
       ->addOption('json', NULL, InputOption::VALUE_NONE, 'Output results as JSON (suppresses progress and interactive messages)')
       ->addOption('no-group', NULL, InputOption::VALUE_NONE, 'Disable automatic time-based regrouping for single result groups')
       ->addOption('substitute-vars', NULL, InputOption::VALUE_NONE, 'Substitute variable placeholders in messages (e.g., %name, %choice) with their values')
+      ->addOption('yes', 'y', InputOption::VALUE_NONE, 'Automatically confirm all prompts (skip confirmations)')
 
       // Global filter options.
       ->addOption('country-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by country code (e.g., US, GB, FR)')
@@ -286,6 +287,11 @@ abstract class BaseSolarWindsCommand extends Command
     try {
       // Parse and validate arguments.
       $queryOptions = $this->parseArguments($input);
+
+      // Check if time range requires confirmation (months/years/all).
+      if (!$this->confirmTimeRange($input, $queryOptions)) {
+        return Command::SUCCESS; // User cancelled
+      }
 
       // Build the SQL WHERE clause (implemented by child classes).
       $sqlQuery = $this->buildSearchQuery($queryOptions);
@@ -396,6 +402,75 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     throw new \InvalidArgumentException("No valid time option specified");
+  }
+
+  /**
+   * Confirm time range if it requires user confirmation.
+   *
+   * Prompts user to confirm large time ranges (months/years/all) to prevent
+   * accidental expensive queries. Skipped if --yes flag is provided or in JSON mode.
+   *
+   * @param InputInterface $input Command input interface
+   * @param array $options Parsed query options
+   * @return bool TRUE to proceed, FALSE to cancel
+   */
+  protected function confirmTimeRange(InputInterface $input, array $options): bool
+  {
+    // Skip confirmation in JSON mode or if --yes flag is provided.
+    if ($this->jsonMode || $input->getOption('yes')) {
+      return TRUE;
+    }
+
+    // Detect which time flag was used.
+    $timeFlag = NULL;
+    $timeMappings = self::getTimeMappings();
+
+    foreach ($timeMappings as $flag => $times) {
+      if ($input->getOption($flag)) {
+        $timeFlag = $flag;
+        break;
+      }
+    }
+
+    // No time flag found, check if --time option was used.
+    if ($timeFlag === NULL) {
+      $timeFlag = $input->getOption('time');
+    }
+
+    // If still null, it's using default time - no confirmation needed.
+    if ($timeFlag === NULL) {
+      return TRUE;
+    }
+
+    // Check if this time flag requires confirmation.
+    if (!TimeSpecifications::requiresConfirmation($timeFlag)) {
+      return TRUE;
+    }
+
+    // For months (NM), years (Ny), and 'all', show confirmation with estimated impact.
+    $startTime = gmdate('Y-m-d H:i:s', strtotime($options['time']['start_time']));
+    $endTime = gmdate('Y-m-d H:i:s', strtotime($options['time']['end_time']));
+
+    // Get estimated record count from database.
+    $estimatedCount = $this->databaseService->getRecordCount($startTime, $endTime);
+
+    $message = sprintf(
+      "About to query %s (%s to %s)",
+      $options['time']['human_readable'],
+      $startTime,
+      $endTime
+    );
+
+    if ($estimatedCount > 0) {
+      $message .= sprintf("\nEstimated: ~%s records from database", number_format($estimatedCount));
+    }
+    else {
+      $message .= "\nNote: This range may require syncing data from API (2-week retention limit applies)";
+    }
+
+    $message .= "\n\nContinue?";
+
+    return $this->io->confirm($message, FALSE);  // Default to No for safety
   }
 
   /**

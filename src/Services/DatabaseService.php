@@ -413,6 +413,29 @@ SQL
   }
 
   /**
+   * Get estimated record count for a time range.
+   *
+   * Returns approximate number of records in database for the specified time range.
+   * Used for confirmation prompts to show users estimated query size.
+   *
+   * @param string $since Start time (ISO 8601 format)
+   * @param string $until End time (ISO 8601 format)
+   * @return int Estimated record count
+   */
+  public function getRecordCount(string $since, string $until): int
+  {
+    $sql = 'SELECT COUNT(*) as count FROM logs WHERE time >= :since AND time <= :until';
+    $stmt = $this->db->prepare($sql);
+    $stmt->execute([
+      ':since' => $since,
+      ':until' => $until,
+    ]);
+
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return (int) ($row['count'] ?? 0);
+  }
+
+  /**
    * Detect missing data ranges at beginning/end of requested time range.
    *
    * Analyzes what data exists in the database for the requested time range
