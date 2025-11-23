@@ -260,6 +260,40 @@ class ConfigurationService
   }
 
   /**
+   * Get default CMS type for all sites.
+   *
+   * Returns the global CMS type that applies to all sites unless overridden.
+   *
+   * @return string CMS type ('drupal', 'wordpress', 'other', or 'unknown')
+   */
+  public function getDefaultCms(): string
+  {
+    return $this->config['cms'] ?? 'unknown';
+  }
+
+  /**
+   * Get CMS type for a specific hostname.
+   *
+   * Checks site-specific configuration first, then falls back to global default.
+   * Returns 'unknown' if not configured - caller should detect from traffic.
+   *
+   * @param string $hostname Hostname to check
+   * @return string CMS type ('drupal', 'wordpress', 'other', or 'unknown')
+   */
+  public function getSiteCmsType(string $hostname): string
+  {
+    $sites = $this->getSites();
+
+    // Check for site-specific CMS configuration.
+    if (isset($sites[$hostname]['cms'])) {
+      return $sites[$hostname]['cms'];
+    }
+
+    // Fall back to global default.
+    return $this->getDefaultCms();
+  }
+
+  /**
    * Get full configuration array.
    *
    * @return array Complete configuration array
