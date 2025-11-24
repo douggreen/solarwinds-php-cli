@@ -935,6 +935,66 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
+   * Check for incomplete syncs and report them to the user.
+   *
+   * Shows information about interrupted, failed, or pending syncs from previous runs.
+   * The gap detection system will automatically fill any missing data ranges.
+   */
+  protected function checkAndReportIncompleteSyncs(): void
+  {
+    $incompleteSyncs = $this->databaseService->getIncompleteSyncRanges();
+
+    if (empty($incompleteSyncs)) {
+      return;
+    }
+
+    // Group syncs by status for clearer reporting.
+    $byStatus = [
+      'interrupted' => [],
+      'failed' => [],
+      'in_progress' => [],
+      'pending' => [],
+    ];
+
+    foreach ($incompleteSyncs as $sync) {
+      $status = $sync['status'] ?? 'unknown';
+      if (isset($byStatus[$status])) {
+        $byStatus[$status][] = $sync;
+      }
+    }
+
+    // Report each status category.
+    $messages = [];
+
+    if (!empty($byStatus['interrupted'])) {
+      $count = count($byStatus['interrupted']);
+      $messages[] = "$count interrupted sync" . ($count > 1 ? 's' : '') . " (Ctrl+C)";
+    }
+
+    if (!empty($byStatus['failed'])) {
+      $count = count($byStatus['failed']);
+      $messages[] = "$count failed sync" . ($count > 1 ? 's' : '');
+    }
+
+    if (!empty($byStatus['in_progress'])) {
+      $count = count($byStatus['in_progress']);
+      $messages[] = "$count stale sync" . ($count > 1 ? 's' : '') . " (crashed or still running elsewhere)";
+    }
+
+    if (!empty($byStatus['pending'])) {
+      $count = count($byStatus['pending']);
+      $messages[] = "$count pending sync" . ($count > 1 ? 's' : '');
+    }
+
+    if (!empty($messages)) {
+      $this->io->note(
+        "Found incomplete syncs: " . implode(', ', $messages) . "\n" .
+        "Gap detection will automatically fill any missing data ranges."
+      );
+    }
+  }
+
+  /**
    * Format range message in human-readable format.
    *
    * Converts ISO timestamps to readable format and calculates duration.
@@ -1057,8 +1117,9 @@ abstract class BaseSolarWindsCommand extends Command
     $dayRates = [];  // Rolling average of seconds per day: [realTimeForDay]
     $lastDayBoundary = $endEpoch;  // Track when we cross 24-hour boundaries
     $lastDayStartTime = NULL;  // Real time when current day started
+    $debugMode = $options['filters']['debug'] ?? FALSE;
 
-    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$dayRates, &$lastDayBoundary, &$lastDayStartTime) {
+    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$dayRates, &$lastDayBoundary, &$lastDayStartTime, $debugMode) {
       // Update progress based on time range covered (oldest timestamp in current page).
       $coveredSeconds = 0;
       if (!empty($pageLogs)) {
@@ -1190,14 +1251,44 @@ abstract class BaseSolarWindsCommand extends Command
         }
       }
 
-      // Build progress message: "13h of 14d / 12:40am ETA / 4:59 elapsed".
+      // Build progress message.
+      // Normal mode: "13h of 14d / 12:40am ETA / 4:59 elapsed"
+      // Debug mode:  "13h of 14d / 12:40am ETA / p42 / 1.2K recs / 34/s / 4:59 elapsed"
       $message = $completenessStr;
+
       if ($remainingStr !== 'estimating') {
         $message .= " / $remainingStr";
       }
-      if ($totalFixed > 0) {
-        $message .= " / $totalFixed fixed";
+
+      // Activity indicators only shown in debug mode.
+      if ($debugMode) {
+        $message .= " / p$pageNum";  // Page number shows API pagination progress
+
+        if ($totalResults > 0) {
+          // Total records - use K for thousands, M for millions
+          if ($totalResults >= 1000000) {
+            $recsStr = round($totalResults / 1000000, 1) . 'M';
+          }
+          elseif ($totalResults >= 1000) {
+            $recsStr = round($totalResults / 1000, 1) . 'K';
+          }
+          else {
+            $recsStr = $totalResults;
+          }
+          $message .= " / {$recsStr} recs";
+        }
+
+        // Calculate and show records per second.
+        if ($elapsed > 0 && $totalResults > 0) {
+          $recsPerSec = round($totalResults / $elapsed, 1);
+          $message .= " / {$recsPerSec}/s";  // Records per second shows insertion rate
+        }
       }
+
+      if ($totalFixed > 0) {
+        $message .= " / $totalFixed bad json";
+      }
+
       $message .= " / $elapsedStr elapsed";
 
       // Only update terminal if message changed (avoid redundant I/O).
@@ -1315,6 +1406,11 @@ abstract class BaseSolarWindsCommand extends Command
     $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
     $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
 
+    // Check for incomplete syncs and report them.
+    if ($showCacheMessage && !$this->jsonMode) {
+      $this->checkAndReportIncompleteSyncs();
+    }
+
     // Detect missing ranges in database coverage.
     $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
 
@@ -1345,6 +1441,9 @@ abstract class BaseSolarWindsCommand extends Command
       // Chunking is an internal optimization - show user a single progress bar for entire range.
       $chunks = $this->splitRangeIntoChunks($range['start'], $range['end']);
 
+      // Create sync range tracking entry.
+      $syncId = $this->databaseService->createSyncRange($range['start'], $range['end'], count($chunks));
+
       if (!$this->jsonMode && $showCacheMessage) {
         $rangeMessage = $this->formatRangeMessage($range['start'], $range['end'], $range['reason']);
         $this->io->writeln("<comment>$rangeMessage</comment>");
@@ -1358,14 +1457,20 @@ abstract class BaseSolarWindsCommand extends Command
       ];
       $progressBar = $this->createSearchProgressBar($rangeOptions);
 
-      // Track malformed JSON entries.
+      // Mark sync as in progress.
+      $this->databaseService->updateSyncStatus($syncId, 'in_progress');
+
+      // Track malformed JSON entries and progress.
       $totalFixed = 0;
+      $chunksCompleted = 0;
+      $rangeRecordsInserted = 0;
 
       // Create save callback to insert each page immediately.
-      $saveCallback = function(array $pageLogs) use (&$totalNewLogs, &$totalFixed) {
+      $saveCallback = function(array $pageLogs) use (&$totalNewLogs, &$totalFixed, &$rangeRecordsInserted) {
         $result = $this->databaseService->insertLogs($pageLogs);
         $totalNewLogs += $result['inserted'];
         $totalFixed += $result['fixed'];
+        $rangeRecordsInserted += $result['inserted'];
       };
 
       // Process each chunk separately (internal optimization).
@@ -1373,6 +1478,8 @@ abstract class BaseSolarWindsCommand extends Command
         // Check for interruption before each chunk.
         if (self::isInterrupted()) {
           $interrupted = TRUE;
+          $this->databaseService->updateSyncStatus($syncId, 'interrupted');
+          $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
           if (!$this->jsonMode) {
             $this->io->writeln('');
             $this->io->warning('Sync interrupted - continuing with partial data');
@@ -1390,6 +1497,10 @@ abstract class BaseSolarWindsCommand extends Command
             NULL,  // No debug callback
             $saveCallback  // Save each page immediately
           );
+
+          // Chunk completed successfully - update progress.
+          $chunksCompleted++;
+          $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
         }
         catch (\Exception $e) {
           $this->finishProgressBar($progressBar);
@@ -1397,6 +1508,8 @@ abstract class BaseSolarWindsCommand extends Command
           // Check if this was an interruption - if so, break loop and continue gracefully.
           if (self::isInterrupted()) {
             $interrupted = TRUE;
+            $this->databaseService->updateSyncStatus($syncId, 'interrupted');
+            $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
             if (!$this->jsonMode) {
               $this->io->writeln('');
               $this->io->warning('Sync interrupted - continuing with partial data');
@@ -1404,7 +1517,11 @@ abstract class BaseSolarWindsCommand extends Command
             break 2;  // Break out of both chunk and range loops.
           }
 
-          // Non-interruption error - report and re-throw.
+          // Non-interruption error - mark as failed.
+          $this->databaseService->updateSyncStatus($syncId, 'failed', $e->getMessage());
+          $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+
+          // Report and re-throw.
           if (!$this->jsonMode) {
             $this->io->error(sprintf(
               'Failed to fetch range %s to %s: %s',
@@ -1422,6 +1539,9 @@ abstract class BaseSolarWindsCommand extends Command
           throw $e;
         }
       } // End chunk loop
+
+      // All chunks completed successfully - mark sync as completed.
+      $this->databaseService->updateSyncStatus($syncId, 'completed');
 
       // Finish progress bar after all chunks complete.
       $this->finishProgressBar($progressBar);

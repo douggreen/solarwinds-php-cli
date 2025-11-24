@@ -134,6 +134,29 @@ SQL;
 
     $this->db->exec($sql);
 
+    // Create sync_ranges tracking table.
+    $syncRangesSql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS sync_ranges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  start_time TEXT NOT NULL,
+  end_time TEXT NOT NULL,
+  status TEXT NOT NULL CHECK(status IN ('pending', 'in_progress', 'completed', 'failed', 'interrupted')),
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT,
+  records_expected INTEGER,
+  records_inserted INTEGER DEFAULT 0,
+  chunks_total INTEGER,
+  chunks_completed INTEGER DEFAULT 0,
+  error_message TEXT
+);
+SQL;
+    $this->db->exec($syncRangesSql);
+
+    // Create indexes for sync_ranges.
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_sync_status ON sync_ranges(status)");
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_sync_times ON sync_ranges(start_time, end_time)");
+    $this->db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_range_unique ON sync_ranges(start_time, end_time, status) WHERE status IN ('in_progress', 'completed')");
+
     // Get list of existing columns to avoid creating indexes on non-existent columns.
     $existingColumns = [];
     $result = $this->db->query("PRAGMA table_info(logs)");
@@ -436,13 +459,193 @@ SQL
   }
 
   /**
-   * Detect missing data ranges at beginning/end of requested time range.
+   * Create a new sync range tracking entry.
    *
-   * Analyzes what data exists in the database for the requested time range
-   * and identifies missing ranges that need to be fetched from the API.
+   * Records the start of a sync operation for a specific time range.
    *
-   * NOTE: This implementation only detects missing data at the beginning
-   * and end of the requested range. It does NOT detect ranges in the middle.
+   * @param string $startTime Start of range (ISO 8601)
+   * @param string $endTime End of range (ISO 8601)
+   * @param int $chunksTotal Total number of chunks to process
+   * @return int Sync range ID
+   */
+  public function createSyncRange(string $startTime, string $endTime, int $chunksTotal): int
+  {
+    $stmt = $this->db->prepare(<<<'SQL'
+INSERT INTO sync_ranges (start_time, end_time, status, chunks_total)
+VALUES (:start_time, :end_time, 'pending', :chunks_total)
+SQL
+    );
+
+    $stmt->execute([
+      ':start_time' => $startTime,
+      ':end_time' => $endTime,
+      ':chunks_total' => $chunksTotal,
+    ]);
+
+    return (int) $this->db->lastInsertId();
+  }
+
+  /**
+   * Update sync range status.
+   *
+   * @param int $syncId Sync range ID
+   * @param string $status New status ('pending', 'in_progress', 'completed', 'failed', 'interrupted')
+   * @param string|null $errorMessage Optional error message for failed status
+   */
+  public function updateSyncStatus(int $syncId, string $status, ?string $errorMessage = NULL): void
+  {
+    $sql = 'UPDATE sync_ranges SET status = :status';
+
+    if ($status === 'completed') {
+      $sql .= ', completed_at = CURRENT_TIMESTAMP';
+    }
+
+    if ($errorMessage !== NULL) {
+      $sql .= ', error_message = :error';
+    }
+
+    $sql .= ' WHERE id = :id';
+
+    $params = [
+      ':status' => $status,
+      ':id' => $syncId,
+    ];
+
+    if ($errorMessage !== NULL) {
+      $params[':error'] = $errorMessage;
+    }
+
+    $stmt = $this->db->prepare($sql);
+    $stmt->execute($params);
+  }
+
+  /**
+   * Update sync range progress.
+   *
+   * @param int $syncId Sync range ID
+   * @param int $recordsInserted Number of records inserted so far
+   * @param int $chunksCompleted Number of chunks completed
+   */
+  public function updateSyncProgress(int $syncId, int $recordsInserted, int $chunksCompleted): void
+  {
+    $stmt = $this->db->prepare(<<<'SQL'
+UPDATE sync_ranges
+SET records_inserted = :records,
+    chunks_completed = :chunks
+WHERE id = :id
+SQL
+    );
+
+    $stmt->execute([
+      ':records' => $recordsInserted,
+      ':chunks' => $chunksCompleted,
+      ':id' => $syncId,
+    ]);
+  }
+
+  /**
+   * Get incomplete sync ranges.
+   *
+   * Returns sync ranges that were interrupted or failed.
+   *
+   * @return array Array of incomplete sync range records
+   */
+  public function getIncompleteSyncRanges(): array
+  {
+    $stmt = $this->db->query(<<<'SQL'
+SELECT * FROM sync_ranges
+WHERE status IN ('pending', 'in_progress', 'failed', 'interrupted')
+ORDER BY started_at DESC
+SQL
+    );
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+  }
+
+  /**
+   * Detect gaps in synced data using sync_ranges tracking.
+   *
+   * Analyzes completed sync ranges to find gaps between them and at the edges
+   * of the requested time range. This is more reliable than analyzing log density.
+   *
+   * @param string $requestedStart Start of requested range (ISO 8601)
+   * @param string $requestedEnd End of requested range (ISO 8601)
+   * @return array Array of gap ranges that need to be synced
+   */
+  public function detectGapsInSyncedRanges(string $requestedStart, string $requestedEnd): array
+  {
+    // Get all completed sync ranges that overlap with requested range.
+    $stmt = $this->db->prepare(<<<'SQL'
+SELECT start_time, end_time
+FROM sync_ranges
+WHERE status = 'completed'
+  AND end_time >= :req_start
+  AND start_time <= :req_end
+ORDER BY start_time ASC
+SQL
+    );
+
+    $stmt->execute([
+      ':req_start' => $requestedStart,
+      ':req_end' => $requestedEnd,
+    ]);
+
+    $completedRanges = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // No completed syncs - need entire range.
+    if (empty($completedRanges)) {
+      return [[
+        'start' => $requestedStart,
+        'end' => $requestedEnd,
+        'reason' => 'no_sync_history',
+      ]];
+    }
+
+    // Find gaps between completed ranges.
+    $gaps = [];
+    $currentPosition = $requestedStart;
+
+    foreach ($completedRanges as $range) {
+      $rangeStart = $range['start_time'];
+      $rangeEnd = $range['end_time'];
+
+      // Gap before this range?
+      if ($currentPosition < $rangeStart) {
+        $gaps[] = [
+          'start' => $currentPosition,
+          'end' => $rangeStart,
+          'reason' => 'gap_between_syncs',
+        ];
+      }
+
+      // Move position forward to end of this range.
+      if ($rangeEnd > $currentPosition) {
+        $currentPosition = $rangeEnd;
+      }
+    }
+
+    // Gap after last range?
+    if ($currentPosition < $requestedEnd) {
+      $gaps[] = [
+        'start' => $currentPosition,
+        'end' => $requestedEnd,
+        'reason' => 'recent_data',
+      ];
+    }
+
+    return $gaps;
+  }
+
+  /**
+   * Detect missing data ranges using sync tracking or log analysis.
+   *
+   * Preferred method: Uses sync_ranges table to detect gaps (if available).
+   * Fallback method: Analyzes log density for beginning/end gaps only.
+   *
+   * The sync_ranges method is superior because it:
+   * - Detects gaps in the middle (not just edges)
+   * - Knows about interrupted syncs
+   * - Distinguishes "no data" from "not synced"
    *
    * @param string $requestedStart Start of requested range (ISO 8601)
    * @param string $requestedEnd End of requested range (ISO 8601)
@@ -450,6 +653,44 @@ SQL
    */
   public function detectMissingRanges(string $requestedStart, string $requestedEnd): array
   {
+    // Check if sync_ranges table exists and has data.
+    $hasSyncRanges = FALSE;
+    try {
+      $stmt = $this->db->query("SELECT COUNT(*) as count FROM sync_ranges WHERE status = 'completed'");
+      $row = $stmt->fetch(PDO::FETCH_ASSOC);
+      $hasSyncRanges = ($row['count'] ?? 0) > 0;
+    }
+    catch (\PDOException $e) {
+      // Table doesn't exist yet - fall back to log analysis.
+      $hasSyncRanges = FALSE;
+    }
+
+    // Use sync_ranges tracking if available (preferred method).
+    if ($hasSyncRanges) {
+      $gaps = $this->detectGapsInSyncedRanges($requestedStart, $requestedEnd);
+
+      // Get coverage info from logs table for compatibility.
+      $stmt = $this->db->prepare(<<<'SQL'
+SELECT MIN(time) as earliest, MAX(time) as latest, COUNT(*) as count
+FROM logs
+WHERE time >= :start AND time <= :end
+SQL
+      );
+      $stmt->execute([
+        ':start' => $requestedStart,
+        ':end' => $requestedEnd,
+      ]);
+      $coverage = $stmt->fetch(PDO::FETCH_ASSOC);
+
+      return [
+        'has_data' => $coverage['count'] > 0,
+        'coverage' => $coverage,
+        'ranges' => $gaps,
+        'method' => 'sync_tracking',
+      ];
+    }
+
+    // Fall back to old method: analyze log density (edges only).
     // Get the actual time range covered by data in database.
     $stmt = $this->db->prepare(<<<'SQL'
 SELECT MIN(time) as earliest, MAX(time) as latest, COUNT(*) as count
@@ -479,6 +720,7 @@ SQL
             'reason' => 'no_data',
           ],
         ],
+        'method' => 'log_analysis',
       ];
     }
 
@@ -507,6 +749,7 @@ SQL
       'has_data' => TRUE,
       'coverage' => $coverage,
       'ranges' => $ranges,
+      'method' => 'log_analysis',
     ];
   }
 
