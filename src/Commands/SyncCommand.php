@@ -113,6 +113,7 @@ class SyncCommand extends BaseSolarWindsCommand
       $this->registerSignalHandlers();
 
       // Check coverage BEFORE sync.
+      $this->io->writeln('<comment>Checking current database coverage...</comment>');
       $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
       $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
       $beforeSync = $this->databaseService->detectMissingRanges($startTime, $endTime);

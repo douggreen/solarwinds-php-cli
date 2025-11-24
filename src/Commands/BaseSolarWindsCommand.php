@@ -1412,6 +1412,9 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     // Detect missing ranges in database coverage.
+    if ($showCacheMessage && !$this->jsonMode) {
+      $this->io->writeln('<comment>Detecting gaps in coverage...</comment>');
+    }
     $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
 
     // No missing ranges - data already in database.

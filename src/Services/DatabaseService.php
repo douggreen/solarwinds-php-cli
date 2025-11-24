@@ -267,6 +267,10 @@ SQL;
     $this->db->beginTransaction();
 
     try {
+      // Prepare statement for checking existence (fast PRIMARY KEY lookup)
+      $checkStmt = $this->db->prepare('SELECT 1 FROM logs WHERE id = :id LIMIT 1');
+
+      // Prepare statement for insertion
       $stmt = $this->db->prepare(<<<'SQL'
 INSERT OR REPLACE INTO logs (id, time, data)
 VALUES (:id, :time, :data)
@@ -276,6 +280,15 @@ SQL
       $inserted = 0;
       $fixed = 0;
       foreach ($logs as $log) {
+        $logId = $log['id'] ?? '';
+
+        // Fast check: does this ID already exist?
+        $checkStmt->execute([':id' => $logId]);
+        if ($checkStmt->fetchColumn() !== FALSE) {
+          // Already exists - skip expensive JSON processing
+          continue;
+        }
+
         $message = $log['message'] ?? '';
 
         // Decode JSON once and handle errors inline.
@@ -552,6 +565,61 @@ SQL
    */
   public function getIncompleteSyncRanges(): array
   {
+    // First, auto-recover stale "in_progress" syncs (older than 1 hour)
+    // These are likely from crashed processes or interrupted sessions
+    $this->db->exec(<<<'SQL'
+UPDATE sync_ranges
+SET status = 'interrupted',
+    completed_at = CURRENT_TIMESTAMP,
+    error_message = 'Auto-recovered: stale in_progress sync'
+WHERE status = 'in_progress'
+  AND datetime(started_at, '+1 hour') < datetime('now')
+SQL
+    );
+
+    // Second, auto-complete interrupted/failed syncs that now have data
+    // Check if the time range has actual log data - if so, mark as completed
+    $incompleteStmt = $this->db->query(<<<'SQL'
+SELECT id, start_time, end_time FROM sync_ranges
+WHERE status IN ('failed', 'interrupted')
+ORDER BY started_at DESC
+SQL
+    );
+
+    $toComplete = [];
+    while ($sync = $incompleteStmt->fetch(PDO::FETCH_ASSOC)) {
+      // Check if this range has any log data
+      $checkStmt = $this->db->prepare(<<<'SQL'
+SELECT COUNT(*) as count FROM logs
+WHERE time >= :start AND time <= :end
+LIMIT 1
+SQL
+      );
+      $checkStmt->execute([
+        ':start' => $sync['start_time'],
+        ':end' => $sync['end_time'],
+      ]);
+      $result = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+      // If we have data for this range, mark it for completion
+      if ($result['count'] > 0) {
+        $toComplete[] = $sync['id'];
+      }
+    }
+
+    // Mark all recovered syncs as completed
+    if (!empty($toComplete)) {
+      $ids = implode(',', $toComplete);
+      $this->db->exec(<<<SQL
+UPDATE sync_ranges
+SET status = 'completed',
+    completed_at = CURRENT_TIMESTAMP,
+    error_message = 'Auto-completed: data recovered by subsequent sync'
+WHERE id IN ($ids)
+SQL
+      );
+    }
+
     $stmt = $this->db->query(<<<'SQL'
 SELECT * FROM sync_ranges
 WHERE status IN ('pending', 'in_progress', 'failed', 'interrupted')
