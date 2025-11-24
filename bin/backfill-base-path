@@ -1,0 +1,187 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Backfill base_path and url_arguments for existing database records.
+ *
+ * This script adds the base_path and url_arguments fields to all existing log records
+ * in the database. It uses the same parseUriComponents() logic as the sync process
+ * to ensure consistency.
+ *
+ * Run this after migrating the schema to add the base_path VIRTUAL column.
+ *
+ * Note: This script will also backfill url_arguments if missing from older records.
+ */
+
+require __DIR__ . '/../vendor/autoload.php';
+
+use SolarWinds\Services\ConfigurationService;
+use SolarWinds\Services\DatabaseService;
+
+// Load configuration.
+$config = new ConfigurationService();
+
+echo "Backfilling base_path and url_arguments for existing database records...\n";
+echo "Database: " . $config->getDatabasePath() . "\n\n";
+
+// Get database path and open connection directly.
+$dbPath = $config->getDatabasePath();
+$db = new PDO('sqlite:' . $dbPath);
+$db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+// Check if base_path column exists by querying the table schema.
+$result = $db->query("SELECT sql FROM sqlite_master WHERE type='table' AND name='logs'");
+$row = $result->fetch(PDO::FETCH_ASSOC);
+$tableSql = $row['sql'] ?? '';
+
+if (strpos($tableSql, 'base_path') === FALSE) {
+  echo "ERROR: base_path column does not exist. Run migration first:\n";
+  echo "  ./bin/migrate-database\n";
+  exit(1);
+}
+
+// Parse URI components using same logic as DatabaseService.
+function parseUriComponents(string $uri): ?array
+{
+  $parts = parse_url($uri);
+
+  if ($parts === FALSE) {
+    return NULL;
+  }
+
+  $result = [
+    'base_path' => NULL,
+    'url_arguments' => NULL,
+  ];
+
+  // Extract base path.
+  if (isset($parts['path']) && !empty($parts['path'])) {
+    $result['base_path'] = $parts['path'];
+  }
+
+  // Extract and parse query parameters.
+  if (isset($parts['query']) && !empty($parts['query'])) {
+    parse_str($parts['query'], $params);
+    $result['url_arguments'] = $params;
+  }
+
+  return $result;
+}
+
+// Get total count of records without base_path.
+echo "Counting records that need backfilling...\n";
+$stmt = $db->query("SELECT COUNT(*) as count FROM logs WHERE json_extract(data, '\$.base_path') IS NULL AND req_uri IS NOT NULL");
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+$totalRecords = $row['count'];
+
+if ($totalRecords == 0) {
+  echo "No records need backfilling. All done!\n";
+  exit(0);
+}
+
+echo "Found $totalRecords records to backfill.\n\n";
+
+// Prepare update statement.
+$updateStmt = $db->prepare('UPDATE logs SET data = :data WHERE id = :id');
+
+// Process records in batches.
+$batchSize = 10000;
+$offset = 0;
+$updated = 0;
+$startTime = microtime(TRUE);
+
+while ($offset < $totalRecords) {
+  // Fetch batch of records that need base_path.
+  $fetchStmt = $db->prepare(
+    "SELECT id, data FROM logs WHERE json_extract(data, '\$.base_path') IS NULL AND req_uri IS NOT NULL LIMIT :limit OFFSET :offset"
+  );
+  $fetchStmt->bindValue(':limit', $batchSize, PDO::PARAM_INT);
+  $fetchStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+  $fetchStmt->execute();
+
+  $records = $fetchStmt->fetchAll(PDO::FETCH_ASSOC);
+
+  if (empty($records)) {
+    break;
+  }
+
+  // Process batch in transaction.
+  $db->beginTransaction();
+
+  foreach ($records as $record) {
+    $logData = json_decode($record['data'], TRUE);
+
+    if ($logData && isset($logData['req_uri'])) {
+      $urlParts = parseUriComponents($logData['req_uri']);
+
+      if ($urlParts) {
+        $modified = FALSE;
+
+        // Add base_path if not already present.
+        if ($urlParts['base_path'] !== NULL && !isset($logData['base_path'])) {
+          $logData['base_path'] = $urlParts['base_path'];
+          $modified = TRUE;
+        }
+
+        // Add url_arguments if not already present.
+        if ($urlParts['url_arguments'] !== NULL && !isset($logData['url_arguments'])) {
+          $logData['url_arguments'] = $urlParts['url_arguments'];
+          $modified = TRUE;
+        }
+
+        if ($modified) {
+          // Use JSON_INVALID_UTF8_SUBSTITUTE to handle malformed UTF-8 characters.
+          // This can happen with URIs containing special characters like en-dashes.
+          $newData = json_encode($logData, JSON_INVALID_UTF8_SUBSTITUTE);
+
+          // This should never fail now, but check anyway.
+          if ($newData === FALSE) {
+            echo "\n\nERROR: json_encode failed for record {$record['id']}\n";
+            echo "Error: " . json_last_error_msg() . "\n";
+            $db->rollBack();
+            exit(1);
+          }
+
+          // Update record.
+          $updateStmt->execute([
+            ':id' => $record['id'],
+            ':data' => $newData,
+          ]);
+
+          $updated++;
+        }
+      }
+    }
+  }
+
+  $db->commit();
+
+  $offset += $batchSize;
+
+  // Show progress.
+  $progress = min($offset, $totalRecords);
+  $percent = round(($progress / $totalRecords) * 100, 1);
+  $elapsed = microtime(TRUE) - $startTime;
+  $rate = $updated / max($elapsed, 1);
+  $remaining = ($totalRecords - $progress) / max($rate, 1);
+
+  printf(
+    "\rProgress: %d / %d (%s%%) | Updated: %d | Rate: %.0f/sec | ETA: %s",
+    $progress,
+    $totalRecords,
+    $percent,
+    $updated,
+    $rate,
+    gmdate('H:i:s', (int)$remaining)
+  );
+}
+
+echo "\n\n";
+
+$elapsed = microtime(TRUE) - $startTime;
+
+echo "Backfill complete!\n";
+echo "Records updated: $updated\n";
+echo "Time elapsed: " . gmdate('H:i:s', (int)$elapsed) . "\n";
+echo "Average rate: " . number_format($updated / max($elapsed, 1), 0) . " records/sec\n";
+echo "\nYour database now has base_path and url_arguments populated for all records!\n";

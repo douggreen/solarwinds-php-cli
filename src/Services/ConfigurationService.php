@@ -372,9 +372,30 @@ class ConfigurationService
   public function getBlockingThresholds(): array
   {
     $defaults = [
-      'min_requests' => 100,
-      'min_duration_hours' => 2,
+      // Scaled thresholds (apply to any timeframe)
+      'min_requests_per_hour' => 10,
+      'min_requests_per_day' => 70,
+      'urgent_requests_per_hour' => 5000,
+
+      // Duration as % of scan window
+      'min_duration_ratio' => 0.1,
+
+      // Behavior ratios
       'high_confidence_40x_ratio' => 0.8,
+      'exploit_ratio_threshold' => 0.7,
+
+      // Single-event filtering
+      'single_event_threshold_hours' => 1,
+      'single_event_critical_volume' => 10000,
+
+      // Trusted IP prefixes (Google crawlers)
+      'trusted_ip_prefixes' => [
+        '66.249.',
+        '64.233.',
+        '66.102.',
+        '74.125.',
+        '142.250.',
+      ],
     ];
 
     $configured = $this->config['blocking']['thresholds'] ?? [];
