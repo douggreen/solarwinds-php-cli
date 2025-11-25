@@ -1104,7 +1104,7 @@ abstract class BaseSolarWindsCommand extends Command
    * @param array $options Query options
    * @return callable|null Progress callback function
    */
-  protected function getProgressCallback(?ProgressBar $progressBar, array $options, &$totalFixed = 0): ?callable
+  protected function getProgressCallback(?ProgressBar $progressBar, array $options, &$totalFixed = 0, int $currentChunk = 0, int $totalChunks = 1): ?callable
   {
     if (!$progressBar) {
       return NULL;
@@ -1119,7 +1119,21 @@ abstract class BaseSolarWindsCommand extends Command
     $lastDayStartTime = NULL;  // Real time when current day started
     $debugMode = $options['filters']['debug'] ?? FALSE;
 
-    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$dayRates, &$lastDayBoundary, &$lastDayStartTime, $debugMode) {
+    // Open debug log file if debug mode is enabled
+    $debugLogFile = NULL;
+    if ($debugMode) {
+      $logPath = getenv('HOME') . '/.solarwinds/sync-debug.log';
+      $debugLogFile = fopen($logPath, 'a');
+      if ($debugLogFile) {
+        fwrite($debugLogFile, "\n" . str_repeat('=', 80) . "\n");
+        fwrite($debugLogFile, "Sync started: " . date('Y-m-d H:i:s') . "\n");
+        fwrite($debugLogFile, "Time range: " . gmdate('Y-m-d H:i:s', $startEpoch) . " to " . gmdate('Y-m-d H:i:s', $endEpoch) . "\n");
+        fwrite($debugLogFile, "Chunk: $currentChunk / $totalChunks\n");
+        fwrite($debugLogFile, str_repeat('=', 80) . "\n");
+      }
+    }
+
+    return function($pageNum, $pageLogs, $newLogsAdded, $duplicatesFound, $totalResults) use ($progressBar, $options, $startEpoch, $endEpoch, $totalSeconds, &$totalFixed, &$lastMessage, &$dayRates, &$lastDayBoundary, &$lastDayStartTime, $debugMode, $debugLogFile, $currentChunk, $totalChunks) {
       // Update progress based on time range covered (oldest timestamp in current page).
       $coveredSeconds = 0;
       if (!empty($pageLogs)) {
@@ -1262,6 +1276,10 @@ abstract class BaseSolarWindsCommand extends Command
 
       // Activity indicators only shown in debug mode.
       if ($debugMode) {
+        // Show chunk info if multiple chunks
+        if ($totalChunks > 1) {
+          $message .= " / c$currentChunk/$totalChunks";
+        }
         $message .= " / p$pageNum";  // Page number shows API pagination progress
 
         if ($totalResults > 0) {
@@ -1290,6 +1308,25 @@ abstract class BaseSolarWindsCommand extends Command
       }
 
       $message .= " / $elapsedStr elapsed";
+
+      // Log to debug file every 10 pages
+      if ($debugLogFile && $pageNum % 10 === 0) {
+        $timestamp = date('H:i:s');
+        $recsPerSec = $elapsed > 0 ? round($totalResults / $elapsed, 1) : 0;
+        $oldestLog = !empty($pageLogs) ? ($pageLogs[0]['time'] ?? 'unknown') : 'unknown';
+        fwrite($debugLogFile, sprintf(
+          "[%s] Chunk %d/%d | Page %d | %d recs | %.1f rec/s | Oldest: %s | New: %d | Dups: %d\n",
+          $timestamp,
+          $currentChunk,
+          $totalChunks,
+          $pageNum,
+          $totalResults,
+          $recsPerSec,
+          $oldestLog,
+          $newLogsAdded,
+          $duplicatesFound
+        ));
+      }
 
       // Only update terminal if message changed (avoid redundant I/O).
       if ($message !== $lastMessage) {
@@ -1402,6 +1439,23 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function syncLogsToDatabase(array $options, bool $showCacheMessage = TRUE): void
   {
+    // Check if debug log exists and ask to clear it
+    if (!$this->jsonMode && ($options['filters']['debug'] ?? FALSE)) {
+      $logPath = getenv('HOME') . '/.solarwinds/sync-debug.log';
+      if (file_exists($logPath)) {
+        $fileSize = filesize($logPath);
+        $fileSizeKb = round($fileSize / 1024, 1);
+        $choice = $this->io->confirm(
+          "Debug log exists ($fileSizeKb KB). Clear it and start fresh?",
+          TRUE
+        );
+        if ($choice) {
+          unlink($logPath);
+          $this->io->writeln('<info>Debug log cleared</info>');
+        }
+      }
+    }
+
     // Convert time range to ISO 8601 for database queries.
     $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
     $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
@@ -1496,7 +1550,7 @@ abstract class BaseSolarWindsCommand extends Command
           $this->apiService->retrieveLogs(
             $chunk['start'],
             $chunk['end'],
-            $this->getProgressCallback($progressBar, $rangeOptions, $totalFixed),
+            $this->getProgressCallback($progressBar, $rangeOptions, $totalFixed, $chunkIndex + 1, count($chunks)),
             NULL,  // No debug callback
             $saveCallback  // Save each page immediately
           );
