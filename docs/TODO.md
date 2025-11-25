@@ -6,9 +6,8 @@ This document tracks the remaining work to complete the migration and enhancemen
 
 **Current Priority:**
 1. **Trusted Bot IP Verification** - Enhance bot detection with reverse DNS lookup
-2. **Review Timeframe-Relative Thresholds** - Audit `--min-requests` rate-based filtering implementation
-3. Review and fix ExploitsCommand issues
-4. Research and implement testing framework
+2. Review and fix ExploitsCommand issues
+3. Research and implement testing framework
 
 ## Security Enhancements
 
@@ -39,34 +38,6 @@ This document tracks the remaining work to complete the migration and enhancemen
 - `src/Services/BlockingService.php` - Add IP verification method
 - `src/Commands/ExploitsCommand.php` - Pass IP address to bot classification
 - `.solarwinds.yml.example` - Document trusted bot domain patterns
-
-### 2. Review Timeframe-Relative Thresholds
-
-**Context:** The `--min-requests` option supports rate-based syntax (e.g., "3/s", "5s") that scales with query timeframe.
-
-**Review Needed:**
-- Audit `ExploitsCommand::parseRequestRate()` implementation (lines 617-641)
-- Verify rate calculations are accurate for different timeframes
-- Test edge cases:
-  - Very short timeframes (--5m with "0.1/s")
-  - Very long timeframes (--30d with "3/s")
-  - Fractional rates ("0.5/s" = 1 request per 2 seconds)
-- Document rate syntax in README if not already documented
-- Consider if blocking config thresholds should also support rate syntax
-- Validate interaction between `--min-requests` and `blocking.thresholds.min_requests`
-
-**Test Cases Needed:**
-```bash
-# Test various rate syntaxes
-solarwinds exploits --1h --min-requests=3/s    # Should require 10,800 requests
-solarwinds exploits --1d --min-requests=3/s    # Should require 259,200 requests
-solarwinds exploits --5m --min-requests=5s     # Should require 60 requests (1 per 5 sec)
-```
-
-**Affected Files:**
-- `src/Commands/ExploitsCommand.php` - parseRequestRate() method
-- `README.md` - Document rate syntax if missing
-- `tests/` - Create test cases for rate calculations
 
 ## ExploitsCommand Enhancements
 

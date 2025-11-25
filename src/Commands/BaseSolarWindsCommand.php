@@ -451,7 +451,10 @@ abstract class BaseSolarWindsCommand extends Command
     $startTime = gmdate('Y-m-d H:i:s', strtotime($options['time']['start_time']));
     $endTime = gmdate('Y-m-d H:i:s', strtotime($options['time']['end_time']));
 
-    // Get estimated record count from database.
+    // Get estimated record count from database (may take a few seconds for large ranges).
+    if (!$this->jsonMode) {
+      $this->io->writeln('<comment>Estimating database records...</comment>');
+    }
     $estimatedCount = $this->databaseService->getRecordCount($startTime, $endTime);
 
     $message = sprintf(
@@ -832,6 +835,9 @@ abstract class BaseSolarWindsCommand extends Command
     $this->syncLogsToDatabase($options);
 
     // Step 2: Query database with SQL WHERE clause.
+    if (!$this->jsonMode) {
+      $this->io->writeln('<comment>Reading logs from database...</comment>');
+    }
     $results = $this->queryDatabase($options, $sqlQuery['where'], $sqlQuery['params']);
 
     // Apply client-side filters.

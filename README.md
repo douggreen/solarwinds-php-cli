@@ -5,6 +5,7 @@ Professional SolarWinds log analysis tools built with Symfony Console, migrated 
 ## Documentation
 
 - **README.md** (this file) - Project overview and usage for developers
+- **[EXPLOITS.md](docs/EXPLOITS.md)** - Comprehensive security exploit detection and campaign analysis guide
 - **[CONTRIBUTING.md](docs/CONTRIBUTING.md)** - Developer guidelines and architecture
 - **[TODO.md](docs/TODO.md)** - Remaining features and development roadmap
 - **[tests/README.md](tests/README.md)** - Testing patterns and test scripts
@@ -270,23 +271,39 @@ blocking:
 
 ### Blocking Thresholds
 
-Customize the criteria for blocking recommendations. These are absolute thresholds (not timeframe-relative) that you adjust based on your site's traffic characteristics:
+Customize the criteria for blocking recommendations. The system uses **timeframe-relative thresholds** that automatically scale based on the scan window:
 
 ```yaml
 blocking:
   thresholds:
-    min_requests: 100                 # Minimum exploit attempts (absolute count)
-    min_duration_hours: 2             # Attack must span at least this duration
-    high_confidence_40x_ratio: 0.8    # 80%+ failed requests = high confidence (0.0-1.0)
+    # Scaled thresholds (auto-adjust for timeframe)
+    min_requests_per_hour: 10         # 10 req/hr minimum for short scans
+    min_requests_per_day: 70          # ~1000 over 2 weeks minimum
+    urgent_requests_per_hour: 5000    # Immediate alert threshold
+
+    # Duration as % of scan window
+    min_duration_ratio: 0.1           # Must span 10% of window
+                                      # (1.5min for 15min scan, 16.8hr for 1wk scan)
+
+    # Behavior thresholds
+    high_confidence_40x_ratio: 0.8    # 80% failure rate = scanning
+    exploit_ratio_threshold: 0.7      # 70% exploit patterns = attack
+
+    # Single-event filtering
+    single_event_threshold_hours: 1   # Bursts <1hr = single event
+    single_event_critical_volume: 10000  # Unless >10k reqs + critical
 ```
 
-**Adjusting Thresholds:**
-- **Increase `min_requests`** (e.g., 500) for higher-traffic sites to reduce noise
-- **Decrease `min_requests`** (e.g., 25) for low-traffic sites to catch smaller attacks
-- **Increase `min_duration_hours`** (e.g., 6) to require more sustained attacks
-- **Adjust `high_confidence_40x_ratio`** to tune sensitivity (lower = more strict, e.g., 0.6 = 60%+ failures)
+**How Scaling Works:**
+- **Short scans** (--15m, --1h): Uses hourly rate threshold (10 req/hr = 150 requests in 15 minutes)
+- **Long scans** (--1d, --1w): Uses daily rate threshold (70 req/day = 490 requests in 1 week)
+- **Duration**: Requires attack to span at least 10% of scan window (prevents single-event bursts)
 
-**Note:** These thresholds are independent of query timeframe. An attack with 100 requests over 2 hours triggers the same threshold whether you're analyzing the last day or last week. For timeframe-relative filtering, use the `--min-requests` command option with rate syntax (e.g., `--min-requests=3/s`).
+**Adjusting Thresholds:**
+- **Increase `min_requests_per_hour`** (e.g., 50) for higher-traffic sites to reduce noise in short scans
+- **Decrease `min_requests_per_hour`** (e.g., 5) for low-traffic sites to catch smaller attacks
+- **Adjust `min_duration_ratio`** (e.g., 0.2 = 20%) to require more sustained attacks
+- **Tune `high_confidence_40x_ratio`** for sensitivity (lower = more strict, e.g., 0.6 = 60%+ failures)
 
 **Default Trusted Bots:**
 - Googlebot, bingbot, DuckDuckBot (search engines)
@@ -434,91 +451,30 @@ bin/solarwinds posts --country        # POST requests by country
 bin/solarwinds login --1h             # Failed logins (last hour)
 ```
 
-## Automated Monitoring with Cron
+## Security Threat Detection
 
-The `exploits` command includes intelligent campaign analysis that builds historical patterns and detects threats in real-time. For optimal threat detection, set up both long-term and short-term monitoring:
+The `exploits` command provides comprehensive security threat detection and campaign analysis. For detailed information about exploit detection, automated monitoring, and blocking recommendations, see **[EXPLOITS.md](docs/EXPLOITS.md)**.
 
-### Recommended Cron Setup
-
-**Long-term Analysis** (builds historical knowledge):
-```bash
-# Daily analysis - runs at 2 AM
-0 2 * * * /path/to/solarwinds exploits --1d >> /var/log/solarwinds/daily.log 2>&1
-
-# Weekly analysis - runs Sunday 3 AM
-0 3 * * 0 /path/to/solarwinds exploits --1w >> /var/log/solarwinds/weekly.log 2>&1
-```
-
-**Real-time Monitoring** (detects active threats):
-```bash
-# Every 15 minutes - check for active attacks
-*/15 * * * * /path/to/solarwinds exploits --15m --min-severity=high >> /var/log/solarwinds/realtime.log 2>&1
-
-# Or every 5 minutes for faster detection of critical threats
-*/5 * * * * /path/to/solarwinds exploits --5m --min-severity=critical >> /var/log/solarwinds/realtime.log 2>&1
-```
-
-### How It Works
-
-The campaign analysis system automatically:
-- **Scales thresholds** based on timeframe (short scans use rate-based thresholds, long scans use volume-based)
-- **Checks historical patterns** to identify known bad actors from previous scans
-- **Performs deep-dive analysis** for new suspicious IPs (queries full history automatically)
-- **Saves all results** to database for future reference
-- **Filters noise** (single-event bursts, trusted bots like Google crawlers, etc.)
-
-**Alert Integration Example:**
-
-Pipe urgent alerts to your notification system:
+### Quick Start
 
 ```bash
-#!/bin/bash
-# /usr/local/bin/exploit-monitor.sh
+# Analyze recent activity
+solarwinds exploits --1h                 # Last hour
+solarwinds exploits --15m --min-severity=high  # Recent critical threats
 
-URGENT=$(/path/to/solarwinds exploits --15m --json | jq -r 'select(.confidence=="urgent") | .ip')
-
-if [ -n "$URGENT" ]; then
-  echo "URGENT: High-rate attack from IP(s): $URGENT" | mail -s "Security Alert" ops@example.com
-fi
+# Automated monitoring (cron)
+*/15 * * * * /path/to/solarwinds exploits --15m >> /var/log/solarwinds/realtime.log 2>&1
 ```
 
-Then in cron:
-```bash
-*/15 * * * * /usr/local/bin/exploit-monitor.sh
-```
+The system detects 14+ attack types (XSS, SQLi, RCE, LFI, etc.), groups them into campaigns, performs automatic deep-dive analysis for suspicious IPs, and provides actionable blocking recommendations with confidence levels.
 
-### Threshold Configuration
-
-You can customize detection thresholds in `~/.solarwinds.yml`:
-
-```yaml
-blocking:
-  thresholds:
-    # Scaled thresholds (auto-adjust for timeframe)
-    min_requests_per_hour: 10         # 10 req/hr minimum for short scans
-    min_requests_per_day: 70          # ~1000 over 2 weeks minimum
-    urgent_requests_per_hour: 5000    # Immediate alert threshold
-
-    # Duration as % of scan window
-    min_duration_ratio: 0.1           # Must span 10% of window
-                                      # (1.5min for 15min scan, 16.8hr for 1wk scan)
-
-    # Behavior thresholds
-    high_confidence_40x_ratio: 0.8    # 80% failure rate = scanning
-    exploit_ratio_threshold: 0.7      # 70% exploit patterns = attack
-
-    # Single-event filtering
-    single_event_threshold_hours: 1   # Bursts <1hr = single event
-    single_event_critical_volume: 10000  # Unless >10k reqs + critical
-
-    # Trusted IP prefixes (auto-excluded)
-    trusted_ip_prefixes:
-      - "66.249."   # Google
-      - "64.233."   # Google
-      - "66.102."   # Google
-      - "74.125."   # Google
-      - "142.250."  # Google
-```
+**See [EXPLOITS.md](docs/EXPLOITS.md) for:**
+- Complete attack pattern reference
+- Campaign analysis system
+- Blocking recommendation engine
+- Automated monitoring setup
+- Configuration and threshold tuning
+- Database schema and queries
 
 ## Features
 

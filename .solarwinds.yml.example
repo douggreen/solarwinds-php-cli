@@ -59,9 +59,20 @@ blocking:
     - "PartnerCrawler"
 
   # Blocking decision thresholds (optional - these are the defaults)
-  # These are absolute thresholds - adjust based on your traffic volume and risk tolerance
-  # They are NOT timeframe-relative (use --min-requests command option for rate-based filtering)
+  # These are timeframe-relative thresholds that automatically scale based on scan window
   thresholds:
-    min_requests: 100                 # Minimum exploit attempts (absolute count, not per-timeframe)
-    min_duration_hours: 2             # Attack must span at least this duration
-    high_confidence_40x_ratio: 0.8    # 80%+ failed requests = high confidence (0.0-1.0)
+    # Scaled thresholds (auto-adjust for timeframe)
+    min_requests_per_hour: 10         # 10 req/hr minimum for short scans
+    min_requests_per_day: 70          # ~1000 over 2 weeks minimum
+    urgent_requests_per_hour: 5000    # Immediate alert threshold
+
+    # Duration as % of scan window
+    min_duration_ratio: 0.1           # Must span 10% of window (1.5min for 15min scan)
+
+    # Behavior thresholds
+    high_confidence_40x_ratio: 0.8    # 80% failure rate = scanning
+    exploit_ratio_threshold: 0.7      # 70% exploit patterns = attack
+
+    # Single-event filtering
+    single_event_threshold_hours: 1   # Bursts <1hr = single event
+    single_event_critical_volume: 10000  # Unless >10k reqs + critical
