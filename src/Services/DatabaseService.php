@@ -631,6 +631,41 @@ SQL
   }
 
   /**
+   * Initialize sync_ranges from existing log data.
+   *
+   * Called when sync_ranges is empty but logs table has data.
+   * Analyzes continuous data ranges and creates sync_range entries for them.
+   * This allows gap detection to work correctly for pre-existing data.
+   */
+  public function initializeSyncRangesFromData(): void
+  {
+    // Get the overall data range
+    $stmt = $this->db->query(<<<'SQL'
+SELECT MIN(time) as earliest, MAX(time) as latest, COUNT(*) as count
+FROM logs
+SQL
+    );
+    $coverage = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($coverage['count'] == 0 || $coverage['earliest'] === NULL) {
+      // No data to initialize from
+      return;
+    }
+
+    // For simplicity, create a single sync_range entry covering the entire data range
+    // This assumes the historical data is continuous (which is usually the case)
+    $this->db->prepare(<<<'SQL'
+INSERT INTO sync_ranges (start_time, end_time, status, started_at, completed_at, records_inserted, error_message)
+VALUES (:start, :end, 'completed', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, :count, 'Initialized from existing data')
+SQL
+    )->execute([
+      ':start' => $coverage['earliest'],
+      ':end' => $coverage['latest'],
+      ':count' => $coverage['count'],
+    ]);
+  }
+
+  /**
    * Detect gaps in synced data using sync_ranges tracking.
    *
    * Analyzes completed sync ranges to find gaps between them and at the edges
@@ -727,6 +762,16 @@ SQL
       $stmt = $this->db->query("SELECT COUNT(*) as count FROM sync_ranges WHERE status = 'completed'");
       $row = $stmt->fetch(PDO::FETCH_ASSOC);
       $hasSyncRanges = ($row['count'] ?? 0) > 0;
+
+      // If sync_ranges is empty but logs table has data, initialize from existing data
+      if (!$hasSyncRanges) {
+        $logStmt = $this->db->query("SELECT COUNT(*) as count FROM logs");
+        $logRow = $logStmt->fetch(PDO::FETCH_ASSOC);
+        if (($logRow['count'] ?? 0) > 0) {
+          $this->initializeSyncRangesFromData();
+          $hasSyncRanges = TRUE;
+        }
+      }
     }
     catch (\PDOException $e) {
       // Table doesn't exist yet - fall back to log analysis.
