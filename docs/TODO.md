@@ -5,8 +5,68 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. Review and fix ExploitsCommand issues
-2. Research and implement testing framework
+1. **Trusted Bot IP Verification** - Enhance bot detection with reverse DNS lookup
+2. **Review Timeframe-Relative Thresholds** - Audit `--min-requests` rate-based filtering implementation
+3. Review and fix ExploitsCommand issues
+4. Research and implement testing framework
+
+## Security Enhancements
+
+### 1. Trusted Bot IP Verification
+
+**Problem:** Current implementation only checks User-Agent strings to identify trusted bots, which can be easily spoofed by malicious actors.
+
+**Current Behavior:**
+- `BlockingService::classifyUserAgent()` checks if UA matches patterns like "Googlebot", "bingbot"
+- No IP address verification via reverse DNS lookup
+- Attackers can spoof UA to bypass blocking recommendations
+
+**Required Enhancement:**
+- Implement reverse DNS lookup for IPs claiming to be trusted bots
+- Verify that reverse DNS hostname matches expected pattern (e.g., `*.googlebot.com`, `*.crawl.yahoo.net`)
+- Forward resolve the hostname back to IP to prevent DNS spoofing
+- Only classify as `trusted_bot` if both UA AND IP verification pass
+- Cache DNS lookups to avoid performance impact
+
+**Implementation Notes:**
+- Use PHP's `gethostbyaddr()` for reverse DNS
+- Use `gethostbyname()` or `dns_get_record()` for forward verification
+- Add configuration for trusted bot domain patterns
+- Consider performance impact - may need async DNS resolution or caching layer
+- Reference: [Google's bot verification docs](https://developers.google.com/search/docs/crawling-indexing/verifying-googlebot)
+
+**Affected Files:**
+- `src/Services/BlockingService.php` - Add IP verification method
+- `src/Commands/ExploitsCommand.php` - Pass IP address to bot classification
+- `.solarwinds.yml.example` - Document trusted bot domain patterns
+
+### 2. Review Timeframe-Relative Thresholds
+
+**Context:** The `--min-requests` option supports rate-based syntax (e.g., "3/s", "5s") that scales with query timeframe.
+
+**Review Needed:**
+- Audit `ExploitsCommand::parseRequestRate()` implementation (lines 617-641)
+- Verify rate calculations are accurate for different timeframes
+- Test edge cases:
+  - Very short timeframes (--5m with "0.1/s")
+  - Very long timeframes (--30d with "3/s")
+  - Fractional rates ("0.5/s" = 1 request per 2 seconds)
+- Document rate syntax in README if not already documented
+- Consider if blocking config thresholds should also support rate syntax
+- Validate interaction between `--min-requests` and `blocking.thresholds.min_requests`
+
+**Test Cases Needed:**
+```bash
+# Test various rate syntaxes
+solarwinds exploits --1h --min-requests=3/s    # Should require 10,800 requests
+solarwinds exploits --1d --min-requests=3/s    # Should require 259,200 requests
+solarwinds exploits --5m --min-requests=5s     # Should require 60 requests (1 per 5 sec)
+```
+
+**Affected Files:**
+- `src/Commands/ExploitsCommand.php` - parseRequestRate() method
+- `README.md` - Document rate syntax if missing
+- `tests/` - Create test cases for rate calculations
 
 ## ExploitsCommand Enhancements
 

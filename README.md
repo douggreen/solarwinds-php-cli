@@ -7,8 +7,9 @@ Professional SolarWinds log analysis tools built with Symfony Console, migrated 
 - **README.md** (this file) - Project overview and usage for developers
 - **[CONTRIBUTING.md](docs/CONTRIBUTING.md)** - Developer guidelines and architecture
 - **[TODO.md](docs/TODO.md)** - Remaining features and development roadmap
+- **[tests/README.md](tests/README.md)** - Testing patterns and test scripts
 - **[CASE_STUDY.md](docs/CASE_STUDY.md)** - Lessons learned about AI-assisted development
-- **[CLAUDE-MUST-READ-FIRST.md](docs/CLAUDE-MUST-READ-FIRST.md)** - AI behavioral guide and development context
+- **[CLAUDE.md](CLAUDE.md)** - AI behavioral guide and development context
 
 ## Project Overview
 
@@ -43,7 +44,16 @@ progress: true         # Show progress bars during API calls
 debug: false           # Enable debug output
 validate: false        # Enable result validation
 api_retention_days: 14 # API data retention limit (varies by license)
+
+# Optional: Global CMS type (can be overridden per-site)
+cms: drupal            # Valid values: drupal, wordpress, other, unknown
+
+# Optional: Custom database location
+database:
+  path: ~/.solarwinds/logs.db
 ```
+
+See [.solarwinds.yml.example](.solarwinds.yml.example) for a complete configuration example including site definitions, command aliases, and blocking configuration.
 
 ### Common Base URLs by Region
 
@@ -85,6 +95,49 @@ solarwinds exploits --1m  # Requests 30 days
 ```
 
 Will automatically fetch only the last 14 days from the API (the maximum available), but will still analyze all 30 days if older data exists in your local database.
+
+## CMS Configuration
+
+The system can be configured with CMS type information to enable CMS-specific features and optimizations. This is particularly useful for Drupal and WordPress sites.
+
+### Global CMS Configuration
+
+Set a default CMS type for all sites:
+
+```yaml
+# Global CMS setting (applies to all sites unless overridden)
+cms: drupal  # Valid values: drupal, wordpress, other, unknown
+```
+
+### Per-Site CMS Configuration
+
+Override the global CMS setting for specific sites:
+
+```yaml
+cms: drupal  # Global default
+
+sites:
+  example.com:
+    name: main
+    label: Main Site
+    cms: drupal  # Uses global default (can be explicit)
+
+  blog.example.com:
+    name: blog
+    label: Company Blog
+    cms: wordpress  # Different CMS for this site
+
+  api.example.com:
+    name: api
+    label: API Server
+    cms: other  # Non-CMS application
+```
+
+### CMS Type Benefits
+
+- **Drupal**: Enables `--drupal` display mode for formatted PHP error output with file:line grouping
+- **WordPress**: Future enhancements for WordPress-specific log patterns
+- **Other/Unknown**: Standard log processing without CMS-specific features
 
 ## Site Configuration
 
@@ -186,6 +239,61 @@ This generates `--main`, `--blog`, and `--app` command options that filter logs 
 - **Consistent filtering**: Uses actual hostnames from your logs
 - **Clean output**: Shortened labels improve readability
 - **Command completion**: All sites become available as command options
+
+## IP Blocking Configuration
+
+The `exploits` command can analyze traffic patterns and recommend IPs for blocking. Configure allowlists and trusted bots to prevent false positives.
+
+### Allowlist Configuration
+
+Specify IP addresses and CIDR ranges that should never be blocked:
+
+```yaml
+blocking:
+  allowlist:
+    - "10.0.0.0/8"          # Internal network
+    - "192.168.1.0/24"      # Office network
+    - "203.0.113.50"        # Specific trusted IP
+```
+
+### Trusted Bots Configuration
+
+The system includes default trusted bots (Googlebot, bingbot, Slackbot, etc.). Add custom trusted bot patterns:
+
+```yaml
+blocking:
+  trusted_bots:
+    - "MyCustomBot"
+    - "PartnerCrawler"
+    - "MonitoringService"
+```
+
+### Blocking Thresholds
+
+Customize the criteria for blocking recommendations. These are absolute thresholds (not timeframe-relative) that you adjust based on your site's traffic characteristics:
+
+```yaml
+blocking:
+  thresholds:
+    min_requests: 100                 # Minimum exploit attempts (absolute count)
+    min_duration_hours: 2             # Attack must span at least this duration
+    high_confidence_40x_ratio: 0.8    # 80%+ failed requests = high confidence (0.0-1.0)
+```
+
+**Adjusting Thresholds:**
+- **Increase `min_requests`** (e.g., 500) for higher-traffic sites to reduce noise
+- **Decrease `min_requests`** (e.g., 25) for low-traffic sites to catch smaller attacks
+- **Increase `min_duration_hours`** (e.g., 6) to require more sustained attacks
+- **Adjust `high_confidence_40x_ratio`** to tune sensitivity (lower = more strict, e.g., 0.6 = 60%+ failures)
+
+**Note:** These thresholds are independent of query timeframe. An attack with 100 requests over 2 hours triggers the same threshold whether you're analyzing the last day or last week. For timeframe-relative filtering, use the `--min-requests` command option with rate syntax (e.g., `--min-requests=3/s`).
+
+**Default Trusted Bots:**
+- Googlebot, bingbot, DuckDuckBot (search engines)
+- Slackbot, facebookexternalhit, Twitterbot (social media)
+- LinkedInBot, WhatsApp, TelegramBot (messaging)
+- Discordbot, Applebot (other services)
+- Baiduspider, YandexBot (international search engines)
 
 ## Command Aliases
 

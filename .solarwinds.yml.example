@@ -10,11 +10,34 @@ debug: false
 progress: true
 validate: false
 
+# Optional: API retention limit (varies by license)
+# Standard plans typically retain 14 days, enterprise plans may offer 30+ days
+# This prevents futile API queries for data beyond retention window
+api_retention_days: 14
+
+# Optional: Global CMS type for all sites
+# Valid values: drupal, wordpress, other, unknown (default)
+# Can be overridden per-site in site configuration
+cms: drupal
+
+# Optional: Database configuration
+database:
+  path: ~/.solarwinds/logs.db        # Default SQLite database location
+
 # Optional: Site definitions for multi-site filtering
+# Note: Sites are keyed by hostname, not a list
 sites:
-  - name: "example"
-    label: "Example Site"
-    hosts: ["example.com", "www.example.com"]
+  example.com:
+    name: main
+    label: Main Site
+    cms: drupal                       # Optional: Override global CMS setting for this site
+  blog.example.com:
+    name: blog
+    label: Company Blog
+    cms: wordpress                    # Different CMS for this site
+  app.example.com:
+    name: app
+    label: Web Application
 
 # Optional: Custom command aliases
 aliases:
@@ -36,7 +59,9 @@ blocking:
     - "PartnerCrawler"
 
   # Blocking decision thresholds (optional - these are the defaults)
+  # These are absolute thresholds - adjust based on your traffic volume and risk tolerance
+  # They are NOT timeframe-relative (use --min-requests command option for rate-based filtering)
   thresholds:
-    min_requests: 100                 # Minimum exploit attempts before flagging for blocking
-    min_duration_hours: 2             # Attack must be sustained over this period
-    high_confidence_40x_ratio: 0.8    # 80%+ failed requests = high confidence malicious
+    min_requests: 100                 # Minimum exploit attempts (absolute count, not per-timeframe)
+    min_duration_hours: 2             # Attack must span at least this duration
+    high_confidence_40x_ratio: 0.8    # 80%+ failed requests = high confidence (0.0-1.0)

@@ -25,16 +25,18 @@ This project migrated from a collection of shell scripts to a modern PHP/Symfony
 
 ### Core Components
 
-**Commands:** Three foundational commands provide comprehensive log analysis capabilities:
+**Commands:** Four foundational commands provide comprehensive log analysis capabilities:
 - **`StatusCommand`** - HTTP status code analysis with shortcuts and filtering
 - **`SearchCommand`** - General-purpose log search with flexible query syntax
 - **`BotCommand`** - Bot and crawler traffic analysis with user agent filtering
+- **`ExploitsCommand`** - Security threat detection and IP blocking recommendations
 
 **Services:** Modular service layer provides shared functionality:
-- **`ConfigurationService`** - YAML configuration parsing and site mapping
+- **`ConfigurationService`** - YAML configuration parsing, site mapping, and CMS configuration
 - **`ApiService`** - SolarWinds API communication with pagination
 - **`DisplayService`** - Output formatting, coloring, and display modes
 - **`DatabaseService`** - SQLite storage with intelligent range detection and auto-sync
+- **`BlockingService`** - IP allowlist checking, bot classification, and blocking recommendations
 
 **Base Class Inheritance:** `BaseSolarWindsCommand` provides common functionality while allowing command-specific implementations through abstract methods.
 
@@ -115,6 +117,11 @@ sites:
    bin/solarwinds status --help
    bin/solarwinds search --help
    bin/solarwinds bot --help
+   bin/solarwinds exploits --help
+
+   # Run test scripts (see tests/README.md)
+   ./tests/test_interrupt.sh
+   php tests/test_blocking_config.php
    ```
 
 ### Version Control Integration
@@ -132,6 +139,8 @@ sites:
 
 ### Testing Strategy
 
+The project uses manual test scripts rather than a formal testing framework. See [tests/README.md](../tests/README.md) for detailed testing documentation.
+
 **Manual Testing Requirements:**
 1. **Functional testing** - Does it work for basic use cases?
 2. **Specification compliance** - Does it match original requirements exactly?
@@ -143,8 +152,10 @@ sites:
 - Test with various time ranges (`--15m`, `--1h`, `--1d`)
 - Verify site filtering works with configured sites
 - Check display options produce expected output formats
-- Validate caching behavior for long-running queries
+- Validate database auto-sync behavior for long-running queries
 - Test error handling with invalid inputs
+- Verify interrupt handling with Ctrl+C (SIGINT)
+- Test blocking recommendations with allowlist configuration
 
 ## Coding Standards
 
