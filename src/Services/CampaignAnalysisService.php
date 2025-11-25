@@ -356,4 +356,75 @@ class CampaignAnalysisService
     return $saved;
   }
 
+  /**
+   * Get cached campaign analysis if available.
+   *
+   * Checks if campaign analysis exists for the specified time range and is recent enough.
+   *
+   * @param string $timeStart Start of time range (ISO 8601)
+   * @param string $timeEnd End of time range (ISO 8601)
+   * @param int $maxAgeMinutes Maximum cache age in minutes (default: 60)
+   * @param string|null $timeRange Time range label (e.g., "last all", "2w") for fuzzy matching
+   * @return array|null Array with 'campaigns' and 'age_minutes', or NULL if no cache
+   */
+  public function getCachedCampaigns(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
+  {
+    $cached = $this->database->getCachedCampaignsByTimeRange($timeStart, $timeEnd, $maxAgeMinutes, $timeRange);
+
+    if ($cached === NULL) {
+      return NULL;
+    }
+
+    // Calculate age in minutes for user display.
+    // analyzed_at is stored in UTC (SQLite CURRENT_TIMESTAMP), so parse as UTC.
+    $analyzedAt = new \DateTime($cached['analyzed_at'], new \DateTimeZone('UTC'));
+    $now = new \DateTime('now', new \DateTimeZone('UTC'));
+    $ageMinutes = (int) (($now->getTimestamp() - $analyzedAt->getTimestamp()) / 60);
+
+    // Convert database format to campaign format expected by display code.
+    $campaigns = [];
+    foreach ($cached['campaigns'] as $row) {
+      // Map database columns to campaign structure.
+      $campaigns[] = [
+        'ip' => $row['ip'],
+        'country' => $row['country'],
+        'count' => $row['total_requests'],
+        'exploit_requests' => $row['exploit_requests'],
+        'first_seen' => $row['first_seen'],
+        'last_seen' => $row['last_seen'],
+        'time_span_days' => $row['time_span_days'],
+        'attack_types' => $row['attack_types'],
+        'severity' => $row['severity'],
+        'top_paths' => $row['top_paths'],
+        'behavior' => $row['behavior_type'],
+        'request_rate' => $row['request_rate'],
+        'ratio_40x' => $row['ratio_40x'],
+        'ratio_exploit' => $row['ratio_exploit'],
+        'path_diversity' => $row['path_diversity'],
+        'uri_dup_ratio' => $row['uri_dup_ratio'],
+        'blocking_recommendation' => [
+          'should_block' => (bool) $row['should_block'],
+          'confidence' => $row['confidence'],
+          'reasons' => $row['block_reasons'],
+        ],
+        'user_agent' => $row['user_agent'],
+        'bot_name' => $row['bot_name'],
+        'volume_analysis' => [
+          'total_requests' => $row['total_requests'],
+          'requests_per_hour' => $row['request_rate'],
+          'behavior_type' => $row['behavior_type'],
+          'ratio_40x' => $row['ratio_40x'],
+          'ratio_edge_blocked' => $row['ratio_edge_blocked'],
+          'total_volume' => $row['total_volume'],
+        ],
+        'from_cache' => TRUE, // Mark as cached for debugging
+      ];
+    }
+
+    return [
+      'campaigns' => $campaigns,
+      'age_minutes' => $ageMinutes,
+    ];
+  }
+
 }

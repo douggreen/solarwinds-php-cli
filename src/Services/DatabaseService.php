@@ -274,6 +274,39 @@ SQL;
 
     // Create indexes for realtime_alerts.
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_detected_at ON realtime_alerts(detected_at)");
+
+    // Create bot_ip_ranges table for verified bot IP ranges.
+    $botIpRangesSql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS bot_ip_ranges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  bot_name TEXT NOT NULL,              -- 'googlebot', 'bingbot', 'facebookbot', etc.
+  ip_range TEXT NOT NULL,              -- CIDR notation: '66.249.64.0/19'
+  source TEXT,                         -- GitHub URL or source identifier
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  verified_at TEXT                     -- When we last verified this range is still valid
+);
+SQL;
+    $this->db->exec($botIpRangesSql);
+
+    // Create indexes for bot_ip_ranges.
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_bot_ip_bot_name ON bot_ip_ranges(bot_name)");
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_bot_ip_updated ON bot_ip_ranges(updated_at)");
+
+    // Create bot_ip_metadata table for tracking bot IP list updates.
+    $botIpMetadataSql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS bot_ip_metadata (
+  bot_name TEXT PRIMARY KEY,
+  source_url TEXT NOT NULL,            -- GitHub raw URL to fetch from
+  last_checked TEXT NOT NULL,          -- When we last checked for updates
+  last_updated TEXT NOT NULL,          -- When we last successfully updated ranges
+  range_count INTEGER NOT NULL DEFAULT 0,
+  enabled INTEGER NOT NULL DEFAULT 1   -- Allow disabling specific bot verification
+);
+SQL;
+    $this->db->exec($botIpMetadataSql);
+
+    // Create index for bot_ip_metadata.
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_bot_metadata_last_checked ON bot_ip_metadata(last_checked)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_status ON realtime_alerts(status)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_ip ON realtime_alerts(ip)");
 
@@ -467,6 +500,20 @@ SQL
       $this->db->rollBack();
       throw new \RuntimeException('Failed to insert logs: ' . $e->getMessage());
     }
+  }
+
+  /**
+   * Get database connection.
+   *
+   * @return PDO Database connection
+   * @todo Refactor architecture: DatabaseService should only handle connections/queries,
+   *       not application logic. Move campaign analysis, bot IP operations, and sync
+   *       tracking to dedicated domain services (CampaignAnalysisService, BotIpService,
+   *       SyncTrackingService). See TODO.md for details.
+   */
+  public function getConnection(): PDO
+  {
+    return $this->db;
   }
 
   /**
@@ -697,11 +744,12 @@ WHERE status = 'in_progress'
 SQL
     );
 
-    // Second, auto-complete interrupted/failed syncs that now have data
-    // Check if the time range has actual log data - if so, mark as completed
+    // Second, auto-complete incomplete syncs that now have data.
+    // Check if the time range has actual log data - if so, mark as completed.
+    // This includes 'in_progress' syncs that were filled by subsequent syncs.
     $incompleteStmt = $this->db->query(<<<'SQL'
 SELECT id, start_time, end_time FROM sync_ranges
-WHERE status IN ('failed', 'interrupted')
+WHERE status IN ('failed', 'interrupted', 'in_progress')
 ORDER BY started_at DESC
 SQL
     );
@@ -1241,6 +1289,96 @@ SQL
 
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return ($row['count'] ?? 0) > 0;
+  }
+
+  /**
+   * Get campaign analyses for a specific time range.
+   *
+   * Retrieves campaigns that were analyzed for the specified time range,
+   * ordered by most recent analysis first.
+   *
+   * @param string $timeStart Start of analyzed time range (ISO 8601)
+   * @param string $timeEnd End of analyzed time range (ISO 8601)
+   * @param int $maxAgeMinutes Maximum age of analysis in minutes (default: 60)
+   * @param string|null $timeRange Time range label for fuzzy matching (e.g., "last all")
+   * @return array|null Array with 'campaigns' and 'analyzed_at', or NULL if not found/too old
+   */
+  public function getCachedCampaignsByTimeRange(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
+  {
+    // Calculate cutoff time for cache freshness.
+    $cutoffTime = date('Y-m-d H:i:s', time() - ($maxAgeMinutes * 60));
+
+    // Step 1: Find the most recent analysis timestamp.
+    // If time_range label is provided, match on that instead of exact timestamps.
+    // This handles cases like "--all" where timestamps drift but the range is the same.
+    if ($timeRange !== NULL) {
+      $stmt = $this->db->prepare(<<<'SQL'
+SELECT MAX(analyzed_at) as latest_analysis
+FROM campaign_analysis
+WHERE time_range = :time_range
+  AND analyzed_at >= :cutoff
+SQL
+      );
+
+      $stmt->execute([
+        ':time_range' => $timeRange,
+        ':cutoff' => $cutoffTime,
+      ]);
+    }
+    else {
+      // Fall back to exact time range matching.
+      $stmt = $this->db->prepare(<<<'SQL'
+SELECT MAX(analyzed_at) as latest_analysis
+FROM campaign_analysis
+WHERE time_start = :time_start
+  AND time_end = :time_end
+  AND analyzed_at >= :cutoff
+SQL
+      );
+
+      $stmt->execute([
+        ':time_start' => $timeStart,
+        ':time_end' => $timeEnd,
+        ':cutoff' => $cutoffTime,
+      ]);
+    }
+
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    $analyzedAt = $result['latest_analysis'] ?? NULL;
+
+    if ($analyzedAt === NULL) {
+      return NULL; // No cache found
+    }
+
+    // Step 2: Get all campaigns from that specific analysis.
+    $stmt = $this->db->prepare(<<<'SQL'
+SELECT *
+FROM campaign_analysis
+WHERE analyzed_at = :analyzed_at
+SQL
+    );
+
+    $stmt->execute([':analyzed_at' => $analyzedAt]);
+
+    $campaigns = [];
+
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+      // Decode JSON fields.
+      $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
+      $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
+      $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
+
+      $campaigns[] = $row;
+    }
+
+    if (empty($campaigns)) {
+      return NULL;
+    }
+
+    return [
+      'campaigns' => $campaigns,
+      'analyzed_at' => $analyzedAt,
+    ];
   }
 
   /**

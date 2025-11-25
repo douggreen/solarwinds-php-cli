@@ -457,23 +457,26 @@ abstract class BaseSolarWindsCommand extends Command
     }
     $estimatedCount = $this->databaseService->getRecordCount($startTime, $endTime);
 
-    $message = sprintf(
-      "About to query %s (%s to %s)",
+    // Format dates in human-readable format.
+    $startDate = date('M j, Y g:i A', strtotime($startTime));
+    $endDate = date('M j, Y g:i A', strtotime($endTime));
+
+    $this->io->writeln(sprintf(
+      '<comment>About to query %s (%s to %s)</comment>',
       $options['time']['human_readable'],
-      $startTime,
-      $endTime
-    );
+      $startDate,
+      $endDate
+    ));
 
     if ($estimatedCount > 0) {
-      $message .= sprintf("\nEstimated: ~%s records from database", number_format($estimatedCount));
+      $this->io->writeln(sprintf('<comment>Estimated: ~%s records from database</comment>', number_format($estimatedCount)));
     }
     else {
-      $message .= "\nNote: This range may require syncing data from API (2-week retention limit applies)";
+      $this->io->writeln('<comment>Note: This range may require syncing data from API (2-week retention limit applies)</comment>');
     }
 
-    $message .= "\n\nContinue?";
-
-    return $this->io->confirm($message, FALSE);  // Default to No for safety
+    $this->io->newLine();
+    return $this->io->confirm('Continue?', FALSE);  // Default to No for safety
   }
 
   /**
