@@ -1484,6 +1484,11 @@ abstract class BaseSolarWindsCommand extends Command
     $totalNewLogs = 0;
     $interrupted = FALSE;
     foreach (array_reverse($rangeAnalysis['ranges']) as $range) {
+      // Skip ranges beyond API retention - cannot fetch from API
+      if ($range['reason'] === 'beyond_retention') {
+        continue;
+      }
+
       // Check for interruption before processing each range.
       if (self::isInterrupted()) {
         $interrupted = TRUE;

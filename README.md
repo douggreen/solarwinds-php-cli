@@ -39,9 +39,10 @@ token: "your-solarwinds-api-token"
 base_url: "https://api.na-01.cloud.solarwinds.com"
 
 # Optional: Default behavior settings
-progress: true    # Show progress bars during API calls
-debug: false      # Enable debug output
-validate: false   # Enable result validation
+progress: true         # Show progress bars during API calls
+debug: false           # Enable debug output
+validate: false        # Enable result validation
+api_retention_days: 14 # API data retention limit (varies by license)
 ```
 
 ### Common Base URLs by Region
@@ -55,6 +56,35 @@ base_url: "https://api.na-01.cloud.solarwinds.com"
 ```yaml
 base_url: "https://api.eu-01.cloud.solarwinds.com"
 ```
+
+### API Retention Limit
+
+The `api_retention_days` configuration specifies how many days of historical data your SolarWinds API license retains. This varies by plan:
+
+- **Standard plans**: Typically 14 days (2 weeks)
+- **Enterprise plans**: May offer longer retention (30+ days)
+
+**Why this matters:**
+
+When you request data older than your retention limit (e.g., using `--1m` or `--all` when your limit is 14 days), the system will:
+
+1. **Automatically clamp API queries** to within the retention window
+2. **Mark older ranges** as `beyond_retention` to avoid futile API calls
+3. **Still analyze local data** from your SQLite database if available
+
+This prevents wasted API calls and confusing "3635 days of gap_between_syncs" messages when requesting historical data beyond your API's retention capability.
+
+**Example:**
+```yaml
+api_retention_days: 14  # Your plan retains 14 days of data
+```
+
+Then running:
+```bash
+solarwinds exploits --1m  # Requests 30 days
+```
+
+Will automatically fetch only the last 14 days from the API (the maximum available), but will still analyze all 30 days if older data exists in your local database.
 
 ## Site Configuration
 

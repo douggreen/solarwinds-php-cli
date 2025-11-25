@@ -392,4 +392,21 @@ class ConfigurationService
     $default = $_SERVER['HOME'] . '/.solarwinds/logs.db';
     return $this->config['database']['path'] ?? $default;
   }
+
+  /**
+   * Get API retention limit in seconds.
+   *
+   * Returns the maximum time range that the SolarWinds API retains data.
+   * This varies by license/plan. Attempts to fetch data older than this
+   * limit will return no results.
+   *
+   * @return int Retention period in seconds (default: 14 days)
+   */
+  public function getApiRetentionLimit(): int
+  {
+    // Default to 14 days (2 weeks) if not configured
+    $defaultDays = 14;
+    $days = $this->config['api_retention_days'] ?? $defaultDays;
+    return $days * 24 * 60 * 60;
+  }
 }

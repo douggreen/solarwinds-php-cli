@@ -677,6 +677,28 @@ SQL
    */
   public function detectGapsInSyncedRanges(string $requestedStart, string $requestedEnd): array
   {
+    // Clamp requested start time to API retention limit
+    // E.g., if retention is 14 days and user requests 1 month, only fetch last 14 days
+    $retentionLimit = $this->config->getApiRetentionLimit();
+    $retentionStart = gmdate('Y-m-d\TH:i:s\Z', time() - $retentionLimit);
+
+    // If requested start is before retention limit, mark that range as beyond retention
+    $gapsBeforeRetention = [];
+    if ($requestedStart < $retentionStart) {
+      $gapsBeforeRetention[] = [
+        'start' => $requestedStart,
+        'end' => min($retentionStart, $requestedEnd),
+        'reason' => 'beyond_retention',
+      ];
+      // Adjust requested start to retention limit for actual fetching
+      $requestedStart = $retentionStart;
+    }
+
+    // If entire range is before retention limit, return early
+    if ($requestedStart >= $requestedEnd) {
+      return $gapsBeforeRetention;
+    }
+
     // Get all completed sync ranges that overlap with requested range.
     $stmt = $this->db->prepare(<<<'SQL'
 SELECT start_time, end_time
@@ -736,7 +758,8 @@ SQL
       ];
     }
 
-    return $gaps;
+    // Merge beyond-retention gaps with regular gaps
+    return array_merge($gapsBeforeRetention, $gaps);
   }
 
   /**
