@@ -5,9 +5,9 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
-2. **Trusted Bot IP Verification** - Enhance bot detection with reverse DNS lookup
-3. Review and fix ExploitsCommand issues
+1. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
+2. **Implement DDoS Detection** - Detect coordinated exploit campaigns
+3. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
 4. Research and implement testing framework
 
 ## Architecture Refactoring
@@ -74,11 +74,14 @@ This document tracks the remaining work to complete the migration and enhancemen
 **Remaining Work:**
 
 1. **Add Reverse DNS Verification Fallback**
-   - For bots without published IP ranges (ClaudeBot, emerging crawlers)
+   - For bots without published IP ranges (IAHarvester, ClaudeBot, emerging crawlers)
    - Use PHP's `gethostbyaddr()` for reverse DNS
    - Use `gethostbyname()` or `dns_get_record()` for forward verification
-   - Verify hostname matches expected pattern (e.g., `*.googlebot.com`, `*.crawl.yahoo.net`)
+   - Verify hostname matches expected pattern:
+     - `*.googlebot.com`, `*.crawl.yahoo.net` (search engines)
+     - `*.archive.org` (Internet Archive/IAHarvester)
    - Cache DNS lookups to avoid performance impact
+   - **Security:** This prevents User-Agent spoofing - requires both UA match AND DNS verification
    - Reference: [Google's bot verification documentation](https://developers.google.com/search/docs/crawling-indexing/verifying-googlebot)
 
 2. **Add Bot Spoofing Attack Pattern**
@@ -119,60 +122,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 - 🔲 `src/Services/BlockingService.php` - Needs integration
 - 🔲 `src/Commands/ExploitsCommand.php` - Needs bot spoofing pattern
 - 🔲 `.solarwinds.yml.example` - Needs bot_verification config
-
-## ExploitsCommand Enhancements
-
-### Current Issues to Review
-
-1. **Review Low-Volume Traffic Classification**
-   - 8 requests over 1.9 days (0.2/hour) being classified as "High-Volume Traffic" and appearing in blocking recommendations
-   - Need minimum request threshold before classifying IPs as threats worthy of blocking consideration
-   - `classifyThreatType()` currently returns 'High-Volume Traffic' as default for any traffic that doesn't match other patterns
-   - Should either:
-     - Add minimum threshold check (e.g., 50+ requests) before returning threat classification
-     - Filter out low-volume IPs earlier in campaign creation
-     - Change default from "High-Volume Traffic" to something more appropriate for edge cases
-
-2. **Review SCANNER Detection False Positives**
-   - IAHarvester (Internet Archive) being flagged as SCANNER for legitimate image requests
-   - Example: `/sites/default/files/styles/whole_max/public/images/580extensionmap.jpg.webp?itok=...&cb=...`
-   - User-Agent: `IAHarvester/1.0 (+https://archive-it.org/organizations/...)`
-   - Response: 100% successful (2xx), no failed requests
-   - Issue: 12 requests out of 12,831 total flagged as scanner activity
-   - Need to investigate why these specific paths trigger SCANNER detection
-   - Possible causes:
-     - Query parameter patterns matching scanner regex?
-     - Overly broad scanner detection patterns?
-     - Should trusted bots (like IAHarvester) bypass scan detection entirely?
-
-### Add functionality from ThreatsCommand
-
-1. **Add DDoS Detection (`detectDDoSPatterns()`)**
-   - Detect coordinated exploit campaigns
-   - Group by host + target path + time window (1-minute windows)
-   - Look for 10+ coordinating IPs attacking same target
-   - Detect 1000+ requests in window at 100+ requests/second
-   - Would help identify distributed exploit campaigns vs single-source attacks
-
-2. **Add Advanced Threat Classification (`classifyThreatType()`)**
-   - More sophisticated classification than current `classifyIpBehavior()`
-   - Uses URI duplication ratio to detect "Exploit Probing" (same request repeated)
-   - Uses parameter scanning ratio to detect "Parameter Scanner" (same path, varying params)
-   - Uses POST ratio analysis to detect "Brute-force Attack"
-   - Uses request rate thresholds to detect "Load Attack", "DoS Attack", "Aggressive Bot"
-   - Provides more specific threat types:
-     - Exploit Probing
-     - Parameter Scanner
-     - Load Attack
-     - Brute-force Attack
-     - High-Rate Crawler
-     - Web Scraper / Crawler
-     - DoS Attack (High Rate)
-     - Aggressive Crawler
-     - Targeted Endpoint Attack
-     - Vulnerability Scanner
-     - Aggressive Bot
-     - High-Volume Traffic
 
 ## User Interface Improvements
 
