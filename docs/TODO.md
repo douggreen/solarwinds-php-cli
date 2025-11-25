@@ -217,6 +217,13 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 ## Future Enhancements (Lower Priority)
 
 ### Advanced Features
+- **Dynamic Attack Pattern Learning**: Adaptive pattern detection based on traffic analysis
+  - Automatically identify suspicious root-level PHP files (high volume, non-200 responses)
+  - Build reputation scores for observed attack patterns over time
+  - Suggest new patterns for review based on traffic (e.g., /alfa.php, /abcd.php with 1000+ requests)
+  - Quarterly review system to approve learned patterns
+  - Balance between static baseline patterns (framework-specific) and dynamic adaptation
+  - Current baseline: test.php, temp.php, 1.php, x.php, shell.php based on observed traffic
 - **IP Range Filtering**: CIDR notation support for network-based filtering
 - **Complex Query Combinations**: Boolean logic for advanced query construction
 - **Flexible Time Specifications**: Natural language time parsing improvements
