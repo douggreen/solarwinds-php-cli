@@ -5,63 +5,8 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. Implement remaining commands
+1. Review and fix ExploitsCommand issues
 2. Research and implement testing framework
-
-## Remaining Command Implementations
-
-The following commands require new core implementations as they cannot be effectively replaced by aliases:
-
-### **1. page (PageCommand)**
-- **Purpose**: General page access analysis excluding static files and 4xx errors
-- **Query Pattern**: `( -/sites/default/files )` - excludes static files, includes all status codes
-- **Default Display**: Detailed page access logs
-- **Required Argument**: Page/path to analyze
-- **Validation**: Page argument is required
-- **Example Usage**: `page --1h /login`, `page --day /admin --status`
-
-### **2. pagebyip (PageByIpCommand)**
-- **Purpose**: Web request activity analysis for specific IP addresses or IP lists
-- **Query Pattern**: `{ json.client_ip:IP_QUERY } { json.resp_status:-40 } -/sites/default/files`
-- **IP Handling**: Single IP or comma/space-separated lists with automatic OR syntax conversion
-- **Dynamic Output**: Pages for single IP, host summary for multiple IPs
-- **Required Argument**: IP address or IP list
-- **Validation**: IP argument is required
-- **Example Usage**: `pagebyip --1h 192.168.1.100`, `pagebyip --day '10.1.1.1,10.1.1.2'`
-
-### **3. pingdom (PingdomCommand)**
-- **Purpose**: Pingdom monitoring service error analysis
-- **Query Pattern**: `json.req_user_agent:pingdom AND -json.resp_status:200 AND -json.resp_status:301 AND -json.resp_status:304`
-- **Focus**: Non-successful responses from Pingdom monitoring
-- **Default Display**: Custom format with host,status,uri,timestamp
-- **Example Usage**: `pingdom --day`, `pingdom --1h --status`
-
-### **4. importer (ImporterCommand)**
-- **Purpose**: Content import activity analysis
-- **Query Pattern**: `{ json.type:mtc_importer } { json.severity:Info }`
-- **Default Display**: ips-only format (IP address analysis)
-- **Default Time**: 1 day
-- **Example Usage**: `importer --1h`, `importer --day --status`
-
-### **5. antibot (AntibotCommand)**
-- **Purpose**: Anti-bot measure effectiveness analysis
-- **Query Pattern**: `{ json.resp_status:429 } OR { json.resp_status:503 }`
-- **Focus**: Rate limiting and bot blocking responses
-- **Default Display**: host-status format
-- **Default Time**: 1 hour
-- **Example Usage**: `antibot --1h`, `antibot --day --country`
-
-## Implementation Priority
-
-**Phase 1 (Simple):** page, importer, antibot
-- Follow established patterns closely
-- Standard query building and validation
-
-**Phase 2 (Medium):** pagebyip, pingdom
-- Require custom output formatting
-- More complex query logic
-
-**Note:** php-error was implemented via the `--drupal` display flag and aliases rather than as a separate command. pentest was replaced by the xss, sql-injection, and pentest aliases, and superseded by the comprehensive exploits command.
 
 ## ExploitsCommand Enhancements
 
