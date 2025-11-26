@@ -4,6 +4,20 @@
 
 **PROJECT PRIVACY NOTE:** The original scripts contained client-specific site names (mtc.ca.gov, abag.ca.gov, etc.) that were intentionally moved to configuration. All documentation should use generic examples (example.com, site1.example.com, etc.) to avoid exposing client details.
 
+## :red_circle: SESSION STARTUP PROTOCOL (DO THIS FIRST)
+
+When starting any new session, BEFORE responding to the user:
+
+1. **Read docs/TODO.md completely** (no line limits)
+2. **Present TODO list immediately** in this format:
+   - Group tasks as numbered, actionable options by category
+   - Include brief descriptions for each task
+   - End with: "Which of these would you like to work on?"
+   - Do NOT dump file contents with cat/head/tail
+3. **Wait for user to choose a task** - Do not assume what they want to work on
+
+**This is non-negotiable. If you respond to the user without presenting the TODO list first, you have violated the protocol.**
+
 ## CORE PRINCIPLES (Always Applicable)
 
 ### **:red_circle: CRITICAL WORKFLOW CONSTRAINTS** (Most Important - Repeatedly Violated)
@@ -54,20 +68,11 @@
 
 ### **TODO List Presentation**
 When the user asks to "show me the TODO list" or similar:
-- Read `docs/TODO.md` completely (no line limits)
-- Present tasks as numbered, actionable options grouped by category
-- Include brief descriptions for each task
-- End with the question: "Which of these would you like to work on?"
-- Do NOT just dump the file contents with cat/head/tail
+- Use the same format defined in SESSION STARTUP PROTOCOL above
 
 **After every commit:**
-- Automatically present the TODO list in the format above
+- Automatically present the TODO list using the SESSION STARTUP PROTOCOL format
 - This helps maintain momentum and allows the user to choose the next task
-
-**At the start of each new session:**
-- Automatically present the TODO list in the format above
-- This establishes context and lets the user choose what to work on immediately
-- Helps reinforce the TODO presentation pattern
 
 ### **Collaboration Management**
 - Watch for cascade violations - Multiple pattern violations signal collaboration breakdown threshold
