@@ -207,12 +207,26 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 
 ### Display and Output Improvements
 
-3. **Query Display Control**: Only show query output when debug mode is enabled
+2. **Highlight Blocking Decision Factors in Campaign Display**
+   - Color-code table row values (scan types, severity, time span, volume, behavior, origin%) that contribute to ACTION recommendations
+   - Visual indicators show WHY a campaign is BLOCK NOW vs BLOCK MAYBE vs ALLOW
+   - Help users quickly understand the severity factors driving blocking decisions
+   - Color scheme: BLOCK NOW in red, BLOCK MAYBE in orange
+   - Highlight the specific factors contributing to each blocking decision
+   - Improves threat assessment speed and decision confidence
+
+3. **Alphabetize and Color-Code Legend Sections**
+   - Sort all legend items alphabetically (Scan Types, Action, Behavior, etc.)
+   - Apply same color scheme in legend as used for blocking decision highlighting
+   - Consistent visual language between legend and campaign display
+   - Makes legend easier to scan and reference
+
+4. **Query Display Control**: Only show query output when debug mode is enabled
 
 ### Code Refactoring
 
-4. **Display Service Consolidation**: Refactor color and formatting logic for consistency
-5. **Enhanced Debugging Framework**: Add comprehensive API request/response details and query transformation tracking
+5. **Display Service Consolidation**: Refactor color and formatting logic for consistency
+6. **Enhanced Debugging Framework**: Add comprehensive API request/response details and query transformation tracking
 
 ## Future Enhancements (Lower Priority)
 

@@ -462,21 +462,24 @@ abstract class BaseSolarWindsCommand extends Command
     $endDate = date('M j, Y g:i A', strtotime($endTime));
 
     $this->io->writeln(sprintf(
-      '<comment>About to query %s (%s to %s)</comment>',
+      '<comment>You requested %s which queries all records from %s to %s</comment>',
       $options['time']['human_readable'],
       $startDate,
       $endDate
     ));
 
     if ($estimatedCount > 0) {
-      $this->io->writeln(sprintf('<comment>Estimated: ~%s records from database</comment>', number_format($estimatedCount)));
+      $this->io->writeln(sprintf(
+        '<comment>This is approximately %s records - a very large query that may take several minutes.</comment>',
+        number_format($estimatedCount)
+      ));
     }
     else {
       $this->io->writeln('<comment>Note: This range may require syncing data from API (2-week retention limit applies)</comment>');
     }
 
     $this->io->newLine();
-    return $this->io->confirm('Continue?', FALSE);  // Default to No for safety
+    return $this->io->confirm('Do you want to continue with this query?', FALSE);  // Default to No for safety
   }
 
   /**
