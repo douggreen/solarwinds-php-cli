@@ -5,10 +5,15 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
-2. **Implement DDoS Detection** - Detect coordinated exploit campaigns
-3. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
-4. Research and implement testing framework
+1. **Fix Sync/Confirmation Prompt Order** - Sync logs and fill gaps BEFORE database counting and confirmation prompt
+   - Current behavior: Estimates database records → Shows confirmation → Syncs logs/fills gaps
+   - Expected behavior: Syncs logs/fills gaps → Estimates database records → Shows confirmation
+   - Issue: The confirmation prompt estimates records before syncing, so the count may be inaccurate
+   - Impact: User gets prompted about old data count, then system fetches new data anyway
+2. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
+3. **Implement DDoS Detection** - Detect coordinated exploit campaigns
+4. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
+5. Research and implement testing framework
 
 ## Architecture Refactoring
 
@@ -175,35 +180,25 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
    - Implement automated validation of backward compatibility
    - Set up continuous integration testing pipeline
 
-2. **SQLite Local Database Architecture (IN PROGRESS)**
-   - **NEW APPROACH:** Store all SolarWinds data locally in SQLite database
-   - **Key Changes:**
-     - SQLite with JSON column storage (handles HTTP + Drupal logs)
-     - Generated columns with indexes for fast queries (client_ip, req_method, resp_status, type, severity)
-     - Auto-sync: Automatically fetch missing data before queries
-     - Local-first: All queries run against SQLite (fast!)
-     - Retention: Keep 2 weeks max (SolarWinds API limit) + indefinite for bad actors
-   - **New Query Syntax:**
-     - Aliases use SQL WHERE clause conditions (simplified)
-     - Example: `search req_method='POST' AND resp_status=200 --1d --host`
-     - Code wraps in: `SELECT * FROM logs WHERE time >= ... AND ({user_conditions})`
-     - Time flags (--1d, --15m, --2w) automatically add time filters
-   - **Benefits:**
-     - 100x faster queries (local DB vs API calls)
-     - Offline analysis capability
-     - Historical data preservation (backup before SolarWinds deletes)
-     - Complex SQL queries possible (joins, aggregations)
-     - Reduced API calls to SolarWinds
-   - **Implementation Status:**
-     - ✅ DatabaseService created with JSON schema
-     - ✅ Integrated with BaseSolarWindsCommand
-     - ✅ Auto-sync logic with range detection
-     - ✅ Malformed JSON handling (strip control chars, preserve all data)
-     - ✅ Add `retrieved_at` metadata (timestamp when log was fetched from API)
-     - ✅ All commands updated to build SQL WHERE clauses
-     - ✅ SearchCommand supports --sql-where for direct SQL queries
-     - ✅ SearchCommand supports --query for backward compatibility (translates SolarWinds syntax to SQL)
-     - ✅ All aliases migrated to SQL WHERE clause syntax
+2. **Cleanup Codebase & Identify Refactoring Opportunities**
+   - Review entire codebase for code quality issues
+   - Identify duplicate code that can be consolidated
+   - Look for long methods that should be broken down
+   - Find opportunities to improve naming and clarity
+   - Identify violations of SOLID principles
+   - Check for unused code, variables, or imports
+   - Look for magic numbers and strings that should be constants
+   - Review error handling and logging consistency
+   - Identify areas where design patterns could improve code structure
+   - Document findings and prioritize refactoring tasks
+
+3. **Upgrade Symfony Console to Version 7+**
+   - Current version: Symfony Console 6.x
+   - Upgrade to Symfony 7+ to access `setHidden()` method for InputOption
+   - This will allow hiding hundreds of time-range options from help output
+   - Use `setHidden(true)` on all dynamically-generated time options (--1m, --2m, etc.)
+   - Test all commands after upgrade to ensure compatibility
+   - Benefits: Much cleaner help output (currently 769 lines, mostly time options)
 
 ### Display and Output Improvements
 
@@ -249,6 +244,13 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 - **API Integration**: REST API for programmatic access
 
 ### Performance Optimizations
+- **Database Retention & Cleanup Policy**:
+  - Review data retention strategy as database grows over time
+  - Consider implementing automatic cleanup of old logs (e.g., >2 weeks)
+  - Option to preserve logs indefinitely for flagged bad actors/attackers
+  - Add commands to manage retention rules and database size
+  - Monitor database growth and performance impact
+  - Consider archiving strategies for historical data
 - **Parallel Batch Queries with Multi-Threading**:
   - Run the 4 exploit batches in parallel instead of sequentially
   - Speed up 2-week queries (currently taking minutes)

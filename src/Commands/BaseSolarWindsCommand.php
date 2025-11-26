@@ -200,6 +200,9 @@ abstract class BaseSolarWindsCommand extends Command
         $description = "Last $timeKey";
       }
 
+      // NOTE: Symfony Console 6 doesn't support hiding options.
+      // Upgrade to Symfony 7+ to use setHidden() and clean up help output.
+      // For now, the custom help text provides a concise summary.
       $this->addOption($timeKey, NULL, InputOption::VALUE_NONE, $description);
     }
 
@@ -576,6 +579,7 @@ abstract class BaseSolarWindsCommand extends Command
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
       'json' => $input->getOption('json'),
+      'yes' => $input->getOption('yes'),
       'no_group' => $input->getOption('no-group'),
       'substitute_vars' => $input->getOption('substitute-vars'),
       'country_filter' => $input->getOption('country-filter'),
@@ -1452,18 +1456,26 @@ abstract class BaseSolarWindsCommand extends Command
   protected function syncLogsToDatabase(array $options, bool $showCacheMessage = TRUE): void
   {
     // Check if debug log exists and ask to clear it
+    $autoConfirm = $options['filters']['yes'] ?? FALSE;
     if (!$this->jsonMode && ($options['filters']['debug'] ?? FALSE)) {
       $logPath = getenv('HOME') . '/.solarwinds/sync-debug.log';
       if (file_exists($logPath)) {
         $fileSize = filesize($logPath);
         $fileSizeKb = round($fileSize / 1024, 1);
-        $choice = $this->io->confirm(
-          "Debug log exists ($fileSizeKb KB). Clear it and start fresh?",
-          TRUE
-        );
-        if ($choice) {
+        // With --yes flag, automatically clear the log
+        if ($autoConfirm) {
           unlink($logPath);
-          $this->io->writeln('<info>Debug log cleared</info>');
+          $this->io->writeln('<info>Debug log cleared (--yes flag)</info>');
+        }
+        else {
+          $choice = $this->io->confirm(
+            "Debug log exists ($fileSizeKb KB). Clear it and start fresh?",
+            TRUE
+          );
+          if ($choice) {
+            unlink($logPath);
+            $this->io->writeln('<info>Debug log cleared</info>');
+          }
         }
       }
     }

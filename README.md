@@ -460,7 +460,7 @@ The `exploits` command provides comprehensive security threat detection and camp
 ```bash
 # Analyze recent activity
 solarwinds exploits --1h                 # Last hour
-solarwinds exploits --15m --min-severity=high  # Recent critical threats
+solarwinds exploits --15m --show-severity-high  # Recent critical threats
 
 # Automated monitoring (cron)
 */15 * * * * /path/to/solarwinds exploits --15m >> /var/log/solarwinds/realtime.log 2>&1
