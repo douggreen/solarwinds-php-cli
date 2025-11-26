@@ -64,6 +64,11 @@ When the user asks to "show me the TODO list" or similar:
 - Automatically present the TODO list in the format above
 - This helps maintain momentum and allows the user to choose the next task
 
+**At the start of each new session:**
+- Automatically present the TODO list in the format above
+- This establishes context and lets the user choose what to work on immediately
+- Helps reinforce the TODO presentation pattern
+
 ### **Collaboration Management**
 - Watch for cascade violations - Multiple pattern violations signal collaboration breakdown threshold
 - Recognize collaboration breakdown threshold - When correction overhead exceeds implementation benefit
