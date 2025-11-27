@@ -966,22 +966,22 @@ abstract class BaseSolarWindsCommand extends Command
   }
 
   /**
-   * Handle interrupt signals (SIGINT/SIGTERM).
+   * Handle interrupt signals from pcntl (SIGINT/SIGTERM).
    *
    * Sets interrupted flag on first signal, forces exit on second signal.
+   * This is the callback for pcntl_signal, separate from Symfony's handleSignal.
    *
    * @param int $signal Signal number received
-   * @param int|false $previousExitCode Previous exit code if command was interrupted
-   * @return int|false Exit code to use, or FALSE to continue
+   * @param mixed $signinfo Signal information (array when using async signals)
+   * @return void
    */
-  public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
+  public function handlePcntlSignal(int $signal, mixed $signinfo = NULL): void
   {
     if (self::$interrupted) {
       // Second signal - force exit immediately.
-      return 1;
+      exit(1);
     }
     self::$interrupted = TRUE;
-    return FALSE;
   }
 
   /**
@@ -1014,8 +1014,8 @@ abstract class BaseSolarWindsCommand extends Command
         pcntl_async_signals(TRUE);
       }
 
-      pcntl_signal(SIGINT, [self::class, 'handleSignal']);
-      pcntl_signal(SIGTERM, [self::class, 'handleSignal']);
+      pcntl_signal(SIGINT, [$this, 'handlePcntlSignal']);
+      pcntl_signal(SIGTERM, [$this, 'handlePcntlSignal']);
     }
   }
 
