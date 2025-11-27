@@ -21,9 +21,9 @@ use PDO;
 class BotIpService
 {
   /**
-   * Database connection.
+   * Database service.
    */
-  protected PDO $db;
+  protected DatabaseService $database;
 
   /**
    * Configuration for bot IP sources.
@@ -68,11 +68,11 @@ class BotIpService
   /**
    * Constructor.
    *
-   * @param PDO $db Database connection
+   * @param DatabaseService $database Database service
    */
-  public function __construct(PDO $db)
+  public function __construct(DatabaseService $database)
   {
-    $this->db = $db;
+    $this->database = $database;
   }
 
   /**
@@ -115,7 +115,7 @@ class BotIpService
     $this->ensureRecentData($botName);
 
     // Get all ranges for this bot.
-    $stmt = $this->db->prepare('SELECT ip_range FROM bot_ip_ranges WHERE bot_name = :bot_name');
+    $stmt = $this->database->prepare('SELECT ip_range FROM bot_ip_ranges WHERE bot_name = :bot_name');
     $stmt->execute([':bot_name' => $botName]);
     $ranges = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
@@ -278,7 +278,7 @@ class BotIpService
   protected function ensureRecentData(string $botName): void
   {
     // Check metadata for last update time.
-    $stmt = $this->db->prepare('SELECT last_checked, enabled FROM bot_ip_metadata WHERE bot_name = :bot_name');
+    $stmt = $this->database->prepare('SELECT last_checked, enabled FROM bot_ip_metadata WHERE bot_name = :bot_name');
     $stmt->execute([':bot_name' => $botName]);
     $metadata = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -310,7 +310,7 @@ class BotIpService
 
     // Update last_checked timestamp (even if download fails).
     $now = gmdate('Y-m-d H:i:s');
-    $this->db->exec("
+    $this->database->exec("
       INSERT INTO bot_ip_metadata (bot_name, source_url, last_checked, last_updated, range_count)
       VALUES ('{$botName}', '{$sourceUrl}', '{$now}', '{$now}', 0)
       ON CONFLICT(bot_name) DO UPDATE SET last_checked = '{$now}'
@@ -324,15 +324,15 @@ class BotIpService
     }
 
     // Start transaction for atomic update.
-    $this->db->beginTransaction();
+    $this->database->beginTransaction();
 
     try {
       // Delete old ranges for this bot.
-      $stmt = $this->db->prepare('DELETE FROM bot_ip_ranges WHERE bot_name = :bot_name');
+      $stmt = $this->database->prepare('DELETE FROM bot_ip_ranges WHERE bot_name = :bot_name');
       $stmt->execute([':bot_name' => $botName]);
 
       // Insert new ranges.
-      $stmt = $this->db->prepare('
+      $stmt = $this->database->prepare('
         INSERT INTO bot_ip_ranges (bot_name, ip_range, source, updated_at)
         VALUES (:bot_name, :ip_range, :source, :updated_at)
       ');
@@ -347,17 +347,17 @@ class BotIpService
       }
 
       // Update metadata with successful update.
-      $this->db->exec("
+      $this->database->exec("
         UPDATE bot_ip_metadata
         SET last_updated = '{$now}', range_count = " . count($ranges) . "
         WHERE bot_name = '{$botName}'
       ");
 
-      $this->db->commit();
+      $this->database->commit();
       return TRUE;
     }
     catch (\Exception $e) {
-      $this->db->rollBack();
+      $this->database->rollBack();
       return FALSE;
     }
   }
@@ -429,7 +429,7 @@ class BotIpService
    */
   public function getBotStatistics(): array
   {
-    $stmt = $this->db->query('
+    $stmt = $this->database->query('
       SELECT bot_name, source_url, last_checked, last_updated, range_count, enabled
       FROM bot_ip_metadata
       ORDER BY bot_name
