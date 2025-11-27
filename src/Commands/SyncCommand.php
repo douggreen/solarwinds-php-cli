@@ -13,6 +13,7 @@ namespace SolarWinds\Commands;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Sync Command - Downloads and stores logs without analysis.
@@ -97,7 +98,7 @@ class SyncCommand extends BaseSolarWindsCommand
    */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
-    $this->io = new \Symfony\Component\Console\Style\SymfonyStyle($input, $output);
+    $this->io = new SymfonyStyle($input, $output);
     $this->jsonMode = $input->getOption('json');
 
     try {
