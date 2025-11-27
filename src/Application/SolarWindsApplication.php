@@ -101,6 +101,9 @@
 namespace SolarWinds\Application;
 
 use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 use SolarWinds\Commands\BotCommand;
 use SolarWinds\Commands\ExploitsCommand;
 use SolarWinds\Commands\SearchCommand;
@@ -139,6 +142,67 @@ class SolarWindsApplication extends Application
 
     // Set default command to list available commands.
     $this->setDefaultCommand('list');
+  }
+
+  /**
+   * Override run() to transform shorthand time options to --time=VALUE.
+   *
+   * This allows backward compatibility with --2w, --15m, etc. while keeping
+   * help output clean by only registering --time option.
+   *
+   * Transformations:
+   * - --2w → --time=2w
+   * - --15m → --time=15m
+   * - --hour → --time=hour
+   * - --yesterday → --time=yesterday
+   * - --all → --time=all
+   *
+   * @param InputInterface|null $input Input interface
+   * @param OutputInterface|null $output Output interface
+   * @return int Exit code
+   */
+  public function run(InputInterface $input = NULL, OutputInterface $output = NULL): int
+  {
+    // Transform shorthand options to their full --option=value equivalents.
+    if ($input === NULL && isset($_SERVER['argv'])) {
+      $argv = $_SERVER['argv'];
+      $transformed = [];
+
+      foreach ($argv as $arg) {
+        // Match time patterns: --2w, --15m, --3M, --7D, etc.
+        if (preg_match('/^--(\d+[mhdwMyD])$/', $arg, $matches)) {
+          $transformed[] = '--time=' . $matches[1];
+        }
+        // Match special time keywords: --hour, --day, --week, --yesterday, --all.
+        elseif (preg_match('/^--(hour|day|week|yesterday|all)$/', $arg, $matches)) {
+          $transformed[] = '--time=' . $matches[1];
+        }
+        // Match type filters: --show-type-xss → --show-type=xss.
+        elseif (preg_match('/^--show-type-(.+)$/', $arg, $matches)) {
+          $transformed[] = '--show-type=' . $matches[1];
+        }
+        // Match severity filters: --show-severity-high → --show-severity=high.
+        elseif (preg_match('/^--show-severity-(.+)$/', $arg, $matches)) {
+          $transformed[] = '--show-severity=' . $matches[1];
+        }
+        // Match action filters: --show-action-allow → --show-action=allow.
+        elseif (preg_match('/^--show-action-(.+)$/', $arg, $matches)) {
+          $transformed[] = '--show-action=' . $matches[1];
+        }
+        // Match site filters: --abag, --barc, etc. → --site=abag, --site=barc.
+        elseif (preg_match('/^--(abag|barc|bayren|bamblog|blog|hqq|pba|sfbra|mtc)$/', $arg, $matches)) {
+          $transformed[] = '--site=' . $matches[1];
+        }
+        else {
+          $transformed[] = $arg;
+        }
+      }
+
+      // Update $_SERVER['argv'] for ArgvInput to use.
+      $_SERVER['argv'] = $transformed;
+    }
+
+    return parent::run($input, $output);
   }
 
   /**

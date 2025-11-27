@@ -52,7 +52,6 @@ This document tracks the remaining work to complete the migration and enhancemen
 - `src/Services/SyncTrackingService.php` - New file
 - `src/Services/BotIpService.php` - Update to use DatabaseService instead of raw PDO
 - `src/Commands/ExploitsCommand.php` - Use CampaignAnalysisService
-- `src/Commands/ThreatsCommand.php` - Use CampaignAnalysisService
 - `src/Commands/BaseSolarWindsCommand.php` - Use SyncTrackingService
 
 ## Security Enhancements
@@ -164,7 +163,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 
 **Affected Files:**
 - `src/Commands/ExploitsCommand.php` - Add new option definitions
-- `src/Commands/ThreatsCommand.php` - Add new option definitions (if applicable)
 - `docs/EXPLOITS.md` - Update documentation examples
 - `README.md` - Update usage examples
 - `CHANGELOG.md` - Document deprecations and new flags
@@ -192,13 +190,15 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
    - Identify areas where design patterns could improve code structure
    - Document findings and prioritize refactoring tasks
 
-3. **Upgrade Symfony Console to Version 7+**
-   - Current version: Symfony Console 6.x
-   - Upgrade to Symfony 7+ to access `setHidden()` method for InputOption
-   - This will allow hiding hundreds of time-range options from help output
-   - Use `setHidden(true)` on all dynamically-generated time options (--1m, --2m, etc.)
-   - Test all commands after upgrade to ensure compatibility
-   - Benefits: Much cleaner help output (currently 769 lines, mostly time options)
+3. **:white_check_mark: Upgrade Symfony Console to Version 7+ and Clean Help Output** (COMPLETED 2025-01-26)
+   - :white_check_mark: Upgraded from Symfony Console 6.x to 7.3.6
+   - :white_check_mark: Fixed `handleSignal()` method signature to match Symfony 7 API
+   - :white_check_mark: Implemented argv transformation in `SolarWindsApplication::run()` for backward compatibility
+   - :white_check_mark: Removed 500+ individual time option registrations (--1m, --2m, etc.)
+   - :white_check_mark: Transform shorthand options to --time=VALUE: --2w → --time=2w, --hour → --time=hour
+   - :x: Note: `setHidden()` method does NOT exist in Symfony 7 (open feature request #54206)
+   - **Result: Help output reduced from 770 lines to 170 lines (78% reduction)**
+   - All shorthand time options (--2w, --15m, --hour, --yesterday, etc.) still work via transformation
 
 ### Display and Output Improvements
 
@@ -254,7 +254,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 - **Parallel Batch Queries with Multi-Threading**:
   - Run the 4 exploit batches in parallel instead of sequentially
   - Speed up 2-week queries (currently taking minutes)
-  - Apply same pattern to ThreatsCommand if needed
   - Parallelize volume analysis IP queries (currently sequential)
   - Implementation options: Guzzle async HTTP, ReactPHP, amphp, or other async solutions
 - **Pagination Optimization**: Improved memory usage for large result sets

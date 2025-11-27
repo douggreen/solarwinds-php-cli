@@ -177,39 +177,12 @@ abstract class BaseSolarWindsCommand extends Command
     // Load site mappings from configuration (must happen here after config is initialized).
     $this->siteHosts = $this->config->getSiteHostMappings();
 
-    // Get dynamic time mappings.
-    $timeMappings = self::getTimeMappings();
-
-    // Add all time options dynamically.
-    foreach ($timeMappings as $timeKey => $timeValue) {
-      [$start, $end] = $timeValue;
-
-      // Create appropriate descriptions.
-      if (str_ends_with($timeKey, 'D')) {
-        if ($timeKey === '1D' || $timeKey === 'yesterday') {
-          $description = 'Yesterday (full day)';
-        }
-        else {
-          $days = str_replace('D', '', $timeKey);
-          $description = "$days days ago (full day)";
-        }
-      } elseif ($timeKey === 'hour' || $timeKey === 'day' || $timeKey === 'week') {
-        $description = "Last 1 " . $timeKey;
-      }
-      else {
-        $description = "Last $timeKey";
-      }
-
-      // NOTE: Symfony Console 6 doesn't support hiding options.
-      // Upgrade to Symfony 7+ to use setHidden() and clean up help output.
-      // For now, the custom help text provides a concise summary.
-      $this->addOption($timeKey, NULL, InputOption::VALUE_NONE, $description);
-    }
-
     $this
-      // Alternative time specification.
+      // Time specification.
+      // Note: Shorthand options like --2w, --15m are transformed to --time=2w, --time=15m
+      // by SolarWindsApplication::run() for backward compatibility while keeping help clean.
       ->addOption('time', 't', InputOption::VALUE_REQUIRED,
-        'Time range (alternative to --1h, --1d flags)', NULL)
+        'Time range (e.g., 2w, 15m, 3M, 7D, hour, yesterday, all)', NULL)
       ->addOption('since', NULL, InputOption::VALUE_REQUIRED,
         'Start time (e.g., "2 hours ago")')
       ->addOption('until', NULL, InputOption::VALUE_REQUIRED,
@@ -369,21 +342,10 @@ abstract class BaseSolarWindsCommand extends Command
       ];
     }
 
-    // Check for individual time flags using dynamic mappings.
+    // Get time mappings for lookup.
     $timeMappings = self::getTimeMappings();
 
-    foreach ($timeMappings as $flag => $times) {
-      if ($input->getOption($flag)) {
-        [$start, $end] = $times;
-        return [
-          'start_time' => $start,
-          'end_time' => $end,
-          'human_readable' => "last $flag"
-        ];
-      }
-    }
-
-    // Fall back to --time option if provided.
+    // Check for --time option (which includes transformed shorthand options like --2w).
     if ($timeOption && isset($timeMappings[$timeOption])) {
       [$start, $end] = $timeMappings[$timeOption];
       return [
@@ -904,15 +866,18 @@ abstract class BaseSolarWindsCommand extends Command
    *
    * Sets interrupted flag on first signal, forces exit on second signal.
    *
-   * @param int $signo Signal number received
+   * @param int $signal Signal number received
+   * @param int|false $previousExitCode Previous exit code if command was interrupted
+   * @return int|false Exit code to use, or FALSE to continue
    */
-  public static function handleSignal(int $signo): void
+  public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
   {
     if (self::$interrupted) {
       // Second signal - force exit immediately.
-      exit(1);
+      return 1;
     }
     self::$interrupted = TRUE;
+    return FALSE;
   }
 
   /**
