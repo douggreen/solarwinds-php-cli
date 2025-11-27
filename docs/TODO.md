@@ -5,15 +5,10 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. **Fix Sync/Confirmation Prompt Order** - Sync logs and fill gaps BEFORE database counting and confirmation prompt
-   - Current behavior: Estimates database records → Shows confirmation → Syncs logs/fills gaps
-   - Expected behavior: Syncs logs/fills gaps → Estimates database records → Shows confirmation
-   - Issue: The confirmation prompt estimates records before syncing, so the count may be inaccurate
-   - Impact: User gets prompted about old data count, then system fetches new data anyway
-2. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
-3. **Implement DDoS Detection** - Detect coordinated exploit campaigns
-4. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
-5. Research and implement testing framework
+1. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
+2. **Implement DDoS Detection** - Detect coordinated exploit campaigns
+3. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
+4. Research and implement testing framework
 
 ## Architecture Refactoring
 
