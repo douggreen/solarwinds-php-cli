@@ -1603,9 +1603,7 @@ abstract class BaseSolarWindsCommand extends Command
       $this->syncTracking->updateSyncStatus($syncId, 'in_progress');
 
       // Track malformed JSON entries and progress.
-      $totalFixed = 0;
-      $chunksCompleted = 0;
-      $rangeRecordsInserted = 0;
+      $totalFixed = $chunksCompleted = $rangeRecordsInserted = 0;
 
       // Create save callback to insert each page immediately.
       $saveCallback = function(array $pageLogs) use (&$totalNewLogs, &$totalFixed, &$rangeRecordsInserted) {
