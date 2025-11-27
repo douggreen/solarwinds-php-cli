@@ -165,6 +165,7 @@ class StatusCommand extends BaseSolarWindsCommand
         <info>solarwinds status --filter-status-code=404 --cols=path</info>   # 404 errors by path
         <info>solarwinds status --filter-status-code=5 --cols=country</info>  # 5xx errors by country
         <info>solarwinds status --cols=host,region</info>                     # Status codes by host and region
+' . self::getTimeRangeHelp() . '
         ');
 
     // Call parent to set up common options (includes --status-code-filter).
@@ -192,56 +193,19 @@ class StatusCommand extends BaseSolarWindsCommand
     $conditions = [];
     $params = [];
 
+    // Add status code filter if specified.
     if ($statusFilter) {
-      // Validate status filter format.
-      if (!preg_match('/^\d{1,3}$/', $statusFilter)) {
-        throw new \InvalidArgumentException("Invalid status filter format: $statusFilter. Must be 1-3 digits");
-      }
-
-      // Build status code filter based on the filter type.
-      if (strlen($statusFilter) === 3 && ctype_digit($statusFilter)) {
-        // Exact 3-digit code match.
-        $conditions[] = 'resp_status = :status';
-        $params[':status'] = (int) $statusFilter;
-      }
-      elseif (strlen($statusFilter) === 2 && ctype_digit($statusFilter)) {
-        // 2-digit prefix match (e.g., "50" matches 500, 501, 502, etc.).
-        $conditions[] = 'resp_status BETWEEN :status_start AND :status_end';
-        $params[':status_start'] = (int) ($statusFilter . '0');
-        $params[':status_end'] = (int) ($statusFilter . '9');
-      }
-      elseif (strlen($statusFilter) === 1 && ctype_digit($statusFilter)) {
-        // 1-digit prefix match (e.g., "5" matches 500-599).
-        $conditions[] = 'resp_status BETWEEN :status_start AND :status_end';
-        $params[':status_start'] = (int) ($statusFilter . '00');
-        $params[':status_end'] = (int) ($statusFilter . '99');
-      }
-      else {
-        throw new \InvalidArgumentException("Invalid status filter format: $statusFilter");
-      }
+      $conditions[] = $this->buildStatusCodeFilter($statusFilter, $params);
     }
 
     // Add site filtering if specified.
-    if (!empty($options['sites'])) {
-      $siteConditions = [];
-      $paramIndex = 0;
-      foreach ($options['sites'] as $site) {
-        // Get all hostnames for this site (handles multiple hosts per site).
-        $hostnames = $this->config->getHostnamesForSite($site);
-        foreach ($hostnames as $hostname) {
-          $paramName = ':site' . $paramIndex++;
-          $siteConditions[] = "orig_host = $paramName";
-          $params[$paramName] = $hostname;
-        }
-      }
-      if (!empty($siteConditions)) {
-        $conditions[] = '(' . implode(' OR ', $siteConditions) . ')';
-      }
+    $siteFilter = $this->buildSqlSiteFilter($options, $params, 0);
+    if ($siteFilter) {
+      $conditions[] = $siteFilter;
     }
 
     // Exclude static files.
-    $conditions[] = 'req_uri NOT LIKE :static_files';
-    $params[':static_files'] = '%/sites/default/files%';
+    $conditions[] = $this->excludeStaticFiles($params);
 
     return [
       'where' => implode(' AND ', $conditions),
@@ -254,40 +218,10 @@ class StatusCommand extends BaseSolarWindsCommand
    */
   protected function validateQuery(array $sqlQuery, array $options): void
   {
-    $explicitOptions = $options['display']['_explicit'] ?? [];
-
     // status always shows status codes, so --cols=status is redundant/forbidden.
-    if (isset($explicitOptions['status'])) {
-      throw new \InvalidArgumentException("--cols=status is redundant for status command (already displays status codes). Use other columns to add dimensions to status code analysis");
-    }
+    $this->validateNotRedundantColumn($options, 'status', 'status command');
 
-    // Validate status filter format if provided.
-    $statusFilter = $options['filters']['status_code_filter'];
-    if ($statusFilter) {
-      // Allow 1-digit (2, 3, 4, 5), 2-digit (20, 30, 40, etc.), or 3-digit (200, 404, etc.).
-      if (!preg_match('/^\d{1,3}$/', $statusFilter)) {
-        throw new \InvalidArgumentException("Invalid status filter format: $statusFilter. Must be 1-3 digits");
-      }
-
-      // Additional validation for logical ranges.
-      if (strlen($statusFilter) === 1) {
-        $digit = (int) $statusFilter;
-        if ($digit < 1 || $digit > 5) {
-          throw new \InvalidArgumentException("Invalid status range: {$statusFilter}xx. Status codes must start with 1-5");
-        }
-      }
-      elseif (strlen($statusFilter) === 2) {
-        $firstDigit = (int) $statusFilter[0];
-        if ($firstDigit < 1 || $firstDigit > 5) {
-          throw new \InvalidArgumentException("Invalid status range: {$statusFilter}x. Status codes must start with 1-5");
-        }
-      }
-      elseif (strlen($statusFilter) === 3) {
-        $firstDigit = (int) $statusFilter[0];
-        if ($firstDigit < 1 || $firstDigit > 5) {
-          throw new \InvalidArgumentException("Invalid status code: $statusFilter. Status codes must start with 1-5");
-        }
-      }
-    }
+    // Note: Status code filter validation is handled by buildStatusCodeFilter()
+    // in buildSearchQuery(), so no duplicate validation needed here.
   }
 }

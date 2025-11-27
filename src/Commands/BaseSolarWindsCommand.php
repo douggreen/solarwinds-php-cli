@@ -771,8 +771,7 @@ abstract class BaseSolarWindsCommand extends Command
 
     foreach ($logs as $log) {
       $matchesAll = TRUE;
-      $failedFilter = NULL;
-      $fieldValue = NULL;
+      $failedFilter = $fieldValue = NULL;
 
       // AND logic - all filters must match.
       foreach ($filters as $filter) {
@@ -1821,6 +1820,181 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     echo json_encode($output, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES) . "\n";
+  }
+
+  /**
+   * Get standardized time range documentation for command help text.
+   *
+   * Returns formatted documentation of all available time range options
+   * that can be appended to any command's help text.
+   *
+   * @return string Time range documentation in help format
+   */
+  protected static function getTimeRangeHelp(): string
+  {
+    return <<<'HELP'
+
+        <comment>Time Range Options:</comment>
+        <info>--Nm</info>                             Minutes (N = 1-60): --1m, --15m, --30m
+        <info>--Nh</info>                             Hours (N = 1-48): --1h, --6h, --24h
+        <info>--Nd</info>                             Days (N = 1-90): --1d, --7d, --30d
+        <info>--Nw</info>                             Weeks (N = 1-8): --1w, --2w, --4w
+        <info>--NM</info>                             Months (N = 1-12): --1M, --3M, --6M
+        <info>--Ny</info>                             Years (N = 1-10): --1y, --2y, --5y
+        <info>--ND</info>                             Full days ago (N = 1-365): --1D (yesterday), --7D (week ago)
+        <info>--yesterday</info>                      Yesterday (full day, same as --1D)
+        <info>--all</info>                            All available data
+        <info>-t, --time=VALUE</info>                 Alternative: use any of the above values (e.g., --time=2w)
+HELP;
+  }
+
+  /**
+   * Build SQL site filtering conditions with PDO parameters.
+   *
+   * Generates SQL conditions for filtering by site names using configured
+   * hostname mappings. Produces parameterized query fragments for safe
+   * SQL execution.
+   *
+   * @param array $options Parsed command options containing sites array
+   * @param array &$params Reference to params array to populate with PDO bindings
+   * @param int $startIndex Starting index for parameter naming (default: 0)
+   * @return string SQL condition string or empty string if no sites specified
+   */
+  protected function buildSqlSiteFilter(array $options, array &$params, int $startIndex = 0): string
+  {
+    if (empty($options['sites'])) {
+      return '';
+    }
+
+    $siteConditions = [];
+    $paramIndex = $startIndex;
+
+    foreach ($options['sites'] as $site) {
+      // Get all hostnames for this site (handles multiple hosts per site).
+      $hostnames = $this->config->getHostnamesForSite($site);
+      foreach ($hostnames as $hostname) {
+        $paramName = ':site' . $paramIndex++;
+        $siteConditions[] = "orig_host = $paramName";
+        $params[$paramName] = $hostname;
+      }
+    }
+
+    return empty($siteConditions) ? '' : '(' . implode(' OR ', $siteConditions) . ')';
+  }
+
+  /**
+   * Validate that a column is not redundant for this command.
+   *
+   * Some commands always display certain columns (e.g., bot command shows ua,
+   * status command shows status). This helper validates that users don't
+   * explicitly request columns that are already displayed by default.
+   *
+   * @param array $options Parsed command options
+   * @param string $columnName Column to check (e.g., 'ua', 'status')
+   * @param string $commandContext Description for error message (e.g., 'bot command')
+   * @throws \InvalidArgumentException If column is explicitly set and redundant
+   */
+  protected function validateNotRedundantColumn(array $options, string $columnName, string $commandContext): void
+  {
+    $explicitOptions = $options['display']['_explicit'] ?? [];
+
+    if (isset($explicitOptions[$columnName])) {
+      throw new \InvalidArgumentException(
+        "--cols=$columnName is redundant for $commandContext (already displays {$columnName}s). " .
+        "Use other columns to add dimensions to the analysis"
+      );
+    }
+  }
+
+  /**
+   * Validate minimum string length for user input.
+   *
+   * Ensures that search terms, patterns, and other text inputs meet minimum
+   * length requirements to prevent overly broad or meaningless queries.
+   *
+   * @param string $value Value to validate
+   * @param int $minLength Minimum required length
+   * @param string $fieldName Field name for error message
+   * @throws \InvalidArgumentException If value is too short
+   */
+  protected function validateMinLength(string $value, int $minLength, string $fieldName): void
+  {
+    $trimmed = trim($value);
+    if (empty($trimmed) || strlen($trimmed) < $minLength) {
+      throw new \InvalidArgumentException(
+        "$fieldName must be at least $minLength characters: '$value'"
+      );
+    }
+  }
+
+  /**
+   * Build SQL conditions for status code filtering.
+   *
+   * Supports flexible status code filtering:
+   * - 1-digit: "5" matches 500-599 (all 5xx errors)
+   * - 2-digit: "50" matches 500-509 (specific range)
+   * - 3-digit: "404" matches exactly 404 (exact match)
+   *
+   * Validates that status codes start with valid digits (1-5) and generates
+   * appropriate SQL conditions with PDO parameter bindings.
+   *
+   * @param string $statusFilter Status filter value (1-3 digits)
+   * @param array &$params Reference to params array to populate with PDO bindings
+   * @return string SQL condition
+   * @throws \InvalidArgumentException If status filter format or range is invalid
+   */
+  protected function buildStatusCodeFilter(string $statusFilter, array &$params): string
+  {
+    // Validate format.
+    if (!preg_match('/^\d{1,3}$/', $statusFilter)) {
+      throw new \InvalidArgumentException(
+        "Invalid status filter format: $statusFilter. Must be 1-3 digits"
+      );
+    }
+
+    // Validate logical range (1-5xx).
+    $firstDigit = (int) $statusFilter[0];
+    if ($firstDigit < 1 || $firstDigit > 5) {
+      $context = strlen($statusFilter) === 1 ? 'range' : 'code';
+      throw new \InvalidArgumentException(
+        "Invalid status $context: $statusFilter. Status codes must start with 1-5"
+      );
+    }
+
+    // Build condition based on length.
+    if (strlen($statusFilter) === 3) {
+      // Exact match: 404
+      $params[':status'] = (int) $statusFilter;
+      return 'resp_status = :status';
+    }
+    elseif (strlen($statusFilter) === 2) {
+      // Range match: 50 => 500-509
+      $params[':status_start'] = (int) ($statusFilter . '0');
+      $params[':status_end'] = (int) ($statusFilter . '9');
+      return 'resp_status BETWEEN :status_start AND :status_end';
+    }
+    else {
+      // Range match: 5 => 500-599
+      $params[':status_start'] = (int) ($statusFilter . '00');
+      $params[':status_end'] = (int) ($statusFilter . '99');
+      return 'resp_status BETWEEN :status_start AND :status_end';
+    }
+  }
+
+  /**
+   * Build SQL condition to exclude static files.
+   *
+   * Filters out requests for static assets (images, CSS, JS, etc.) that are
+   * typically served from the /sites/default/files directory in Drupal.
+   * Useful for focusing analysis on dynamic page requests.
+   *
+   * @param array &$params Reference to params array to populate with PDO bindings
+   * @return string SQL condition
+   */
+  protected function excludeStaticFiles(array &$params): string
+  {
+    $params[':static_files'] = '%/sites/default/files%';
+    return 'req_uri NOT LIKE :static_files';
   }
 
 }

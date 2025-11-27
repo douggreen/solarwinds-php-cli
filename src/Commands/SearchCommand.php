@@ -130,6 +130,7 @@ class SearchCommand extends BaseSolarWindsCommand
         <info>solarwinds search "timeout" --cols=host,ip</info>                  # Text search with columns
         <info>solarwinds search "api error" --cols=country</info>                # Text search by country
         <info>solarwinds search --filter-status-code=404 --cols=host,path</info> # Filter-only search
+' . self::getTimeRangeHelp() . '
         ')
       ->addArgument('search_term', InputArgument::OPTIONAL, 'Text pattern to search for in logs')
       ->addOption('sql-where', NULL, InputOption::VALUE_REQUIRED, 'Direct SQL WHERE clause (advanced)')
@@ -197,9 +198,7 @@ class SearchCommand extends BaseSolarWindsCommand
 
     // Handle simple text search.
     if ($queryType === 'text') {
-      if (strlen(trim($query)) < 2) {
-        throw new \InvalidArgumentException("Search query must be at least 2 characters: '$query'");
-      }
+      $this->validateMinLength($query, 2, 'Search query');
       return [
         'where' => 'data LIKE :search',
         'params' => [':search' => '%' . $query . '%'],

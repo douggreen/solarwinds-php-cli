@@ -47,6 +47,7 @@ class SyncCommand extends BaseSolarWindsCommand
         <info>solarwinds sync --2w</info>        # Sync last 2 weeks
 
         The command will automatically detect and fill gaps in the database.
+" . self::getTimeRangeHelp() . "
       ")
     ;
 
@@ -169,8 +170,7 @@ class SyncCommand extends BaseSolarWindsCommand
     }
 
     // Calculate what was filled.
-    $filled = [];
-    $remaining = [];
+    $filled = $remaining = [];
 
     foreach ($gapsBefore as $before) {
       $wasExcluded = $before['reason'] === 'beyond_retention';
@@ -214,8 +214,7 @@ class SyncCommand extends BaseSolarWindsCommand
 
     // Display what still needs attention.
     if (!empty($remaining)) {
-      $actionable = [];
-      $informational = [];
+      $actionable = $informational = [];
 
       foreach ($remaining as $gap) {
         $item = sprintf('%s to %s  %s',

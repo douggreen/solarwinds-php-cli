@@ -40,8 +40,7 @@ class QueryTranslator
       return ['where' => '1=1', 'params' => []];
     }
 
-    $conditions = [];
-    $params = [];
+    $conditions = $params = [];
     $paramCounter = 0;
 
     // Split query by OR (case-sensitive for now)

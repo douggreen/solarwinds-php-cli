@@ -127,6 +127,7 @@ class BotCommand extends BaseSolarWindsCommand
         <info>solarwinds bot --time=1h --cols=status</info>         # Bot traffic by status code
         <info>solarwinds bot spider --time=1d --cols=country</info>  # Spider bots by country
         <info>solarwinds bot --cols=host,status</info>              # Bot traffic by host and status
+' . self::getTimeRangeHelp() . '
         ')
       ->addArgument('agent', InputArgument::OPTIONAL, 'User agent pattern to search for', 'bot')
     ;
@@ -158,9 +159,7 @@ class BotCommand extends BaseSolarWindsCommand
     $agent = $options['script_specific']['agent'];
 
     // Validate agent pattern.
-    if (empty($agent) || strlen($agent) < 2) {
-      throw new \InvalidArgumentException("Agent pattern must be at least 2 characters: $agent");
-    }
+    $this->validateMinLength($agent, 2, 'Agent pattern');
 
     // Build SQL WHERE clause for user agent matching.
     return [
@@ -174,11 +173,7 @@ class BotCommand extends BaseSolarWindsCommand
    */
   protected function validateQuery(array $sqlQuery, array $options): void
   {
-    $explicitOptions = $options['display']['_explicit'] ?? [];
-
     // bot is already about user agents, so --cols=ua is redundant.
-    if (isset($explicitOptions['ua'])) {
-      throw new \InvalidArgumentException("--cols=ua is redundant for bot command (already displays user agents). Use other columns like status, country, or host instead");
-    }
+    $this->validateNotRedundantColumn($options, 'ua', 'bot command');
   }
 }

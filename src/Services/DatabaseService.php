@@ -430,8 +430,7 @@ VALUES (:id, :time, :data)
 SQL
       );
 
-      $inserted = 0;
-      $fixed = 0;
+      $inserted = $fixed = 0;
       foreach ($logs as $log) {
         $logId = $log['id'] ?? '';
 

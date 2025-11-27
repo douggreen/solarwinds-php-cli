@@ -148,12 +148,11 @@ class SolarWindsApplication extends Application
    * Override run() to transform shorthand time options.
    *
    * This keeps help output clean by only registering --time option,
-   * while allowing convenient shortcuts like --2w, --15m, --hour.
+   * while allowing convenient shortcuts like --2w, --15m, --yesterday.
    *
    * Transformations:
    * - --2w → --time=2w
    * - --15m → --time=15m
-   * - --hour → --time=hour
    * - --yesterday → --time=yesterday
    * - --all → --time=all
    *
@@ -173,8 +172,8 @@ class SolarWindsApplication extends Application
         if (preg_match('/^--(\d+[mhdwMyD])$/', $arg, $matches)) {
           $transformed[] = '--time=' . $matches[1];
         }
-        // Match special time keywords: --hour, --day, --week, --yesterday, --all.
-        elseif (preg_match('/^--(hour|day|week|yesterday|all)$/', $arg, $matches)) {
+        // Match special time keywords: --yesterday, --all.
+        elseif (preg_match('/^--(yesterday|all)$/', $arg, $matches)) {
           $transformed[] = '--time=' . $matches[1];
         }
         else {

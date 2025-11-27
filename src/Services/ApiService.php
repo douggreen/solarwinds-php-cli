@@ -99,8 +99,8 @@ class ApiService
    */
   public function __construct(ConfigurationService $config)
   {
-    $baseUrl = $config->get('base_url') ?? $config->get('api_base_url');
-    $this->apiToken = $config->get('token') ?? $config->get('api_token');
+    $baseUrl = $config->get('base_url');
+    $this->apiToken = $config->get('token');
 
     if (empty($baseUrl)) {
       throw new \InvalidArgumentException("Missing base_url in configuration");
@@ -148,10 +148,8 @@ class ApiService
     $startTimeIso = $this->convertToIsoTime($startTime);
     $endTimeIso = $this->convertToIsoTime($endTime);
 
-    $allLogs = [];
-    $seenIds = [];
-    $pageCount = 0;
-    $totalResults = 0;
+    $allLogs = $seenIds = [];
+    $pageCount = $totalResults = 0;
     $nextPageUrl = NULL;
     $isFirstPage = TRUE;
 
@@ -159,9 +157,7 @@ class ApiService
       $pageCount++;
 
       // Check for interruption before each API call.
-      if (class_exists('SolarWinds\\Commands\\BaseSolarWindsCommand') &&
-          method_exists('SolarWinds\\Commands\\BaseSolarWindsCommand', 'isInterrupted') &&
-          \SolarWinds\Commands\BaseSolarWindsCommand::isInterrupted()) {
+      if (\SolarWinds\Commands\BaseSolarWindsCommand::isInterrupted()) {
         break;
       }
 
@@ -259,8 +255,7 @@ class ApiService
       }
 
       // Don't break on empty pages - continue pagination until nextPage token is missing.
-      $newLogsAdded = 0;
-      $duplicatesFound = 0;
+      $newLogsAdded = $duplicatesFound = 0;
 
       if (!empty($pageLogs)) {
         // Process logs with duplicate detection exactly like bash script.
@@ -309,9 +304,7 @@ class ApiService
       }
 
       // Check for interruption after processing page (allows graceful stop mid-sync).
-      if (class_exists('SolarWinds\\Commands\\BaseSolarWindsCommand') &&
-          method_exists('SolarWinds\\Commands\\BaseSolarWindsCommand', 'isInterrupted') &&
-          \SolarWinds\Commands\BaseSolarWindsCommand::isInterrupted()) {
+      if (\SolarWinds\Commands\BaseSolarWindsCommand::isInterrupted()) {
         break;
       }
 
