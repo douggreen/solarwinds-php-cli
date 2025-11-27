@@ -516,6 +516,83 @@ SQL
   }
 
   /**
+   * Execute a simple SQL query.
+   *
+   * @param string $sql SQL query to execute
+   * @return PDOStatement Statement result
+   */
+  public function query(string $sql): PDOStatement
+  {
+    return $this->db->query($sql);
+  }
+
+  /**
+   * Prepare a SQL statement for execution.
+   *
+   * @param string $sql SQL query with placeholders
+   * @return PDOStatement Prepared statement
+   */
+  public function prepare(string $sql): PDOStatement
+  {
+    return $this->db->prepare($sql);
+  }
+
+  /**
+   * Execute a SQL statement with parameters.
+   *
+   * @param string $sql SQL query with placeholders
+   * @param array $params Parameters to bind
+   * @return PDOStatement Executed statement
+   */
+  public function execute(string $sql, array $params = []): PDOStatement
+  {
+    $stmt = $this->db->prepare($sql);
+    $stmt->execute($params);
+    return $stmt;
+  }
+
+  /**
+   * Execute a SQL statement directly (for DDL commands).
+   *
+   * @param string $sql SQL command to execute
+   * @return int Number of affected rows
+   */
+  public function exec(string $sql): int
+  {
+    return $this->db->exec($sql);
+  }
+
+  /**
+   * Begin a database transaction.
+   *
+   * @return bool TRUE on success
+   */
+  public function beginTransaction(): bool
+  {
+    return $this->db->beginTransaction();
+  }
+
+  /**
+   * Commit the current transaction.
+   *
+   * @return bool TRUE on success
+   */
+  public function commit(): bool
+  {
+    return $this->db->commit();
+  }
+
+  /**
+   * Roll back the current transaction.
+   *
+   * @return bool TRUE on success
+   */
+  public function rollBack(): bool
+  {
+    return $this->db->rollBack();
+  }
+
+  /**
    * Get logs from database.
    *
    * @param string|null $since Start time (ISO 8601)
