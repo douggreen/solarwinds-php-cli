@@ -1306,7 +1306,8 @@ SQL
   public function getCachedCampaignsByTimeRange(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
   {
     // Calculate cutoff time for cache freshness.
-    $cutoffTime = date('Y-m-d H:i:s', time() - ($maxAgeMinutes * 60));
+    // Use gmdate() to match SQLite's CURRENT_TIMESTAMP which stores in UTC.
+    $cutoffTime = gmdate('Y-m-d H:i:s', time() - ($maxAgeMinutes * 60));
 
     // Step 1: Find the most recent analysis timestamp.
     // If time_range label is provided, match on that instead of exact timestamps.
