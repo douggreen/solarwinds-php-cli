@@ -1645,7 +1645,7 @@ abstract class BaseSolarWindsCommand extends Command
           // Check if this was an interruption - if so, break loop and continue gracefully.
           if (self::isInterrupted()) {
             $interrupted = TRUE;
-            $this->databaseService->updateSyncStatus($syncId, 'interrupted');
+            $this->syncTracking->updateSyncStatus($syncId, 'interrupted');
             $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
             if (!$this->jsonMode) {
               $this->io->writeln('');
