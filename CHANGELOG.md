@@ -13,7 +13,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Action filters: `--show-action=block-maybe`, `--show-action=review`, `--show-action=allow`, `--show-action=all`
   - Severity filters: `--show-severity=low`, `--show-severity=medium`, `--show-severity=high`, `--show-severity=critical`
   - Site filters: `--site=mtc`, `--site=abag`, etc. (comma-separated: `--site=mtc,abag`)
-  - Status code filters: `--code=404`, `--code=5`, etc. (replaces `--404`, `--5xx`, etc.)
+  - Display columns: `--cols=host,path,status` (replaces `--host`, `--path`, `--status`, etc.)
+  - Filter options: All filters now use `--filter-*` prefix for consistency and discoverability
+    - `--filter-status-code=404` (replaces `--status-code-filter`, `--code`, `--status-code`)
+    - `--filter-country=US` (replaces `--country-filter`)
+    - `--filter-city=London` (replaces `--city-filter`)
+    - `--filter-ip=1.2.3.4` (replaces `--ip-filter`)
+    - `--filter-path=/api` (replaces `--path-filter`)
+    - `--filter-user-agent=bot` (replaces `--user-agent-filter`)
+    - `--filter-min-count=10` (replaces `--min-count`, with clearer description)
   - Time shortcuts: `--2w` → `--time=2w`, `--hour` → `--time=hour` (convenient shorthand)
   - Removed: `--summary-only` (summary is default behavior)
 

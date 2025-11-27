@@ -180,11 +180,19 @@ class DisplayService
   /**
    * Get list of enabled display columns from display options.
    *
+   * Respects user-specified column order from --cols option if available.
+   *
    * @param array $displayOptions Display configuration array
    * @return array List of enabled column names
    */
   protected function getEnabledDisplayColumns(array $displayOptions): array
   {
+    // If user specified column order via --cols, use that order.
+    if (!empty($displayOptions['_order'])) {
+      return $displayOptions['_order'];
+    }
+
+    // Otherwise, use default hardcoded order.
     $columns = [];
 
     foreach (array_keys($this->getDisplayColumnHeaders()) as $column) {

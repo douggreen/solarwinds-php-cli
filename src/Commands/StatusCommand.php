@@ -159,23 +159,15 @@ class StatusCommand extends BaseSolarWindsCommand
         It excludes static file requests and provides insights into response status distributions.
 
         <comment>Examples:</comment>
-        <info>solarwinds status --time=1h</info>                    # All status codes (last hour)
-        <info>solarwinds status --code=4 --host</info>              # 4xx errors by host
-        <info>solarwinds status --code=404 --path</info>            # 404 errors by path
-        <info>solarwinds status --code=5 --country</info>           # 5xx errors by country
-        <info>solarwinds status --host --region</info>              # Status codes by host and region
+        <info>solarwinds status --time=1h</info>                              # All status codes (last hour)
+        <info>solarwinds status --filter-status-code=4 --cols=host</info>     # 4xx errors by host
+        <info>solarwinds status --filter-status-code=404 --cols=path</info>   # 404 errors by path
+        <info>solarwinds status --filter-status-code=5 --cols=country</info>  # 5xx errors by country
+        <info>solarwinds status --cols=host,region</info>                     # Status codes by host and region
         ');
 
     // Call parent to set up common options (includes --status-code-filter).
     parent::configure();
-
-    // Add status code filter option.
-    $this->addOption(
-      'code',
-      NULL,
-      InputOption::VALUE_REQUIRED,
-      'Filter by status code: 200, 404, 4 (4xx), 5 (5xx), etc.'
-    );
   }
 
   /**
@@ -183,12 +175,9 @@ class StatusCommand extends BaseSolarWindsCommand
    */
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
-    $options = [];
-
-    // Get status code from --code option.
-    $options['status_filter'] = $input->getOption('code') ?: NULL;
-
-    return $options;
+    // No script-specific options for status command.
+    // Status code filtering is handled by global --status-code-filter option.
+    return [];
   }
 
   /**
@@ -196,8 +185,8 @@ class StatusCommand extends BaseSolarWindsCommand
    */
   protected function buildSearchQuery(array $options): array
   {
-    // Use shortcut if provided, otherwise fall back to global --status-code-filter.
-    $statusFilter = $options['script_specific']['status_filter'] ?: $options['filters']['status_code_filter'];
+    // Get status code from global --code option.
+    $statusFilter = $options['filters']['status_code_filter'];
 
     $conditions = [];
     $params = [];
@@ -272,7 +261,7 @@ class StatusCommand extends BaseSolarWindsCommand
     }
 
     // Validate status filter format if provided.
-    $statusFilter = $options['script_specific']['status_filter'];
+    $statusFilter = $options['filters']['status_code_filter'];
     if ($statusFilter) {
       // Allow 1-digit (2, 3, 4, 5), 2-digit (20, 30, 40, etc.), or 3-digit (200, 404, etc.).
       if (!preg_match('/^\d{1,3}$/', $statusFilter)) {

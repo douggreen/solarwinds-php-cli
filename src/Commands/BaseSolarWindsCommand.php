@@ -193,31 +193,13 @@ abstract class BaseSolarWindsCommand extends Command
         'Filter by site(s) - comma-separated: abag,mtc,pba')
     ;
 
-    // Display options.
-    $displayOptions = [
-      'status' => 'Show HTTP status codes',
-      'host' => 'Show originating hosts',
-      'ua' => 'Show user agents',
-      'ip' => 'Show IP addresses (or filter to specific IP: --ip=ADDRESS)',
-      'country' => 'Show country information',
-      'region' => 'Show region information',
-      'drupal' => 'Format PHP/Drupal watchdog errors with file and line grouping',
-      'vars' => 'Show variable replacements (all variables, or specify: user,ip,post.name). Supports deep array references with dot notation (e.g., post.name, geoip.country_code2)'
-    ];
-    foreach ($displayOptions as $option => $description) {
-      if ($option === 'vars' || $option === 'ip') {
-        $this->addOption($option, NULL, InputOption::VALUE_OPTIONAL, $description, FALSE);
-      }
-      else {
-        $this->addOption($option, NULL, InputOption::VALUE_NONE, $description);
-      }
-    }
-
+    // Display column options.
     $this
-      ->addOption('path', NULL, InputOption::VALUE_OPTIONAL, 'Show request paths (optionally specify segments)', FALSE)
+      ->addOption('cols', NULL, InputOption::VALUE_REQUIRED, 'Columns to display (comma-separated): status, host, ua, ip, country, region, path')
+      ->addOption('drupal', NULL, InputOption::VALUE_NONE, 'Format PHP/Drupal watchdog errors with file and line grouping')
+      ->addOption('vars', NULL, InputOption::VALUE_OPTIONAL, 'Show variable replacements (all variables, or specify: user,ip,post.name). Supports deep array references with dot notation (e.g., post.name, geoip.country_code2)', FALSE)
 
       // Other options.
-      ->addOption('min-count', NULL, InputOption::VALUE_REQUIRED, 'Minimum count threshold', 1)
       ->addOption('cached', NULL, InputOption::VALUE_OPTIONAL, 'Use cached results (optionally specify max age)', FALSE)
       ->addOption('limit', NULL, InputOption::VALUE_REQUIRED, 'Maximum number of results', 1000)
       ->addOption('debug', NULL, InputOption::VALUE_NONE, 'Enable debug output')
@@ -227,16 +209,13 @@ abstract class BaseSolarWindsCommand extends Command
       ->addOption('yes', 'y', InputOption::VALUE_NONE, 'Automatically confirm all prompts (skip confirmations)')
 
       // Global filter options.
-      ->addOption('country-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by country code (e.g., US, GB, FR)')
-      ->addOption('city-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by city name (e.g., London, Paris)')
-      ->addOption('status-code-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by HTTP status code (e.g., 404, 500)')
-      ->addOption('user-agent-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by user agent pattern (e.g., bot, mobile)')
-      ->addOption('path-filter', NULL, InputOption::VALUE_OPTIONAL, 'Filter by request path (e.g., /, /api, /admin)', FALSE)
-      ->addOption('ip-filter', NULL, InputOption::VALUE_REQUIRED, 'Filter by IP address (single IP or comma-separated list)')
-
-      // Shortcuts for common filter options.
-      ->addOption('status-code', NULL, InputOption::VALUE_REQUIRED, 'Shortcut for --status-code-filter')
-      ->addOption('code', NULL, InputOption::VALUE_REQUIRED, 'Shortcut for --status-code-filter')
+      ->addOption('filter-city', NULL, InputOption::VALUE_REQUIRED, 'Filter by city name (e.g., London, Paris)')
+      ->addOption('filter-country', NULL, InputOption::VALUE_REQUIRED, 'Filter by country code (e.g., US, GB, FR)')
+      ->addOption('filter-ip', NULL, InputOption::VALUE_REQUIRED, 'Filter by IP address (single IP or comma-separated list)')
+      ->addOption('filter-min-count', NULL, InputOption::VALUE_REQUIRED, 'Show only results with count >= N [default: 1]', 1)
+      ->addOption('filter-path', NULL, InputOption::VALUE_OPTIONAL, 'Filter by request path (e.g., /, /api, /admin)', FALSE)
+      ->addOption('filter-status-code', NULL, InputOption::VALUE_REQUIRED, 'Filter by HTTP status code (e.g., 404, 500)')
+      ->addOption('filter-user-agent', NULL, InputOption::VALUE_REQUIRED, 'Filter by user agent pattern (e.g., bot, mobile)')
 
       // Client-side filtering options.
       ->addOption('filter', NULL, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY,
@@ -480,20 +459,28 @@ abstract class BaseSolarWindsCommand extends Command
       $display[$option] = TRUE;
     }
 
-    // Then check for explicit options and track them.
-    $displayFlags = ['status', 'host', 'ua', 'ip', 'country', 'region', 'drupal'];
-    foreach ($displayFlags as $flag) {
-      if ($input->getOption($flag)) {
-        $display[$flag] = TRUE;
-        $explicitOptions[$flag] = TRUE;
+    // Parse --cols option for column display.
+    $colsOption = $input->getOption('cols');
+    if ($colsOption) {
+      $cols = array_map('trim', explode(',', $colsOption));
+      $columnOrder = [];
+      foreach ($cols as $col) {
+        // Validate column name.
+        if (!in_array($col, ['status', 'host', 'ua', 'ip', 'country', 'region', 'path'])) {
+          throw new \InvalidArgumentException("Invalid column name: '$col'. Valid columns: status, host, ua, ip, country, region, path");
+        }
+        $display[$col] = TRUE;
+        $explicitOptions[$col] = TRUE;
+        $columnOrder[] = $col;
       }
+      // Store column order for display service.
+      $display['_order'] = $columnOrder;
     }
 
-    // Handle path option (can have a value).
-    $pathOption = $input->getOption('path');
-    if ($pathOption !== FALSE) {
-      $display['path'] = $pathOption === NULL ? 1 : (int) $pathOption;
-      $explicitOptions['path'] = TRUE;
+    // Handle drupal option (special formatting).
+    if ($input->getOption('drupal')) {
+      $display['drupal'] = TRUE;
+      $explicitOptions['drupal'] = TRUE;
     }
 
     // Handle vars option (can have a value).
@@ -531,7 +518,7 @@ abstract class BaseSolarWindsCommand extends Command
     $useCached = $cachedOption !== FALSE;
 
     return [
-      'min_count' => (int) $input->getOption('min-count'),
+      'min_count' => (int) $input->getOption('filter-min-count'),
       'use_cached' => $useCached,
       'limit' => (int) $input->getOption('limit'),
       'debug' => $input->getOption('debug'),
@@ -539,12 +526,12 @@ abstract class BaseSolarWindsCommand extends Command
       'yes' => $input->getOption('yes'),
       'no_group' => $input->getOption('no-group'),
       'substitute_vars' => $input->getOption('substitute-vars'),
-      'country_filter' => $input->getOption('country-filter'),
-      'city_filter' => $input->getOption('city-filter'),
-      'status_code_filter' => $input->getOption('status-code-filter') ?: $input->getOption('status-code') ?: $input->getOption('code'),
-      'user_agent_filter' => $input->getOption('user-agent-filter'),
-      'path_filter' => $input->getOption('path-filter') !== FALSE ? ($input->getOption('path-filter') ?: '/') : NULL,
-      'ip_filter' => $input->getOption('ip-filter'),
+      'country_filter' => $input->getOption('filter-country'),
+      'city_filter' => $input->getOption('filter-city'),
+      'status_code_filter' => $input->getOption('filter-status-code'),
+      'user_agent_filter' => $input->getOption('filter-user-agent'),
+      'path_filter' => $input->getOption('filter-path') !== FALSE ? ($input->getOption('filter-path') ?: '/') : NULL,
+      'ip_filter' => $input->getOption('filter-ip'),
       'client_side_filters' => $input->getOption('filter') ?: [],
     ];
   }
