@@ -114,9 +114,7 @@ class TimeSpecifications
       'years' => range(1, 10),          // 1y through 10y (years)
       'specific_days' => range(1, 365), // 1D through 365D (uppercase, specific days)
       'aliases' => [
-        'hour' => '1h',
-        'day' => '1d',
-        'week' => '1w'
+        // Removed: hour, day, week - use explicit forms: 1h, 1d, 1w
       ],
       'special' => ['yesterday', 'all'],
     ];
@@ -141,6 +139,22 @@ class TimeSpecifications
    */
   public static function convertToTimeRange(string $timeArg): ?array
   {
+    // Handle range syntax: start..end (e.g., 2d..1d, 2024-11-20..2024-11-25)
+    if (strpos($timeArg, '..') !== FALSE) {
+      [$start, $end] = explode('..', $timeArg, 2);
+
+      // Convert both start and end times using the same logic
+      $startRange = self::convertToTimeRange(trim($start));
+      $endRange = self::convertToTimeRange(trim($end));
+
+      if ($startRange === NULL || $endRange === NULL) {
+        return NULL;
+      }
+
+      // For ranges, use the start of the first period and end of the second period
+      return [$startRange[0], $endRange[1]];
+    }
+
     // Handle special case: yesterday.
     if ($timeArg === 'yesterday') {
       return ['yesterday at 00:00:00', 'yesterday at 23:59:59'];
@@ -151,12 +165,13 @@ class TimeSpecifications
       return ['10 years ago', 'now'];
     }
 
-    // Handle aliases.
-    $aliases = [
-      'hour' => '1h',
-      'day' => '1d',
-      'week' => '1w',
-    ];
+    // Handle special case: now.
+    if ($timeArg === 'now') {
+      return ['now', 'now'];
+    }
+
+    // Handle aliases (removed hour, day, week - use explicit forms).
+    $aliases = [];
     if (isset($aliases[$timeArg])) {
       $timeArg = $aliases[$timeArg];
     }

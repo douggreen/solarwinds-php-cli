@@ -22,7 +22,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `--filter-path=/api` (replaces `--path-filter`)
     - `--filter-user-agent=bot` (replaces `--user-agent-filter`)
     - `--filter-min-count=10` (replaces `--min-count`, with clearer description)
-  - Time shortcuts: `--2w` → `--time=2w`, `--hour` → `--time=hour` (convenient shorthand)
+  - Time shortcuts: `--2w` → `--time=2w` (convenient shorthand)
+  - Time range syntax: Unified `--time` option with `..` range separator
+    - `--time=1h` → last hour (shorthand for `1h..now`)
+    - `--time=2d..1d` → from 2 days ago to 1 day ago
+    - `--time=2024-11-20..2024-11-25` → date range
+    - Removed: `--since` and `--until` (use range syntax instead)
+    - Removed aliases: `hour`, `day`, `week` (use explicit: `1h`, `1d`, `1w`)
+    - Special values still supported: `yesterday`, `all`
   - Removed: `--summary-only` (summary is default behavior)
 
 ### Added

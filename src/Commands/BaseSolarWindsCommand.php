@@ -182,11 +182,7 @@ abstract class BaseSolarWindsCommand extends Command
       // Note: Shorthand options like --2w, --15m are transformed to --time=2w, --time=15m
       // by SolarWindsApplication::run() for backward compatibility while keeping help clean.
       ->addOption('time', 't', InputOption::VALUE_REQUIRED,
-        'Time range (e.g., 2w, 15m, 3M, 7D, hour, yesterday, all)', NULL)
-      ->addOption('since', NULL, InputOption::VALUE_REQUIRED,
-        'Start time (e.g., "2 hours ago")')
-      ->addOption('until', NULL, InputOption::VALUE_REQUIRED,
-        'End time (e.g., "now")', 'now')
+        'Time range: 1h (last hour), 2d..1d (2 days ago to 1 day ago), 2024-11-20..2024-11-25 (date range), yesterday, all', NULL)
 
       // Site options.
       ->addOption('site', NULL, InputOption::VALUE_REQUIRED,
@@ -307,36 +303,37 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function parseTimeOptions(InputInterface $input): array
   {
-    $since = $input->getOption('since');
-    $until = $input->getOption('until');
     $timeOption = $input->getOption('time');
 
-    // Check for custom since/until first.
-    if ($since) {
-      return [
-        'start_time' => $since,
-        'end_time' => $until,
-        'human_readable' => "$since to $until"
-      ];
-    }
+    // Handle time option if provided.
+    if ($timeOption) {
+      // Try to convert time option (handles both pre-registered and dynamic ranges).
+      $mapping = TimeSpecifications::convertToTimeRange($timeOption);
 
-    // Get time mappings for lookup.
-    $timeMappings = self::getTimeMappings();
+      if ($mapping !== NULL) {
+        [$start, $end] = $mapping;
 
-    // Check for --time option (which includes transformed shorthand options like --2w).
-    if ($timeOption && isset($timeMappings[$timeOption])) {
-      [$start, $end] = $timeMappings[$timeOption];
-      return [
-        'start_time' => $start,
-        'end_time' => $end,
-        'human_readable' => "last $timeOption"
-      ];
+        // Generate human-readable description
+        $humanReadable = strpos($timeOption, '..') !== FALSE
+          ? $timeOption  // Range format: show as-is (e.g., "2d..1d")
+          : "last $timeOption";  // Relative format: add "last" prefix
+
+        return [
+          'start_time' => $start,
+          'end_time' => $end,
+          'human_readable' => $humanReadable
+        ];
+      }
+
+      throw new \InvalidArgumentException("Invalid time option: $timeOption");
     }
 
     // Use default time if nothing specified.
     $defaultFlag = $this->defaultTime;
-    if (isset($timeMappings[$defaultFlag])) {
-      [$start, $end] = $timeMappings[$defaultFlag];
+    $mapping = TimeSpecifications::convertToTimeRange($defaultFlag);
+
+    if ($mapping !== NULL) {
+      [$start, $end] = $mapping;
       return [
         'start_time' => $start,
         'end_time' => $end,
