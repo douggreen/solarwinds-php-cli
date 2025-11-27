@@ -256,8 +256,9 @@ class SolarWindsApplication extends Application
     $current = '';
     $inQuotes = FALSE;
     $quoteChar = '';
+    $definitionLen = strlen($definition);
 
-    for ($i = 0; $i < strlen($definition); $i++) {
+    for ($i = 0; $i < $definitionLen; $i++) {
       $char = $definition[$i];
 
       if (!$inQuotes && ($char === '"' || $char === "'")) {

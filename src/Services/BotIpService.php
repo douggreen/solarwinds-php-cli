@@ -262,7 +262,8 @@ class BotIpService
 
     // Convert mask to binary string.
     $maskBinStr = '';
-    for ($i = 0; $i < strlen($maskBin); $i += 8) {
+    $maskBinLen = strlen($maskBin);
+    for ($i = 0; $i < $maskBinLen; $i += 8) {
       $maskBinStr .= chr(bindec(substr($maskBin, $i, 8)));
     }
 
