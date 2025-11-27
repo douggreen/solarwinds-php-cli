@@ -41,8 +41,8 @@
  * @section validation_logic Validation Logic
  *
  * **Redundancy Prevention:**
- * - Rejects --ua flag as redundant (command already focuses on user agents)
- * - Suggests alternative display options (--status, --country, --host)
+ * - Rejects --cols=ua as redundant (command already focuses on user agents)
+ * - Suggests alternative display columns (status, country, host)
  *
  * **Pattern Validation:**
  * - Requires minimum 2-character patterns
@@ -55,16 +55,16 @@
  * solarwinds bot
  *
  * # Google bot activity analysis
- * solarwinds bot googlebot --day
+ * solarwinds bot googlebot --time=1d
  *
  * # Bot traffic with status code breakdown
- * solarwinds bot --1h --status
+ * solarwinds bot --time=1h --cols=status
  *
  * # Archive.org crawler with minimum threshold
- * solarwinds bot archive-it --min-count=5
+ * solarwinds bot archive-it --filter-min-count=5
  *
  * # Site-specific bot analysis
- * solarwinds bot --site1 --country
+ * solarwinds bot --site=site1 --cols=country
  * @endcode
  *
  * @section display_integration Display Integration
@@ -122,11 +122,11 @@ class BotCommand extends BaseSolarWindsCommand
         It filters for user agents containing specified terms (default: "bot") and provides bot highlighting.
 
         <comment>Examples:</comment>
-        <info>solarwinds bot</info>                            # Bot traffic analysis (last 15m)
-        <info>solarwinds bot crawler</info>                    # Crawler traffic analysis
-        <info>solarwinds bot --1h --status</info>              # Bot traffic by status code
-        <info>solarwinds bot spider --day --country</info>     # Spider bots by country
-        <info>solarwinds bot --host --status</info>            # Bot traffic by host and status
+        <info>solarwinds bot</info>                                 # Bot traffic analysis (last 15m)
+        <info>solarwinds bot crawler</info>                         # Crawler traffic analysis
+        <info>solarwinds bot --time=1h --cols=status</info>         # Bot traffic by status code
+        <info>solarwinds bot spider --time=1d --cols=country</info>  # Spider bots by country
+        <info>solarwinds bot --cols=host,status</info>              # Bot traffic by host and status
         ')
       ->addArgument('agent', InputArgument::OPTIONAL, 'User agent pattern to search for', 'bot')
     ;
@@ -176,9 +176,9 @@ class BotCommand extends BaseSolarWindsCommand
   {
     $explicitOptions = $options['display']['_explicit'] ?? [];
 
-    // bot is already about user agents, so --ua flag is redundant.
+    // bot is already about user agents, so --cols=ua is redundant.
     if (isset($explicitOptions['ua'])) {
-      throw new \InvalidArgumentException("--ua option is redundant for bot (bot is already about user agents). Use other display options like --status, --country, --host instead");
+      throw new \InvalidArgumentException("--cols=ua is redundant for bot command (already displays user agents). Use other columns like status, country, or host instead");
     }
   }
 }

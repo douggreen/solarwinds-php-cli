@@ -34,7 +34,7 @@
  * - Maintains all original command validation
  *
  * **Supported Argument Types:**
- * - Simple flags: --1h, --status, --host
+ * - Simple flags: --time=1h, --cols=status,host
  * - Options with values: --query="value", --min-count=5
  * - Positional arguments: search terms, patterns
  * - Complex combinations: Multiple options and flags
@@ -56,29 +56,28 @@
  * @code{.yaml}
  * aliases:
  *   # Simple shortcuts
- *   errors: 'search "error" --status --1h'
- *   quickbot: 'bot --15m --ua'
- *   404s: 'status --404 --host --path'
+ *   errors: 'search "error" --cols=status --time=1h'
+ *   quickbot: bot --time=15m --cols=ua
+ *   404s: status --filter-status-code=404 --cols=host,path
  *
- *   # Complex analysis commands
- *   security: 'search "unauthorized|forbidden|attack" --country --day'
- *   performance: 'status --5xx --by-hour --2h --min-count=10'
+ *   # Analysis commands
+ *   5xx: status --filter-status-code=5 --time=2h --filter-min-count=10
  *
  *   # Site-specific shortcuts
- *   site1-errors: 'search "error" --site1 --status --1h'
- *   site1-bots: 'bot --site1 --country --day'
+ *   site1-errors: 'search "error" --site=site1 --cols=status --time=1h'
+ *   site1-bots: bot --site=site1 --cols=country --time=1d
  * @endcode
  *
  * @section usage_examples Usage Examples
  * @code{.bash}
  * # Using predefined aliases
- * solarwinds errors              # Equivalent to: search "error" --status --1h
- * solarwinds 404s --day          # Extends: status --404 --host --path --day
- * solarwinds quickbot spider     # Extends: bot --15m --ua spider
+ * solarwinds errors                  # Equivalent to: search "error" --cols=status --time=1h
+ * solarwinds 404s --time=1d          # Extends: status --filter-status-code=404 --cols=host,path --time=1d
+ * solarwinds quickbot spider         # Extends: bot --time=15m --cols=ua spider
  *
  * # User arguments override alias defaults
- * solarwinds errors --2h         # Changes time from --1h to --2h
- * solarwinds 404s --country      # Adds --country to existing options
+ * solarwinds errors --time=2h        # Changes time from --time=1h to --time=2h
+ * solarwinds 404s --cols=country     # Adds --cols=country to existing options
  * @endcode
  *
  * @section command_creation Command Creation Process

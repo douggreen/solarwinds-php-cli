@@ -127,46 +127,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 - 🔲 `src/Commands/ExploitsCommand.php` - Needs bot spoofing pattern
 - 🔲 `.solarwinds.yml.example` - Needs bot_verification config
 
-## User Interface Improvements
-
-### 1. Standardize Command-Line Options (UI CONSISTENCY)
-
-**Problem:** Command-line options use inconsistent naming conventions, making the interface less predictable and harder to learn.
-
-**Current State (Inconsistent):**
-- Attack type filters: `--xss-only`, `--sqli-only`, `--fakebot-only`, `--scan-only`
-- Blocking filters: `--show-all-actions` (but no `--show-action-block-now`)
-- Severity filters: `--min-severity=medium` (parameter-based, not flag-based)
-- Display options: `--show-details`, `--summary-only`
-
-**Target State (Consistent):**
-- **Action filters:** `--show-action-block-now`, `--show-action-block-maybe`, `--show-action-review`, `--show-action-all`
-- **Type filters:** `--show-type-api`, `--show-type-fakebot`, `--show-type-xss`, `--show-type-sqli`, `--show-type-scan`, etc.
-- **Severity filters:** `--show-severity-critical`, `--show-severity-high`, `--show-severity-medium`, `--show-severity-low` (minimum threshold)
-- **Display options:** `--show-details`, `--show-summary` (keep existing pattern)
-
-**Benefits:**
-- Predictable naming: All filters follow `--show-{category}-{value}` pattern
-- Self-documenting: Category in flag name (action/type/severity)
-- Tab-completion friendly: All `--show-*` flags group together
-- Easier to remember: Consistent structure
-
-**Implementation Strategy:**
-1. Replace old flags with new standardized flags (clean break, no backward compatibility needed)
-2. Update all documentation examples to use new flags
-3. Update any shell scripts or aliases that use old flags
-
-**Notes:**
-- Single user codebase - no backward compatibility concerns
-- Can do clean refactor without deprecation period
-- **Type filter behavior:** When type filters are active (`--show-type-*` or current `--*-only` flags), the command automatically bypasses action filtering and shows ALL campaigns matching that type, regardless of blocking recommendation (BLOCK NOW, ALLOW, etc.). This is intentional - when users ask for specific attack types, they want to see all instances, not have them hidden by action priority
-
-**Affected Files:**
-- `src/Commands/ExploitsCommand.php` - Add new option definitions
-- `docs/EXPLOITS.md` - Update documentation examples
-- `README.md` - Update usage examples
-- `CHANGELOG.md` - Document deprecations and new flags
-
 ## Code Quality Improvements
 
 ### High Priority Tasks
@@ -189,21 +149,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
    - Review error handling and logging consistency
    - Identify areas where design patterns could improve code structure
    - Document findings and prioritize refactoring tasks
-
-3. **:white_check_mark: Upgrade Symfony Console to Version 7+ and Clean Help Output** (COMPLETED 2025-01-26)
-   - :white_check_mark: Upgraded from Symfony Console 6.x to 7.3.6
-   - :white_check_mark: Fixed `handleSignal()` method signature to match Symfony 7 API
-   - :white_check_mark: Implemented argv transformation system in `SolarWindsApplication::run()`
-   - :white_check_mark: Consolidated 500+ time options into 1 multi-value option
-   - :white_check_mark: Consolidated 9 site options into 1 multi-value option
-   - :white_check_mark: Consolidated 16 type filter options into 1 multi-value option
-   - :white_check_mark: Consolidated 4 action filter options into 1 multi-value option
-   - :white_check_mark: Consolidated 4 severity filter options into 1 multi-value option
-   - :white_check_mark: Time shortcuts: --2w → --time=2w, --hour → --time=hour
-   - :white_check_mark: Explicit syntax for sites and filters: --site=mtc, --show-type=xss, --show-action=allow, --show-severity=high
-   - :x: Note: `setHidden()` method does NOT exist in Symfony 7 (open feature request #54206)
-   - **Result: Help output reduced from 770 lines to 141 lines (82% reduction!)**
-   - **Time shortcuts only:** Only time options support shorthand syntax via transformation
 
 ### Display and Output Improvements
 

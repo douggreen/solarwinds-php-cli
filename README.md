@@ -142,7 +142,7 @@ sites:
 
 ## Site Configuration
 
-This project supports configurable site mappings, allowing you to define organization-specific hostnames and aliases in your `~/.solarwinds.yml` file. Once configured, these sites become available as command-line options (e.g., `--main`, `--blog`) for filtering log analysis to specific hosts.
+This project supports configurable site mappings, allowing you to define organization-specific hostnames and aliases in your `~/.solarwinds.yml` file. Once configured, these sites can be used with the `--site` option (e.g., `--site=main`, `--site=blog`) for filtering log analysis to specific hosts.
 
 ### Configuring Sites
 
@@ -179,14 +179,14 @@ sites:
 Each site entry has the following structure:
 
 - **Hostname (key)**: The actual hostname to filter on in logs (e.g., `example.com`)
-- **`name`**: Short alias used for command line options (e.g., `main` → `--main` flag)
+- **`name`**: Short alias used with the `--site` option (e.g., `main` → `--site=main`)
 - **`label`**: Human-readable display name for output and descriptions
 
 ### How Site Configuration Works
 
-1. **Command Line Options**: Each site generates a command option based on the `name` field:
+1. **Command Line Options**: Each site can be referenced by its `name` field via the `--site` option:
    ```bash
-   bin/solarwinds 5xx --main --blog  # Filters to main site and blog
+   bin/solarwinds 5xx --site=main,blog  # Filters to main site and blog
    ```
 
 1. **Log Filtering**: Uses the hostname (key) to filter SolarWinds logs:
@@ -203,9 +203,9 @@ Each site entry has the following structure:
 
 ```bash
 # Filter to specific sites
-bin/solarwinds 5xx --main --api           # Main site and API server only
-bin/solarwinds 5xx --blog --status       # Blog site with status codes
-bin/solarwinds 5xx --docs --country --1h  # Documentation site by country (1 hour)
+bin/solarwinds 5xx --site=main,api              # Main site and API server only
+bin/solarwinds 5xx --site=blog --cols=status    # Blog site with status codes
+bin/solarwinds 5xx --site=docs --cols=country --time=1h  # Documentation site by country (1 hour)
 ```
 
 ### Adding Your Own Sites
@@ -214,7 +214,7 @@ To add sites for your organization:
 
 1. Edit `~/.solarwinds.yml`
 1. Add entries under the `sites:` section
-1. Choose meaningful `name` values (used for --flags)
+1. Choose meaningful `name` values (used with `--site` option)
 1. Set descriptive `label` values (shown in output)
 
 Example for a different organization:
@@ -231,7 +231,7 @@ sites:
     label: Web App
 ```
 
-This generates `--main`, `--blog`, and `--app` command options that filter logs for the respective hostnames.
+These sites can then be used with the `--site` option (e.g., `--site=main`, `--site=blog`, `--site=app`) to filter logs for the respective hostnames.
 
 ### Benefits of Configurable Sites
 
@@ -331,10 +331,10 @@ Add aliases to your `~/.solarwinds.yml` file under the `aliases:` section:
 
 ```yaml
 aliases:
-  errors: search "error" --status --1h
-  quickbot: bot --1h
-  404s: status --404 --host --path
-  mysite: search --query="{ json.orig_host:example.com }" --host --status
+  errors: search "error" --cols=status --time=1h
+  quickbot: bot --time=1h
+  404s: status --filter-status-code=404 --cols=host,path
+  mysite: search --sql-where="message->>'$.orig_host' = 'example.com'" --cols=host,status
 ```
 
 ### Recommended Aliases
@@ -344,42 +344,42 @@ These aliases provide the same functionality as commands from the original shell
 ```yaml
 aliases:
   # HTTP error analysis
-  5xx: status --5 --1d --host --path
-  500image: search --query="{ json.resp_status:500 } /sites/default/files" --host --path --day
+  5xx: status --filter-status-code=5 --time=1d --cols=host,path
+  500image: search --filter-status-code=500 --filter-path=/sites/default/files --cols=host,path --time=1d
 
   # Request analysis
-  posts: search --query="{ json.req_method:POST } { json.resp_status:200 } -/sites/default/files" --host --path --day
-  login: search "Login attempt failed" --drupal --vars=ip,post.name --day --host
+  posts: search --filter-path=/sites/default/files --cols=host,path --time=1d
+  login: search "Login attempt failed" --drupal --vars=ip,post.name --time=1d --cols=host
 
   # Geographic analysis
-  country: search --query="{ json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 } -/sites/default/files" --country --15m
+  country: search --cols=country --time=15m
 
   # Security and blocking analysis
-  ban: status --403 --host --ip --day
+  ban: status --filter-status-code=403 --cols=host,ip --time=1d
 
   # Security threat detection (with client-side filtering)
-  xss: 'search --query="{ json.req_uri:? } { json.req_uri:script } { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }" --filter="req_uri:\?.*</?script" --host --path --day'
-  sql-injection: "search --query=\"{ json.req_uri:? } ( { json.req_uri:insert } OR { json.req_uri:update } OR { json.req_uri:delete } OR { json.req_uri:select } OR { json.req_uri:union } OR { json.req_uri:drop } ) { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }\" --filter=\"req_uri:\\?.*(select[\\s\\*\\(\\+]|insert[\\s\\*\\(\\+]|update[\\s\\*\\(\\+]|delete[\\s\\*\\(\\+]|union[\\s\\*\\(\\+]|drop[\\s\\*\\(\\+])\" --host --path --day"
-  pentest: "search --query=\"{ json.req_uri:? } ( { json.req_uri:insert } OR { json.req_uri:update } OR { json.req_uri:delete } OR { json.req_uri:select } OR { json.req_uri:union } OR { json.req_uri:drop } OR { json.req_uri:script } ) { json.resp_status:-30 } { json.resp_status:-40 } { json.resp_status:-90 }\" --filter=\"req_uri:\\?.*(select[\\s\\*\\(]|insert[\\s\\(]into|update[\\s\\(].*set|delete[\\s\\(]from|union[\\s\\(]select|drop[\\s\\(]table|or[\\s]+\\w+[\\s]*=|and[\\s]+\\w+[\\s]*=|'\\s*--|--\\s*$|\\d'\\s*(or|and)|</?script)\" --host --path --day"
+  xss: 'search --filter="req_uri:\?.*</?script" --cols=host,path --time=1d'
+  sql-injection: 'search --filter="req_uri:\?.*(select[\s\*\(]+|insert[\s\*\(]+|update[\s\*\(]+|delete[\s\*\(]+|union[\s\*\(]+|drop[\s\*\(]+)" --cols=host,path --time=1d'
+  pentest: 'search --filter="req_uri:\?.*(select[\s\*\(]|insert[\s\(]into|update[\s\(].*set|delete[\s\(]from|union[\s\(]select|drop[\s\(]table|or[\s]+\w+[\s]*=|and[\s]+\w+[\s]*=|'\''[\s]*--|--[\s]*$|\d'\''[\s]*(or|and)|</?script)" --cols=host,path --time=1d'
 
   # Drupal/PHP error analysis
-  cron: search "{ json.type:cron }" --drupal --1d --host
-  drupal: search "{ program:logger }" --drupal --1d --host
-  drupal-php: search "{ json.type:php }" --drupal --vars=file,line,function --1d --host
-  drupal-error: search "{ json.severity:Error }" --drupal --1d --host --path
-  drupal-warning: search "{ json.severity:Warning }" --drupal --1d --host --path
-  drupal-notice: search "{ json.severity:Notice }" --drupal --1d --host
+  cron: search "cron" --drupal --time=1d --cols=host
+  drupal: search "logger" --drupal --time=1d --cols=host
+  drupal-php: search "php" --drupal --vars=file,line,function --time=1d --cols=host
+  drupal-error: search "Error" --drupal --time=1d --cols=host,path
+  drupal-warning: search "Warning" --drupal --time=1d --cols=host,path
+  drupal-notice: search "Notice" --drupal --time=1d --cols=host
 
   # Convenience shortcuts
-  errors: search "error" --status --1h
-  quickbot: bot --1h
-  404s: status --404 --host --path
+  errors: search "error" --cols=status --time=1h
+  quickbot: bot --time=1h
+  404s: status --filter-status-code=404 --cols=host,path
 ```
 
 ### How Aliases Work
 
-1. **Alias arguments come first**: `errors: search "error" --status --1h`
-1. **User arguments are appended**: `solarwinds errors --host` becomes `search "error" --status --1h --host`
+1. **Alias arguments come first**: `errors: search "error" --cols=status --time=1h`
+1. **User arguments are appended**: `solarwinds errors --cols=host` becomes `search "error" --cols=status --time=1h --cols=host`
 1. **Validation applies**: The target command's validation prevents conflicting options
 1. **No override protection**: Aliases cannot replace built-in commands (`bot`, `search`, `status`)
 
@@ -387,25 +387,25 @@ aliases:
 
 ```bash
 # Using recommended aliases
-solarwinds 5xx --2h                    # HTTP 5xx errors (last 2 hours)
-solarwinds posts --country             # POST requests by country
-solarwinds login --1h                  # Failed logins (last hour)
+solarwinds 5xx --time=2h                    # HTTP 5xx errors (last 2 hours)
+solarwinds posts --cols=country             # POST requests by country
+solarwinds login --time=1h                  # Failed logins (last hour)
 
 # Drupal/PHP error analysis
-solarwinds drupal --2h                 # All PHP errors (last 2 hours)
-solarwinds drupal-error --1d           # PHP errors only (last day)
-solarwinds drupal-warning --1h         # PHP warnings (last hour)
-solarwinds drupal-notice --day         # PHP notices (last day)
+solarwinds drupal --time=2h                 # All PHP errors (last 2 hours)
+solarwinds drupal-error --time=1d           # PHP errors only (last day)
+solarwinds drupal-warning --time=1h         # PHP warnings (last hour)
+solarwinds drupal-notice --time=1d          # PHP notices (last day)
 
 # Security threat detection
-solarwinds xss --2h                    # XSS attack detection (last 2 hours)
-solarwinds sql-injection --1d          # SQL injection detection (last day)
-solarwinds pentest --week              # Combined security scan (last week)
+solarwinds xss --time=2h                    # XSS attack detection (last 2 hours)
+solarwinds sql-injection --time=1d          # SQL injection detection (last day)
+solarwinds pentest --time=1w                # Combined security scan (last week)
 
 # Custom aliases
-solarwinds errors --country            # Error patterns by country
-solarwinds quickbot --country          # Bot traffic by country
-solarwinds 404s --day                  # 404 errors (last day)
+solarwinds errors --cols=country            # Error patterns by country
+solarwinds quickbot --cols=country          # Bot traffic by country
+solarwinds 404s --time=1d                   # 404 errors (last day)
 ```
 
 ### Make Binary Executable
@@ -429,26 +429,26 @@ bin/solarwinds status --help
 
 ```bash
 # Status code analysis
-bin/solarwinds status                  # All status codes (last day)
-bin/solarwinds status --404 --15m     # 404 errors from last hour
-bin/solarwinds status --5 --country   # 5xx errors by country
+bin/solarwinds status                                           # All status codes (last day)
+bin/solarwinds status --filter-status-code=404 --time=15m      # 404 errors from last 15 min
+bin/solarwinds status --filter-status-code=5 --cols=country    # 5xx errors by country
 
 # General search
-bin/solarwinds search "error"         # Text search for "error"
-bin/solarwinds search --query="{ json.resp_status:404 }" --host # JSON query
+bin/solarwinds search "error"                                   # Text search for "error"
+bin/solarwinds search "timeout" --cols=host                     # Text search with host column
 
 # Bot analysis
-bin/solarwinds bot                     # Bot traffic (last 15m)
-bin/solarwinds bot crawler --host     # Crawler traffic by host
+bin/solarwinds bot                                              # Bot traffic (last 15m)
+bin/solarwinds bot crawler --cols=host                          # Crawler traffic by host
 ```
 
 ### Examples (Using Aliases)
 
 ```bash
 # Using recommended aliases (if configured)
-bin/solarwinds 5xx --2h               # HTTP 5xx errors (last 2 hours)
-bin/solarwinds posts --country        # POST requests by country
-bin/solarwinds login --1h             # Failed logins (last hour)
+bin/solarwinds 5xx --time=2h          # HTTP 5xx errors (last 2 hours)
+bin/solarwinds posts --cols=country   # POST requests by country
+bin/solarwinds login --time=1h        # Failed logins (last hour)
 ```
 
 ## Security Threat Detection
@@ -459,11 +459,11 @@ The `exploits` command provides comprehensive security threat detection and camp
 
 ```bash
 # Analyze recent activity
-solarwinds exploits --1h                 # Last hour
-solarwinds exploits --15m --show-severity-high  # Recent critical threats
+solarwinds exploits --time=1h                      # Last hour
+solarwinds exploits --time=15m --show-severity=high  # Recent critical threats
 
 # Automated monitoring (cron)
-*/15 * * * * /path/to/solarwinds exploits --15m >> /var/log/solarwinds/realtime.log 2>&1
+*/15 * * * * /path/to/solarwinds exploits --time=15m >> /var/log/solarwinds/realtime.log 2>&1
 ```
 
 The system detects 14+ attack types (XSS, SQLi, RCE, LFI, etc.), groups them into campaigns, performs automatic deep-dive analysis for suspicious IPs, and provides actionable blocking recommendations with confidence levels.
@@ -485,12 +485,8 @@ Supports comprehensive time range options:
 - Custom ranges: `--since="2 hours ago" --until="now"`
 
 ### Display Options
-- `--status` - Show HTTP status codes with color coding
-- `--host` - Show originating hosts (with shortening)
-- `--path[=N]` - Show request paths (optionally truncated to N segments)
-- `--ua` - Show user agents (with bot highlighting)
-- `--ip` - Show IP addresses
-- `--country` - Show country information
+- `--cols=COLUMNS` - Comma-separated list of columns to display: `status`, `host`, `path`, `ua`, `ip`, `country`, `region`
+  - Example: `--cols=status,host,path`
 - `--drupal` - Format PHP/Drupal watchdog errors with file:line grouping
 - `--vars[=FIELDS]` - Show variable replacements from Drupal watchdog logs. Supports:
   - `--vars` - Show all variables
@@ -498,7 +494,14 @@ Supports comprehensive time range options:
   - `--vars=post.name,post.pass` - Access nested JSON fields using dot notation
   - Deep array references work with any nested structure (e.g., `geoip.country_code2`)
 - `--filter=PATTERN` - Client-side regex filtering in format "field:regex" (can be used multiple times, AND logic)
-- And more...
+
+### Filter Options
+- `--filter-status-code=CODE` - Filter by HTTP status code (e.g., `404`, `5` for 5xx)
+- `--filter-country=CODE` - Filter by country code (e.g., `US`, `GB`)
+- `--filter-city=CITY` - Filter by city name
+- `--filter-ip=ADDRESS` - Filter by IP address (single or comma-separated)
+- `--filter-path=PATH` - Filter by request path
+- `--filter-user-agent=PATTERN` - Filter by user agent pattern
 
 ### Client-Side Filtering
 
@@ -509,13 +512,13 @@ The `--filter` option enables post-processing of API results with regex patterns
 **Examples:**
 ```bash
 # Filter for script tags in URLs (XSS detection)
-bin/solarwinds search "script" --filter="req_uri:\?.*<script"
+bin/solarwinds search "script" --filter="req_uri:\?.*<script" --cols=host,path
 
 # Filter for SQL keywords followed by operators
-bin/solarwinds search "select" --filter="req_uri:select[\s\*\(]"
+bin/solarwinds search "select" --filter="req_uri:select[\s\*\(]" --cols=host,path
 
 # Multiple filters (AND logic)
-bin/solarwinds search "error" --filter="req_uri:/admin" --filter="resp_status:50[0-9]"
+bin/solarwinds search "error" --filter="req_uri:/admin" --filter="resp_status:50[0-9]" --cols=host
 ```
 
 **Features:**

@@ -25,8 +25,8 @@
  * - **Time Parsing**: Comprehensive time option handling (--5m, --1h, --1d,
  *   --yesterday, etc.)
  * - **Site Filtering**: YAML-configured site mappings and filtering
- * - **Display Options**: Standardized display formatting (--status, --host,
- *   --country, etc.)
+ * - **Display Options**: Standardized display formatting via --cols option
+ *   (status, host, country, etc.)
  * - **API Integration**: Complete SolarWinds API interaction with pagination
  *   and caching
  * - **Signal Handling**: Graceful interruption handling (Ctrl+C)

@@ -63,8 +63,8 @@
  *
  * # Custom command aliases
  * aliases:
- *   errors: 'search "error" --status --1h'
- *   quickbot: 'bot --1h --ua'
+ *   errors: 'search "error" --cols=status --time=1h'
+ *   quickbot: bot --time=1h --cols=ua
  * @endcode
  *
  * @section error_handling Error Handling

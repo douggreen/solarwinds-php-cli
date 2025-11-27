@@ -25,22 +25,23 @@
  * - Performance monitoring and alerting
  * - Traffic pattern analysis across different dimensions
  *
- * @section status_shortcuts Status Code Shortcuts
+ * @section status_filtering Status Code Filtering
  *
  * **Individual Status Codes:**
- * - --200, --301, --404, --500, etc.: Specific status code analysis
+ * - --filter-status-code=404: Specific status code analysis
+ * - --filter-status-code=500: Server error analysis
  * - Automatic query construction for exact matches
  * - Integration with all display options
  *
- * **Status Range Shortcuts:**
- * - --2 or --2xx: All 2xx success responses
- * - --3 or --3xx: All 3xx redirection responses
- * - --4 or --4xx: All 4xx client error responses
- * - --5 or --5xx: All 5xx server error responses
+ * **Status Range Filtering:**
+ * - --filter-status-code=2: All 2xx success responses
+ * - --filter-status-code=3: All 3xx redirection responses
+ * - --filter-status-code=4: All 4xx client error responses
+ * - --filter-status-code=5: All 5xx server error responses
  *
- * **Special Patterns:**
- * - --errors: Combination of 4xx and 5xx responses
- * - --success: All 2xx and 3xx responses
+ * **Advanced Filtering:**
+ * - --filter-status-code=50: All 50x responses (500-509)
+ * - Combine with other filters for complex queries
  * - Default behavior: All status codes with frequency analysis
  *
  * @section query_implementation Query Implementation
@@ -64,26 +65,26 @@
  * - Provides meaningful error messages for invalid inputs
  *
  * **Display Option Conflicts:**
- * - Prevents redundant --status flag when analyzing specific codes
- * - Suggests appropriate alternative display options
- * - Validates logical combinations of display flags
+ * - Prevents redundant --cols=status when status command already shows status codes
+ * - Suggests appropriate alternative display columns
+ * - Validates logical combinations of display options
  *
  * @section example Usage Examples
  * @code{.bash}
  * # General status code analysis
- * solarwinds status --1h
+ * solarwinds status --time=1h
  *
  * # Specific error analysis
- * solarwinds status --404 --day --host
+ * solarwinds status --filter-status-code=404 --time=1d --cols=host
  *
  * # Server error patterns
- * solarwinds status --5xx --2h --country
+ * solarwinds status --filter-status-code=5 --time=2h --cols=country
  *
  * # Client error with path analysis
- * solarwinds status --4 --path --1h
+ * solarwinds status --filter-status-code=4 --cols=path --time=1h
  *
  * # Custom status code
- * solarwinds status --503 --by-hour --day
+ * solarwinds status --filter-status-code=503 --time=1d
  * @endcode
  *
  * @section color_coding Color Coding System
@@ -255,9 +256,9 @@ class StatusCommand extends BaseSolarWindsCommand
   {
     $explicitOptions = $options['display']['_explicit'] ?? [];
 
-    // status always shows status codes, so --status flag is redundant/forbidden.
+    // status always shows status codes, so --cols=status is redundant/forbidden.
     if (isset($explicitOptions['status'])) {
-      throw new \InvalidArgumentException("--status option is redundant for status (always shows status codes). Use other display options to add dimensions to status code analysis");
+      throw new \InvalidArgumentException("--cols=status is redundant for status command (already displays status codes). Use other columns to add dimensions to status code analysis");
     }
 
     // Validate status filter format if provided.

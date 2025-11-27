@@ -40,11 +40,12 @@ sites:
     label: Web Application
 
 # Optional: Custom command aliases
+# Note: These examples demonstrate proper option syntax
 aliases:
   errors: 'search "error" --cols=status --time=1h'
-  quickbot: 'bot --time=1h --cols=ua'
-  5xx: 'status --filter-status-code=5 --time=1d --cols=host,path'
-  404s: 'status --filter-status-code=404 --time=day --cols=host,path'
+  quickbot: bot --time=1h --cols=ua
+  5xx: status --filter-status-code=5 --time=1d --cols=host,path
+  404s: status --filter-status-code=404 --time=1d --cols=host,path
 
 # Optional: IP blocking configuration
 blocking:

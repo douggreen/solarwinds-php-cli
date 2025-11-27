@@ -29,19 +29,18 @@
  *
  * **Query Input Methods:**
  * - Command argument: `search "error message"`
- * - Explicit option: `search --query="complex query"`
- * - Filter-only mode: `search --ip-filter=192.168.1.1`
+ * - SQL WHERE clause: `search --sql-where="message LIKE '%error%'"`
+ * - Filter-only mode: `search --filter-ip=192.168.1.1`
  *
  * **Query Types Supported:**
  * - Simple text: `"database error"`
- * - Field-specific: `{ json.resp_status:500 }`
- * - Complex combinations: `"error" AND { json.host:example.com }`
+ * - Direct SQL: `--sql-where="req_method = 'POST' AND resp_status = 200"` (uses virtual columns)
  * - Filter-driven: Relies on global filters when no explicit query
  *
  * @section validation_logic Validation Logic
  *
  * **Query Requirements:**
- * - Requires either search term argument, --query option, or active filters
+ * - Requires either search term argument, --sql-where option, or active filters
  * - Validates that at least one search criterion is provided
  * - Provides helpful error messages for missing search criteria
  *
@@ -65,47 +64,31 @@
  * @section example Usage Examples
  * @code{.bash}
  * # Simple text search
- * solarwinds search "database error" --1h
+ * solarwinds search "database error" --time=1h
  *
- * # Field-specific query
- * solarwinds search --query="{ json.resp_status:500 }" --day
+ * # SQL WHERE clause query (advanced - finds successful POST requests)
+ * solarwinds search --sql-where="req_method = 'POST' AND resp_status = 200" --time=1d
  *
  * # Search with display options
- * solarwinds search "timeout" --status --country --2h
+ * solarwinds search "timeout" --cols=status,country --time=2h
  *
  * # Filter-only search
- * solarwinds search --ip-filter=192.168.1.100 --1h
- *
- * # Complex query with custom fields
- * solarwinds search "login failed" --fields=".host,.req_uri" --day
+ * solarwinds search --filter-ip=192.168.1.100 --time=1h
  * @endcode
- *
- * @section field_extraction Field Extraction
- *
- * **Custom Field Selection:**
- * - --fields option for custom jq field selectors
- * - Defaults to .orig_host for simple host-based grouping
- * - Ignored when standard display options are used
- * - Supports complex jq expressions for advanced extraction
- *
- * **Field Format Examples:**
- * - Single field: `.orig_host`
- * - Multiple fields: `.orig_host,.req_uri`
- * - Complex expressions: `.orig_host + " - " + .req_uri`
  *
  * @section integration_features Integration Features
  *
  * **Site Filtering:**
  * - Automatic integration with configured site mappings
- * - Support for --site-name flags from configuration
+ * - Support for --site option from configuration
  * - Seamless filtering across multiple sites
  *
  * **Global Filters:**
- * - IP address filtering: --ip-filter
- * - Country filtering: --country-filter
- * - Status code filtering: --status-code-filter
- * - User agent filtering: --user-agent-filter
- * - Path filtering: --path-filter
+ * - IP address filtering: --filter-ip
+ * - Country filtering: --filter-country
+ * - Status code filtering: --filter-status-code
+ * - User agent filtering: --filter-user-agent
+ * - Path filtering: --filter-path
  *
  * @see BaseSolarWindsCommand For base class implementation
  * @see DisplayService For result formatting options
@@ -139,17 +122,16 @@ class SearchCommand extends BaseSolarWindsCommand
       ->setDescription('Search for arbitrary patterns in SolarWinds logs with flexible query syntax')
       ->setHelp('
         The <info>search</info> command provides flexible log search capabilities for finding
-        arbitrary patterns across SolarWinds logs using any supported query format.
+        arbitrary patterns across SolarWinds logs using text search or SQL WHERE clauses.
 
         <comment>Examples:</comment>
-        <info>solarwinds search "error" --1h</info>                     # Text search for "error"
-        <info>solarwinds search "Login attempt failed" --day</info>     # Text search for login failures
-        <info>solarwinds search --query="{ json.resp_status:404 }" --2h</info> # JSON field search
-        <info>solarwinds search timeout --host --ip</info>              # Text search by host and IP
-        <info>solarwinds search "api error" --country</info>            # Text search by country
+        <info>solarwinds search "error" --time=1h</info>                         # Text search for "error"
+        <info>solarwinds search "Login attempt failed" --time=1d</info>          # Text search for login failures
+        <info>solarwinds search "timeout" --cols=host,ip</info>                  # Text search with columns
+        <info>solarwinds search "api error" --cols=country</info>                # Text search by country
+        <info>solarwinds search --filter-status-code=404 --cols=host,path</info> # Filter-only search
         ')
       ->addArgument('search_term', InputArgument::OPTIONAL, 'Text pattern to search for in logs')
-      ->addOption('query', NULL, InputOption::VALUE_REQUIRED, 'SolarWinds query syntax (will be translated to SQL)')
       ->addOption('sql-where', NULL, InputOption::VALUE_REQUIRED, 'Direct SQL WHERE clause (advanced)')
     ;
 
@@ -164,18 +146,13 @@ class SearchCommand extends BaseSolarWindsCommand
   {
     $options = [];
 
-    // Get SQL WHERE clause, SolarWinds query, or search term.
+    // Get SQL WHERE clause or search term.
     $sqlWhere = $input->getOption('sql-where');
-    $solarwindsQuery = $input->getOption('query');
     $searchTerm = $input->getArgument('search_term');
 
     if ($sqlWhere) {
       $options['sql_where'] = $sqlWhere;
       $options['query_type'] = 'sql';
-    }
-    elseif ($solarwindsQuery) {
-      $options['query'] = $solarwindsQuery;
-      $options['query_type'] = 'solarwinds';
     }
     elseif ($searchTerm) {
       $options['query'] = $searchTerm;
@@ -207,7 +184,7 @@ class SearchCommand extends BaseSolarWindsCommand
                   !empty($options['filters']['ip_filter']);
 
     if (empty($queryType) && !$hasFilters) {
-      throw new \InvalidArgumentException("Search query is required. Provide either a search term argument, --query option, --sql-where, or filter options like --ip-filter, --country-filter, etc.");
+      throw new \InvalidArgumentException("Search query is required. Provide either a search term argument, --sql-where option, or filter options like --filter-ip, --filter-country, etc.");
     }
 
     // Handle direct SQL WHERE clause.
@@ -216,12 +193,6 @@ class SearchCommand extends BaseSolarWindsCommand
         'where' => $sqlWhere,
         'params' => [],  // SQL WHERE should use named params - not supported yet
       ];
-    }
-
-    // Handle SolarWinds query syntax - translate to SQL.
-    if ($queryType === 'solarwinds') {
-      $translator = new \SolarWinds\Services\QueryTranslator();
-      return $translator->translate($query);
     }
 
     // Handle simple text search.
