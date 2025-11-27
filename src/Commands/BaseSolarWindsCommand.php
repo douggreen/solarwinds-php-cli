@@ -189,10 +189,11 @@ abstract class BaseSolarWindsCommand extends Command
         'End time (e.g., "now")', 'now')
 
       // Site options.
+      // Note: Shorthand options like --abag, --mtc are transformed to --site=abag, --site=mtc
+      // by SolarWindsApplication::run() for backward compatibility while keeping help clean.
+      ->addOption('site', NULL, InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
+        'Filter by site(s): ' . implode(', ', array_keys($this->siteHosts)))
     ;
-    foreach ($this->siteHosts as $option => $siteData) {
-      $this->addOption($option, NULL, InputOption::VALUE_NONE, $siteData['description']);
-    }
 
     // Display options.
     $displayOptions = [
@@ -450,20 +451,16 @@ abstract class BaseSolarWindsCommand extends Command
   /**
    * Parse site filtering options.
    *
-   * Checks all configured site flags and returns active site names.
+   * Gets sites from multi-value array (transformed from shorthand options).
    *
    * @param InputInterface $input Command input interface
    * @return array Array of active site names
    */
   protected function parseSiteOptions(InputInterface $input): array
   {
-    $sites = [];
-    foreach (array_keys($this->siteHosts) as $site) {
-      if ($input->getOption($site)) {
-        $sites[] = $site;
-      }
-    }
-    return $sites;
+    // Get sites from multi-value array (transformed from shorthand options).
+    $sites = $input->getOption('site');
+    return is_array($sites) ? $sites : [];
   }
 
   /**
