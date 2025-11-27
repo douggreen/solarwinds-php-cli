@@ -189,10 +189,8 @@ abstract class BaseSolarWindsCommand extends Command
         'End time (e.g., "now")', 'now')
 
       // Site options.
-      // Note: Shorthand options like --abag, --mtc are transformed to --site=abag, --site=mtc
-      // by SolarWindsApplication::run() for backward compatibility while keeping help clean.
-      ->addOption('site', NULL, InputOption::VALUE_IS_ARRAY | InputOption::VALUE_REQUIRED,
-        'Filter by site(s): ' . implode(', ', array_keys($this->siteHosts)))
+      ->addOption('site', NULL, InputOption::VALUE_REQUIRED,
+        'Filter by site(s) - comma-separated: abag,mtc,pba')
     ;
 
     // Display options.
@@ -445,9 +443,22 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function parseSiteOptions(InputInterface $input): array
   {
-    // Get sites from multi-value array (transformed from shorthand options).
-    $sites = $input->getOption('site');
-    return is_array($sites) ? $sites : [];
+    // Get sites from comma-separated string.
+    $siteOption = $input->getOption('site');
+
+    if (empty($siteOption)) {
+      return [];
+    }
+
+    // Split by comma and trim whitespace.
+    $sites = array_map('trim', explode(',', $siteOption));
+
+    if ($input->getOption('debug')) {
+      $this->io->writeln("<comment>DEBUG [parseSiteOptions]: Raw site option value: " . var_export($siteOption, TRUE) . "</comment>");
+      $this->io->writeln("<comment>DEBUG [parseSiteOptions]: Parsed sites: " . var_export($sites, TRUE) . "</comment>");
+    }
+
+    return $sites;
   }
 
   /**
@@ -553,9 +564,12 @@ abstract class BaseSolarWindsCommand extends Command
     if (!empty($options['sites'])) {
       $siteConditions = [];
       foreach ($options['sites'] as $site) {
-        $host = $this->siteHosts[$site]['host'];
-        // Check both json.site and json.orig_host fields to support different log formats.
-        $siteConditions[] = "( { json.site:$host } OR { json.orig_host:$host } )";
+        // Get all hostnames for this site (handles multiple hosts per site).
+        $hostnames = $this->config->getHostnamesForSite($site);
+        foreach ($hostnames as $hostname) {
+          // Check both json.site and json.orig_host fields to support different log formats.
+          $siteConditions[] = "( { json.site:$hostname } OR { json.orig_host:$hostname } )";
+        }
       }
       $siteFilter = '( ' . implode(' OR ', $siteConditions) . ' )';
       $query = "($query) AND $siteFilter";

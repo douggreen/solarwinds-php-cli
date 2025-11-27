@@ -41,8 +41,10 @@ sites:
 
 # Optional: Custom command aliases
 aliases:
-  errors: 'search "error" --status --1h'
-  quickbot: 'bot --1h --ua'
+  errors: 'search "error" --status --time=1h'
+  quickbot: 'bot --time=1h --ua'
+  5xx: 'status --code=5 --time=1d --host --path'
+  404s: 'status --code=404 --time=day --host --path'
 
 # Optional: IP blocking configuration
 blocking:

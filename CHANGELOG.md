@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Attack type filters: `--show-type=xss`, `--show-type=sqli`, etc.
   - Action filters: `--show-action=block-maybe`, `--show-action=review`, `--show-action=allow`, `--show-action=all`
   - Severity filters: `--show-severity=low`, `--show-severity=medium`, `--show-severity=high`, `--show-severity=critical`
-  - Site filters: `--site=mtc`, `--site=abag`, etc.
+  - Site filters: `--site=mtc`, `--site=abag`, etc. (comma-separated: `--site=mtc,abag`)
+  - Status code filters: `--code=404`, `--code=5`, etc. (replaces `--404`, `--5xx`, etc.)
   - Time shortcuts: `--2w` → `--time=2w`, `--hour` → `--time=hour` (convenient shorthand)
   - Removed: `--summary-only` (summary is default behavior)
 

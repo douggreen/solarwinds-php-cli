@@ -237,6 +237,30 @@ class ConfigurationService
   }
 
   /**
+   * Get all hostnames for a given site name.
+   *
+   * Returns array of all hostnames configured with the specified site name.
+   * This handles configurations where multiple hostnames map to the same site.
+   *
+   * @param string $siteName Site name to look up
+   * @return array Array of hostnames for this site
+   */
+  public function getHostnamesForSite(string $siteName): array
+  {
+    $sites = $this->getSites();
+    $hostnames = [];
+
+    foreach ($sites as $hostname => $siteConfig) {
+      $name = $siteConfig['name'] ?? NULL;
+      if ($name === $siteName) {
+        $hostnames[] = $hostname;
+      }
+    }
+
+    return $hostnames;
+  }
+
+  /**
    * Get hostname to display label mappings for output shortening.
    *
    * Maps full hostnames to short display labels for result formatting.

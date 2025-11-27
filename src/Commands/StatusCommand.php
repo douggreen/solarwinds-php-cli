@@ -159,33 +159,23 @@ class StatusCommand extends BaseSolarWindsCommand
         It excludes static file requests and provides insights into response status distributions.
 
         <comment>Examples:</comment>
-        <info>solarwinds status --1h</info>                    # All status codes (last hour)
-        <info>solarwinds status --4xx --host</info>            # 4xx errors by host
-        <info>solarwinds status --404 --path</info>            # 404 errors by path
-        <info>solarwinds status --5 --country</info>           # 5xx errors by country
-        <info>solarwinds status --host --region</info>         # Status codes by host and region
+        <info>solarwinds status --time=1h</info>                    # All status codes (last hour)
+        <info>solarwinds status --code=4 --host</info>              # 4xx errors by host
+        <info>solarwinds status --code=404 --path</info>            # 404 errors by path
+        <info>solarwinds status --code=5 --country</info>           # 5xx errors by country
+        <info>solarwinds status --host --region</info>              # Status codes by host and region
         ');
 
     // Call parent to set up common options (includes --status-code-filter).
     parent::configure();
 
-    // Add shortcut options for common status codes and ranges.
-    // Specific 3-digit codes.
-    foreach (['200', '201', '301', '302', '400', '401', '403', '404', '500', '502', '503', '504'] as $code) {
-      $this->addOption($code, NULL, InputOption::VALUE_NONE, "Filter to {$code} status codes");
-    }
-
-    // 1-digit ranges (2, 3, 4, 5).
-    foreach (['2', '3', '4', '5'] as $digit) {
-      $this->addOption($digit, NULL, InputOption::VALUE_NONE, "Filter to {$digit}xx status codes");
-      $this->addOption($digit . 'xx', NULL, InputOption::VALUE_NONE, "Filter to {$digit}xx status codes");
-    }
-
-    // 2-digit ranges (20, 30, 40, 50).
-    foreach (['20', '21', '30', '40', '41', '42', '43', '50', '51', '52', '53', '54'] as $range) {
-      $this->addOption($range, NULL, InputOption::VALUE_NONE, "Filter to {$range}x status codes");
-      $this->addOption($range . 'x', NULL, InputOption::VALUE_NONE, "Filter to {$range}x status codes");
-    }
+    // Add status code filter option.
+    $this->addOption(
+      'code',
+      NULL,
+      InputOption::VALUE_REQUIRED,
+      'Filter by status code: 200, 404, 4 (4xx), 5 (5xx), etc.'
+    );
   }
 
   /**
@@ -194,37 +184,9 @@ class StatusCommand extends BaseSolarWindsCommand
   protected function parseScriptSpecificOptions(InputInterface $input): array
   {
     $options = [];
-    $statusFilter = NULL;
 
-    // Check for specific 3-digit code shortcuts (override global --status-code-filter).
-    foreach (['200', '201', '301', '302', '400', '401', '403', '404', '500', '502', '503', '504'] as $code) {
-      if ($input->getOption($code)) {
-        $statusFilter = $code;
-        break;
-      }
-    }
-
-    // Check for 1-digit range shortcuts (2, 3, 4, 5, 2xx, 3xx, 4xx, 5xx).
-    if (!$statusFilter) {
-      foreach (['2', '3', '4', '5'] as $digit) {
-        if ($input->getOption($digit) || $input->getOption($digit . 'xx')) {
-          $statusFilter = $digit;
-          break;
-        }
-      }
-    }
-
-    // Check for 2-digit range shortcuts (20, 30, 40, etc. and 20x, 30x, 40x, etc.).
-    if (!$statusFilter) {
-      foreach (['20', '21', '30', '40', '41', '42', '43', '50', '51', '52', '53', '54'] as $range) {
-        if ($input->getOption($range) || $input->getOption($range . 'x')) {
-          $statusFilter = $range;
-          break;
-        }
-      }
-    }
-
-    $options['status_filter'] = $statusFilter;
+    // Get status code from --code option.
+    $options['status_filter'] = $input->getOption('code') ?: NULL;
 
     return $options;
   }
@@ -266,6 +228,24 @@ class StatusCommand extends BaseSolarWindsCommand
       }
       else {
         throw new \InvalidArgumentException("Invalid status filter format: $statusFilter");
+      }
+    }
+
+    // Add site filtering if specified.
+    if (!empty($options['sites'])) {
+      $siteConditions = [];
+      $paramIndex = 0;
+      foreach ($options['sites'] as $site) {
+        // Get all hostnames for this site (handles multiple hosts per site).
+        $hostnames = $this->config->getHostnamesForSite($site);
+        foreach ($hostnames as $hostname) {
+          $paramName = ':site' . $paramIndex++;
+          $siteConditions[] = "orig_host = $paramName";
+          $params[$paramName] = $hostname;
+        }
+      }
+      if (!empty($siteConditions)) {
+        $conditions[] = '(' . implode(' OR ', $siteConditions) . ')';
       }
     }
 
