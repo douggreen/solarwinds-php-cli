@@ -506,22 +506,22 @@ SQL
    * Execute a simple SQL query.
    *
    * @param string $sql SQL query to execute
-   * @return PDOStatement Statement result
+   * @return StatementWrapper Fluent statement wrapper for chaining
    */
-  public function query(string $sql): PDOStatement
+  public function query(string $sql): StatementWrapper
   {
-    return $this->db->query($sql);
+    return new StatementWrapper($this->db->query($sql));
   }
 
   /**
    * Prepare a SQL statement for execution.
    *
    * @param string $sql SQL query with placeholders
-   * @return PDOStatement Prepared statement
+   * @return StatementWrapper Fluent statement wrapper for chaining
    */
-  public function prepare(string $sql): PDOStatement
+  public function prepare(string $sql): StatementWrapper
   {
-    return $this->db->prepare($sql);
+    return new StatementWrapper($this->db->prepare($sql));
   }
 
   /**
@@ -529,13 +529,13 @@ SQL
    *
    * @param string $sql SQL query with placeholders
    * @param array $params Parameters to bind
-   * @return PDOStatement Executed statement
+   * @return StatementWrapper Fluent statement wrapper for chaining
    */
-  public function execute(string $sql, array $params = []): PDOStatement
+  public function execute(string $sql, array $params = []): StatementWrapper
   {
     $stmt = $this->db->prepare($sql);
     $stmt->execute($params);
-    return $stmt;
+    return new StatementWrapper($stmt);
   }
 
   /**
@@ -552,31 +552,34 @@ SQL
   /**
    * Begin a database transaction.
    *
-   * @return bool TRUE on success
+   * @return self For method chaining
    */
-  public function beginTransaction(): bool
+  public function beginTransaction(): self
   {
-    return $this->db->beginTransaction();
+    $this->db->beginTransaction();
+    return $this;
   }
 
   /**
    * Commit the current transaction.
    *
-   * @return bool TRUE on success
+   * @return self For method chaining
    */
-  public function commit(): bool
+  public function commit(): self
   {
-    return $this->db->commit();
+    $this->db->commit();
+    return $this;
   }
 
   /**
    * Roll back the current transaction.
    *
-   * @return bool TRUE on success
+   * @return self For method chaining
    */
-  public function rollBack(): bool
+  public function rollBack(): self
   {
-    return $this->db->rollBack();
+    $this->db->rollBack();
+    return $this;
   }
 
   /**
