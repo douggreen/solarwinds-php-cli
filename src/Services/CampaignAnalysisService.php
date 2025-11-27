@@ -184,7 +184,7 @@ class CampaignAnalysisService
       $ip = $campaign['ip'] ?? '';
 
       // Check if we have historical analysis for this IP
-      $historical = $this->database->getCampaignAnalysisByIp($ip);
+      $historical = $this->getCampaignAnalysisByIpFromDb($ip);
 
       if ($historical) {
         $campaign['historical'] = [
@@ -342,7 +342,7 @@ class CampaignAnalysisService
 
       $fromDeepDive = $campaign['deep_dive']['performed'] ?? FALSE;
 
-      $this->database->saveCampaignAnalysis(
+      $this->saveCampaignAnalysisToDb(
         $campaign,
         $timeRange,
         $timeStart,
@@ -369,7 +369,7 @@ class CampaignAnalysisService
    */
   public function getCachedCampaigns(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
   {
-    $cached = $this->database->getCachedCampaignsByTimeRange($timeStart, $timeEnd, $maxAgeMinutes, $timeRange);
+    $cached = $this->getCachedCampaignsByTimeRangeFromDb($timeStart, $timeEnd, $maxAgeMinutes, $timeRange);
 
     if ($cached === NULL) {
       return NULL;
@@ -424,6 +424,280 @@ class CampaignAnalysisService
     return [
       'campaigns' => $campaigns,
       'age_minutes' => $ageMinutes,
+    ];
+  }
+
+  /**
+   * Save campaign analysis to database.
+   *
+   * @param array $campaign Campaign data
+   * @param string $timeRange Time range used for analysis
+   * @param string $timeStart ISO 8601 timestamp
+   * @param string $timeEnd ISO 8601 timestamp
+   * @param bool $fromDeepDive Whether from deep-dive
+   * @return int Campaign analysis ID
+   */
+  private function saveCampaignAnalysisToDb(
+    array $campaign,
+    string $timeRange,
+    string $timeStart,
+    string $timeEnd,
+    bool $fromDeepDive = FALSE
+  ): int {
+    $blockingRec = $campaign['blocking_recommendation'] ?? [];
+
+    $stmt = $this->database->prepare(<<<'SQL'
+INSERT OR REPLACE INTO campaign_analysis (
+  ip, country,
+  time_start, time_end, time_range, analyzed_at,
+  total_requests, exploit_requests, first_seen, last_seen, time_span_days,
+  attack_types, severity, top_paths,
+  behavior_type, request_rate, ratio_40x, ratio_exploit, path_diversity, uri_dup_ratio,
+  should_block, confidence, block_reasons,
+  user_agent, bot_name, total_volume, ratio_edge_blocked,
+  from_deep_dive
+) VALUES (
+  :ip, :country,
+  :time_start, :time_end, :time_range, CURRENT_TIMESTAMP,
+  :total_requests, :exploit_requests, :first_seen, :last_seen, :time_span_days,
+  :attack_types, :severity, :top_paths,
+  :behavior_type, :request_rate, :ratio_40x, :ratio_exploit, :path_diversity, :uri_dup_ratio,
+  :should_block, :confidence, :block_reasons,
+  :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
+  :from_deep_dive
+)
+SQL
+    );
+
+    $volumeAnalysis = $campaign['volume_analysis'] ?? [];
+
+    $stmt->execute([
+      ':ip' => $campaign['ip'] ?? '',
+      ':country' => $campaign['country'] ?? '',
+      ':time_start' => $timeStart,
+      ':time_end' => $timeEnd,
+      ':time_range' => $timeRange,
+      ':total_requests' => $campaign['count'] ?? 0,
+      ':exploit_requests' => $campaign['count'] ?? 0,
+      ':first_seen' => $campaign['first_seen'] ?? NULL,
+      ':last_seen' => $campaign['last_seen'] ?? NULL,
+      ':time_span_days' => $campaign['time_span_days'] ?? 0,
+      ':attack_types' => json_encode($campaign['attack_types'] ?? []),
+      ':severity' => $campaign['severity'] ?? 'low',
+      ':top_paths' => json_encode($campaign['top_paths'] ?? []),
+      ':behavior_type' => $campaign['behavior'] ?? '',
+      ':request_rate' => $campaign['request_rate'] ?? 0,
+      ':ratio_40x' => $campaign['ratio_40x'] ?? 0,
+      ':ratio_exploit' => $campaign['ratio_exploit'] ?? 0,
+      ':path_diversity' => $campaign['path_diversity'] ?? 0,
+      ':uri_dup_ratio' => $campaign['uri_dup_ratio'] ?? 0,
+      ':should_block' => ($blockingRec['should_block'] ?? FALSE) ? 1 : 0,
+      ':confidence' => $blockingRec['confidence'] ?? 'none',
+      ':block_reasons' => json_encode($blockingRec['reasons'] ?? []),
+      ':user_agent' => $campaign['user_agent'] ?? '',
+      ':bot_name' => $campaign['bot_name'] ?? NULL,
+      ':total_volume' => $volumeAnalysis['total_volume'] ?? 0,
+      ':ratio_edge_blocked' => $volumeAnalysis['ratio_edge_blocked'] ?? 0,
+      ':from_deep_dive' => $fromDeepDive ? 1 : 0,
+    ]);
+
+    // Need to get lastInsertId from the underlying PDO connection
+    return (int) $this->database->getConnection()->lastInsertId();
+  }
+
+  /**
+   * Get campaign analysis for a specific IP.
+   *
+   * @param string $ip IP address
+   * @return array|null Campaign analysis or NULL if not found
+   */
+  private function getCampaignAnalysisByIpFromDb(string $ip): ?array
+  {
+    $stmt = $this->database->prepare(<<<'SQL'
+SELECT * FROM campaign_analysis
+WHERE ip = :ip
+ORDER BY analyzed_at DESC
+LIMIT 1
+SQL
+    );
+
+    $stmt->execute([':ip' => $ip]);
+    $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+    if (!$result) {
+      return NULL;
+    }
+
+    // Decode JSON fields.
+    $result['attack_types'] = json_decode($result['attack_types'] ?? '[]', TRUE);
+    $result['top_paths'] = json_decode($result['top_paths'] ?? '[]', TRUE);
+    $result['block_reasons'] = json_decode($result['block_reasons'] ?? '[]', TRUE);
+
+    return $result;
+  }
+
+  /**
+   * Get all campaign analyses within a time range.
+   *
+   * @param string|null $since Start time (ISO 8601)
+   * @param string|null $until End time (ISO 8601)
+   * @param string|null $minConfidence Minimum confidence level
+   * @return array Array of campaign analyses
+   */
+  private function getCampaignAnalysesFromDb(
+    ?string $since = NULL,
+    ?string $until = NULL,
+    ?string $minConfidence = NULL
+  ): array {
+    $sql = 'SELECT * FROM campaign_analysis WHERE 1=1';
+    $params = [];
+
+    if ($since) {
+      $sql .= ' AND analyzed_at >= :since';
+      $params[':since'] = $since;
+    }
+
+    if ($until) {
+      $sql .= ' AND analyzed_at <= :until';
+      $params[':until'] = $until;
+    }
+
+    if ($minConfidence) {
+      $confidenceLevels = ['none' => 0, 'low' => 1, 'medium' => 2, 'high' => 3, 'urgent' => 4];
+      $minLevel = $confidenceLevels[$minConfidence] ?? 0;
+
+      $sql .= ' AND confidence IN (';
+      $sql .= implode(',', array_map(fn($k) => "'$k'", array_filter(
+        array_keys($confidenceLevels),
+        fn($k) => $confidenceLevels[$k] >= $minLevel
+      )));
+      $sql .= ')';
+    }
+
+    $sql .= ' ORDER BY analyzed_at DESC';
+
+    $stmt = $this->database->prepare($sql);
+    $stmt->execute($params);
+
+    $results = [];
+    while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+      // Decode JSON fields.
+      $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
+      $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
+      $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
+      $results[] = $row;
+    }
+
+    return $results;
+  }
+
+  /**
+   * Check if IP is in recent campaign analysis.
+   *
+   * @param string $ip IP address
+   * @param int $daysBack Number of days to look back
+   * @return bool TRUE if IP has recent analysis
+   */
+  private function hasRecentCampaignAnalysisInDb(string $ip, int $daysBack = 7): bool
+  {
+    $since = date('Y-m-d H:i:s', strtotime("-$daysBack days"));
+
+    $stmt = $this->database->prepare(<<<'SQL'
+SELECT COUNT(*) as count FROM campaign_analysis
+WHERE ip = :ip AND analyzed_at >= :since
+SQL
+    );
+
+    $stmt->execute([
+      ':ip' => $ip,
+      ':since' => $since,
+    ]);
+
+    $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+    return ($row['count'] ?? 0) > 0;
+  }
+
+  /**
+   * Get campaign analyses for a specific time range.
+   *
+   * @param string $timeStart Start of analyzed time range (ISO 8601)
+   * @param string $timeEnd End of analyzed time range (ISO 8601)
+   * @param int $maxAgeMinutes Maximum age of analysis in minutes
+   * @param string|null $timeRange Time range label for fuzzy matching
+   * @return array|null Array with 'campaigns' and 'analyzed_at', or NULL
+   */
+  private function getCachedCampaignsByTimeRangeFromDb(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
+  {
+    // Calculate cutoff time for cache freshness.
+    $cutoffTime = gmdate('Y-m-d H:i:s', time() - ($maxAgeMinutes * 60));
+
+    // Step 1: Find the most recent analysis timestamp.
+    if ($timeRange !== NULL) {
+      $stmt = $this->database->prepare(<<<'SQL'
+SELECT MAX(analyzed_at) as latest_analysis
+FROM campaign_analysis
+WHERE time_range = :time_range
+  AND analyzed_at >= :cutoff
+SQL
+      );
+
+      $stmt->execute([
+        ':time_range' => $timeRange,
+        ':cutoff' => $cutoffTime,
+      ]);
+    }
+    else {
+      $stmt = $this->database->prepare(<<<'SQL'
+SELECT MAX(analyzed_at) as latest_analysis
+FROM campaign_analysis
+WHERE time_start = :time_start
+  AND time_end = :time_end
+  AND analyzed_at >= :cutoff
+SQL
+      );
+
+      $stmt->execute([
+        ':time_start' => $timeStart,
+        ':time_end' => $timeEnd,
+        ':cutoff' => $cutoffTime,
+      ]);
+    }
+
+    $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $analyzedAt = $result['latest_analysis'] ?? NULL;
+
+    if ($analyzedAt === NULL) {
+      return NULL;
+    }
+
+    // Step 2: Get all campaigns from that specific analysis.
+    $stmt = $this->database->prepare(<<<'SQL'
+SELECT *
+FROM campaign_analysis
+WHERE analyzed_at = :analyzed_at
+SQL
+    );
+
+    $stmt->execute([':analyzed_at' => $analyzedAt]);
+
+    $campaigns = [];
+
+    while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+      // Decode JSON fields.
+      $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
+      $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
+      $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
+
+      $campaigns[] = $row;
+    }
+
+    if (empty($campaigns)) {
+      return NULL;
+    }
+
+    return [
+      'campaigns' => $campaigns,
+      'analyzed_at' => $analyzedAt,
     ];
   }
 
