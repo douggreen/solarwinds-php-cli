@@ -453,7 +453,7 @@ class DisplayService
       }
 
       // Apply variable substitution if requested.
-      if (!empty($filterOptions['substitute_vars']) && !empty($variables)) {
+      if (!empty($filters['substitute_vars']) && !empty($variables)) {
         $message = $this->substituteVariables($message, $variables);
       }
 

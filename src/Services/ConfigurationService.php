@@ -189,7 +189,7 @@ class ConfigurationService
 
     if (is_string($value)) {
       $lower = strtolower(trim($value));
-      return in_array($lower, ['TRUE', '1', 'yes', 'on']);
+      return in_array($lower, ['true', '1', 'yes', 'on']);
     }
 
     if (is_numeric($value)) {
