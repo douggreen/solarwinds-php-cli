@@ -317,9 +317,27 @@ abstract class BaseSolarWindsCommand extends Command
         [$start, $end] = $mapping;
 
         // Generate human-readable description
-        $humanReadable = strpos($timeOption, '..') !== FALSE
-          ? $timeOption  // Range format: show as-is (e.g., "2d..1d")
-          : "last $timeOption";  // Relative format: add "last" prefix
+        if ($timeOption === 'all') {
+          // For 'all', get actual database coverage dates
+          $coverage = $this->databaseService->execute(
+            'SELECT MIN(time) as earliest, MAX(time) as latest FROM logs'
+          )->fetch();
+
+          if ($coverage && $coverage['earliest'] && $coverage['latest']) {
+            $earliest = date('M j, Y', strtotime($coverage['earliest']));
+            $latest = date('M j, Y', strtotime($coverage['latest']));
+            $humanReadable = "all database coverage ($earliest to $latest)";
+          }
+          else {
+            $humanReadable = 'all database coverage (empty database)';
+          }
+        }
+        elseif (strpos($timeOption, '..') !== FALSE) {
+          $humanReadable = $timeOption;  // Range format: show as-is (e.g., "2d..1d")
+        }
+        else {
+          $humanReadable = "last $timeOption";  // Relative format: add "last" prefix
+        }
 
         return [
           'start_time' => $start,
