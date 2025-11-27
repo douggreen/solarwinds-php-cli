@@ -387,21 +387,8 @@ abstract class BaseSolarWindsCommand extends Command
       return TRUE;
     }
 
-    // Detect which time flag was used.
-    $timeFlag = NULL;
-    $timeMappings = self::getTimeMappings();
-
-    foreach ($timeMappings as $flag => $times) {
-      if ($input->getOption($flag)) {
-        $timeFlag = $flag;
-        break;
-      }
-    }
-
-    // No time flag found, check if --time option was used.
-    if ($timeFlag === NULL) {
-      $timeFlag = $input->getOption('time');
-    }
+    // Get the time value from --time option (all time specifications use this now).
+    $timeFlag = $input->getOption('time');
 
     // If still null, it's using default time - no confirmation needed.
     if ($timeFlag === NULL) {

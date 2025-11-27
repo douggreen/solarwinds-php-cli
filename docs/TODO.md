@@ -193,12 +193,17 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
 3. **:white_check_mark: Upgrade Symfony Console to Version 7+ and Clean Help Output** (COMPLETED 2025-01-26)
    - :white_check_mark: Upgraded from Symfony Console 6.x to 7.3.6
    - :white_check_mark: Fixed `handleSignal()` method signature to match Symfony 7 API
-   - :white_check_mark: Implemented argv transformation in `SolarWindsApplication::run()` for backward compatibility
-   - :white_check_mark: Removed 500+ individual time option registrations (--1m, --2m, etc.)
-   - :white_check_mark: Transform shorthand options to --time=VALUE: --2w → --time=2w, --hour → --time=hour
+   - :white_check_mark: Implemented argv transformation system in `SolarWindsApplication::run()`
+   - :white_check_mark: Consolidated 500+ time options into 1 multi-value option
+   - :white_check_mark: Consolidated 9 site options into 1 multi-value option
+   - :white_check_mark: Consolidated 16 type filter options into 1 multi-value option
+   - :white_check_mark: Consolidated 4 action filter options into 1 multi-value option
+   - :white_check_mark: Consolidated 4 severity filter options into 1 multi-value option
+   - :white_check_mark: Time shortcuts: --2w → --time=2w, --hour → --time=hour
+   - :white_check_mark: Explicit syntax for sites and filters: --site=mtc, --show-type=xss, --show-action=allow, --show-severity=high
    - :x: Note: `setHidden()` method does NOT exist in Symfony 7 (open feature request #54206)
-   - **Result: Help output reduced from 770 lines to 170 lines (78% reduction)**
-   - All shorthand time options (--2w, --15m, --hour, --yesterday, etc.) still work via transformation
+   - **Result: Help output reduced from 770 lines to 141 lines (82% reduction!)**
+   - **Time shortcuts only:** Only time options support shorthand syntax via transformation
 
 ### Display and Output Improvements
 

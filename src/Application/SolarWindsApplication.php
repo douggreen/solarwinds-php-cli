@@ -145,10 +145,10 @@ class SolarWindsApplication extends Application
   }
 
   /**
-   * Override run() to transform shorthand time options to --time=VALUE.
+   * Override run() to transform shorthand time options.
    *
-   * This allows backward compatibility with --2w, --15m, etc. while keeping
-   * help output clean by only registering --time option.
+   * This keeps help output clean by only registering --time option,
+   * while allowing convenient shortcuts like --2w, --15m, --hour.
    *
    * Transformations:
    * - --2w → --time=2w
@@ -163,7 +163,7 @@ class SolarWindsApplication extends Application
    */
   public function run(InputInterface $input = NULL, OutputInterface $output = NULL): int
   {
-    // Transform shorthand options to their full --option=value equivalents.
+    // Transform shorthand time options to --time=value.
     if ($input === NULL && isset($_SERVER['argv'])) {
       $argv = $_SERVER['argv'];
       $transformed = [];
@@ -176,22 +176,6 @@ class SolarWindsApplication extends Application
         // Match special time keywords: --hour, --day, --week, --yesterday, --all.
         elseif (preg_match('/^--(hour|day|week|yesterday|all)$/', $arg, $matches)) {
           $transformed[] = '--time=' . $matches[1];
-        }
-        // Match type filters: --show-type-xss → --show-type=xss.
-        elseif (preg_match('/^--show-type-(.+)$/', $arg, $matches)) {
-          $transformed[] = '--show-type=' . $matches[1];
-        }
-        // Match severity filters: --show-severity-high → --show-severity=high.
-        elseif (preg_match('/^--show-severity-(.+)$/', $arg, $matches)) {
-          $transformed[] = '--show-severity=' . $matches[1];
-        }
-        // Match action filters: --show-action-allow → --show-action=allow.
-        elseif (preg_match('/^--show-action-(.+)$/', $arg, $matches)) {
-          $transformed[] = '--show-action=' . $matches[1];
-        }
-        // Match site filters: --abag, --barc, etc. → --site=abag, --site=barc.
-        elseif (preg_match('/^--(abag|barc|bayren|bamblog|blog|hqq|pba|sfbra|mtc)$/', $arg, $matches)) {
-          $transformed[] = '--site=' . $matches[1];
         }
         else {
           $transformed[] = $arg;

@@ -8,14 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- **BREAKING**: Standardized command-line options to consistent `--show-{category}-{value}` pattern
-  - Attack type filters: `--xss-only` → `--show-type-xss`, `--sqli-only` → `--show-type-sqli`, etc.
-  - Action filters: `--show-all-actions` → `--show-action-all` (plus new `--show-action-block-maybe`, `--show-action-review`, `--show-action-allow`)
-  - Severity filters: `--min-severity=level` → `--show-severity-{low|medium|high|critical}`
+- **BREAKING**: Simplified command-line option syntax to `--option=value` format
+  - Attack type filters: `--show-type=xss`, `--show-type=sqli`, etc.
+  - Action filters: `--show-action=block-maybe`, `--show-action=review`, `--show-action=allow`, `--show-action=all`
+  - Severity filters: `--show-severity=low`, `--show-severity=medium`, `--show-severity=high`, `--show-severity=critical`
+  - Site filters: `--site=mtc`, `--site=abag`, etc.
+  - Time shortcuts: `--2w` → `--time=2w`, `--hour` → `--time=hour` (convenient shorthand)
   - Removed: `--summary-only` (summary is default behavior)
 
+### Added
+- Upgraded to Symfony Console 7.3.6
+- Help output reduced from 770 lines to 141 lines (82% reduction)
+- Multi-value option support for filters (e.g., `--show-type=xss --show-type=sqli`)
+
 ### Benefits
-- Predictable, self-documenting flag names
-- Tab-completion friendly (all filters grouped under `--show-*`)
-- Easier to remember and discover options
-- More flexible action filtering (can show specific combinations)
+- Clean, predictable syntax
+- Tab-completion friendly
+- Simpler to remember and use
+- Time shortcuts for frequently-used patterns

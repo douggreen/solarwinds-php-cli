@@ -233,6 +233,20 @@ class AliasCommand extends Command
         $output->writeln("<comment>DEBUG [AliasCommand]: Processing alias arg: '$arg'</comment>");
       }
 
+      // Transform time shortcuts (--2w, --1d, --hour, etc.) to --time=value
+      // This matches the transformation in SolarWindsApplication::run()
+      if (preg_match('/^--(\d+[mhdwMyD])$/', $arg, $matches)) {
+        $arg = '--time=' . $matches[1];
+        if ($input->getOption('debug')) {
+          $output->writeln("<comment>DEBUG [AliasCommand]: Transformed time shortcut to: '$arg'</comment>");
+        }
+      } elseif (preg_match('/^--(hour|day|week|yesterday|all)$/', $arg, $matches)) {
+        $arg = '--time=' . $matches[1];
+        if ($input->getOption('debug')) {
+          $output->writeln("<comment>DEBUG [AliasCommand]: Transformed time keyword to: '$arg'</comment>");
+        }
+      }
+
       if (strpos($arg, '--') === 0) {
         // This is an option
         if (strpos($arg, '=') !== FALSE) {
@@ -378,12 +392,28 @@ class AliasCommand extends Command
     }
 
     // Create new input and execute
+    if ($input->getOption('debug')) {
+      $output->writeln("<comment>DEBUG [AliasCommand]: Creating ArrayInput with merged arguments...</comment>");
+    }
+
     $mergedInput = new ArrayInput($mergedArgs);
+    $mergedInput->setInteractive(FALSE);
 
     if ($input->getOption('debug')) {
+      $output->writeln("<comment>DEBUG [AliasCommand]: ArrayInput created successfully</comment>");
+      $output->writeln("<comment>DEBUG [AliasCommand]: ArrayInput __toString(): " . $mergedInput->__toString() . "</comment>");
       $output->writeln("<comment>DEBUG [AliasCommand]: About to execute target command '{$this->targetCommand}'</comment>");
     }
 
-    return $command->run($mergedInput, $output);
+    try {
+      return $command->run($mergedInput, $output);
+    } catch (\Exception $e) {
+      if ($input->getOption('debug')) {
+        $output->writeln("<error>DEBUG [AliasCommand]: Exception caught: " . $e->getMessage() . "</error>");
+        $output->writeln("<error>DEBUG [AliasCommand]: Stack trace:</error>");
+        $output->writeln("<error>" . $e->getTraceAsString() . "</error>");
+      }
+      throw $e;
+    }
   }
 }
