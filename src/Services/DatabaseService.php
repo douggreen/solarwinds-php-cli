@@ -503,20 +503,6 @@ SQL
   }
 
   /**
-   * Get database connection.
-   *
-   * @return PDO Database connection
-   * @todo Refactor architecture: DatabaseService should only handle connections/queries,
-   *       not application logic. Move campaign analysis, bot IP operations, and sync
-   *       tracking to dedicated domain services (CampaignAnalysisService, BotIpService,
-   *       SyncTrackingService). See TODO.md for details.
-   */
-  public function getConnection(): PDO
-  {
-    return $this->db;
-  }
-
-  /**
    * Execute a simple SQL query.
    *
    * @param string $sql SQL query to execute
@@ -591,6 +577,16 @@ SQL
   public function rollBack(): bool
   {
     return $this->db->rollBack();
+  }
+
+  /**
+   * Get the ID of the last inserted row.
+   *
+   * @return string Last insert ID
+   */
+  public function lastInsertId(): string
+  {
+    return $this->db->lastInsertId();
   }
 
   /**

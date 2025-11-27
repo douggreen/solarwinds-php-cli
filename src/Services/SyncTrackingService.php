@@ -82,7 +82,7 @@ SQL
       ':chunks_total' => $chunksTotal,
     ]);
 
-    return (int) $this->database->getConnection()->lastInsertId();
+    return (int) $this->database->lastInsertId();
   }
 
   /**

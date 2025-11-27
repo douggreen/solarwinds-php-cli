@@ -503,8 +503,7 @@ SQL
       ':from_deep_dive' => $fromDeepDive ? 1 : 0,
     ]);
 
-    // Need to get lastInsertId from the underlying PDO connection
-    return (int) $this->database->getConnection()->lastInsertId();
+    return (int) $this->database->lastInsertId();
   }
 
   /**
