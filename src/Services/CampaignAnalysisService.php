@@ -27,10 +27,12 @@ class CampaignAnalysisService
    *
    * @param ConfigurationService $config Configuration service
    * @param DatabaseService $database Database service
+   * @param SyncTrackingService $syncTracking Sync tracking service
    */
   public function __construct(
     protected ConfigurationService $config,
-    protected DatabaseService $database
+    protected DatabaseService $database,
+    protected SyncTrackingService $syncTracking
   ) {
   }
 
@@ -221,7 +223,7 @@ class CampaignAnalysisService
     object $exploitsCommand
   ): ?array {
     // Get earliest log date for this database
-    $firstLogDate = $this->database->getEarliestLogDate();
+    $firstLogDate = $this->syncTracking->getEarliestLogDate();
 
     if (!$firstLogDate) {
       return NULL; // No logs in database

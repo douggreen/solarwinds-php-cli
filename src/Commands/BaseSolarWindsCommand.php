@@ -91,6 +91,7 @@ use SolarWinds\Services\ConfigurationService;
 use SolarWinds\Services\ApiService;
 use SolarWinds\Services\DisplayService;
 use SolarWinds\Services\DatabaseService;
+use SolarWinds\Services\SyncTrackingService;
 use SolarWinds\Services\TimeSpecifications;
 
 /**
@@ -105,6 +106,7 @@ abstract class BaseSolarWindsCommand extends Command
   protected ApiService $apiService;
   protected DisplayService $displayService;
   protected DatabaseService $databaseService;
+  protected SyncTrackingService $syncTracking;
   protected SymfonyStyle $io;
 
   // Default values that child classes can override.
@@ -139,6 +141,7 @@ abstract class BaseSolarWindsCommand extends Command
     $this->apiService = new ApiService($this->config);
     $this->displayService = new DisplayService($this->config);
     $this->databaseService = new DatabaseService($this->config);
+    $this->syncTracking = new SyncTrackingService($this->config, $this->databaseService);
   }
 
   /**
@@ -384,7 +387,7 @@ abstract class BaseSolarWindsCommand extends Command
     if (!$this->jsonMode) {
       $this->io->writeln('<comment>Analyzing data coverage...</comment>');
     }
-    $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
+    $rangeAnalysis = $this->syncTracking->detectMissingRanges($startTime, $endTime);
 
     // Step 2: Get current record count from database.
     $currentCount = 0;
@@ -1006,7 +1009,7 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function checkAndReportIncompleteSyncs(): void
   {
-    $incompleteSyncs = $this->databaseService->getIncompleteSyncRanges();
+    $incompleteSyncs = $this->syncTracking->getIncompleteSyncRanges();
 
     if (empty($incompleteSyncs)) {
       return;
@@ -1541,7 +1544,7 @@ abstract class BaseSolarWindsCommand extends Command
     if ($showCacheMessage && !$this->jsonMode) {
       $this->io->writeln('<comment>Detecting gaps in coverage...</comment>');
     }
-    $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
+    $rangeAnalysis = $this->syncTracking->detectMissingRanges($startTime, $endTime);
 
     // No missing ranges - data already in database.
     if (empty($rangeAnalysis['ranges'])) {
@@ -1576,7 +1579,7 @@ abstract class BaseSolarWindsCommand extends Command
       $chunks = $this->splitRangeIntoChunks($range['start'], $range['end']);
 
       // Create sync range tracking entry.
-      $syncId = $this->databaseService->createSyncRange($range['start'], $range['end'], count($chunks));
+      $syncId = $this->syncTracking->createSyncRange($range['start'], $range['end'], count($chunks));
 
       if (!$this->jsonMode && $showCacheMessage) {
         $rangeMessage = $this->formatRangeMessage($range['start'], $range['end'], $range['reason']);
@@ -1592,7 +1595,7 @@ abstract class BaseSolarWindsCommand extends Command
       $progressBar = $this->createSearchProgressBar($rangeOptions);
 
       // Mark sync as in progress.
-      $this->databaseService->updateSyncStatus($syncId, 'in_progress');
+      $this->syncTracking->updateSyncStatus($syncId, 'in_progress');
 
       // Track malformed JSON entries and progress.
       $totalFixed = 0;
@@ -1612,8 +1615,8 @@ abstract class BaseSolarWindsCommand extends Command
         // Check for interruption before each chunk.
         if (self::isInterrupted()) {
           $interrupted = TRUE;
-          $this->databaseService->updateSyncStatus($syncId, 'interrupted');
-          $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+          $this->syncTracking->updateSyncStatus($syncId, 'interrupted');
+          $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
           if (!$this->jsonMode) {
             $this->io->writeln('');
             $this->io->warning('Sync interrupted - continuing with partial data');
@@ -1634,7 +1637,7 @@ abstract class BaseSolarWindsCommand extends Command
 
           // Chunk completed successfully - update progress.
           $chunksCompleted++;
-          $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+          $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
         }
         catch (\Exception $e) {
           $this->finishProgressBar($progressBar);
@@ -1643,7 +1646,7 @@ abstract class BaseSolarWindsCommand extends Command
           if (self::isInterrupted()) {
             $interrupted = TRUE;
             $this->databaseService->updateSyncStatus($syncId, 'interrupted');
-            $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+            $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
             if (!$this->jsonMode) {
               $this->io->writeln('');
               $this->io->warning('Sync interrupted - continuing with partial data');
@@ -1652,8 +1655,8 @@ abstract class BaseSolarWindsCommand extends Command
           }
 
           // Non-interruption error - mark as failed.
-          $this->databaseService->updateSyncStatus($syncId, 'failed', $e->getMessage());
-          $this->databaseService->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+          $this->syncTracking->updateSyncStatus($syncId, 'failed', $e->getMessage());
+          $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
 
           // Report and re-throw.
           if (!$this->jsonMode) {
@@ -1675,7 +1678,7 @@ abstract class BaseSolarWindsCommand extends Command
       } // End chunk loop
 
       // All chunks completed successfully - mark sync as completed.
-      $this->databaseService->updateSyncStatus($syncId, 'completed');
+      $this->syncTracking->updateSyncStatus($syncId, 'completed');
 
       // Finish progress bar after all chunks complete.
       $this->finishProgressBar($progressBar);

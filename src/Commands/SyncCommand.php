@@ -117,13 +117,13 @@ class SyncCommand extends BaseSolarWindsCommand
       $this->io->writeln('<comment>Checking current database coverage...</comment>');
       $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
       $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
-      $beforeSync = $this->databaseService->detectMissingRanges($startTime, $endTime);
+      $beforeSync = $this->syncTracking->detectMissingRanges($startTime, $endTime);
 
       // Sync logs to database (this will fill gaps).
       $this->syncLogsToDatabase($options);
 
       // Check coverage AFTER sync.
-      $afterSync = $this->databaseService->detectMissingRanges($startTime, $endTime);
+      $afterSync = $this->syncTracking->detectMissingRanges($startTime, $endTime);
 
       // Show completion message.
       $this->io->success('Sync completed');
@@ -148,7 +148,7 @@ class SyncCommand extends BaseSolarWindsCommand
     $endTime = $options['time']['end_time'];
 
     // Get record count for the synced range.
-    $count = $this->databaseService->getRecordCount($startTime, $endTime);
+    $count = $this->syncTracking->getRecordCount($startTime, $endTime);
 
     $this->io->section('Coverage Report');
     $this->io->text([
