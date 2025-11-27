@@ -82,10 +82,10 @@ When the user asks to "show me the TODO list" or similar:
 ## PROJECT ARCHITECTURE CONTEXT
 
 ### Current Status
-- **5 Core Commands:** `bot`, `exploits`, `threats`, `search`, `status` (flexible foundation)
+- **5 Core Commands:** `bot`, `exploits`, `search`, `status`, `sync` (flexible foundation)
 - **8+ YAML Aliases:** Specialized commands via configuration
 - **Template Pattern:** `BaseSolarWindsCommand` provides shared functionality
-- **Services:** `ConfigurationService`, `ApiService`, `DisplayService`, `CacheService`
+- **Services:** `ConfigurationService`, `ApiService`, `DisplayService`, `CacheService`, `DatabaseService`, `CampaignAnalysisService`, `SyncTrackingService`, `BotIpService`
 
 ### Template Method Implementation
 - **BaseSolarWindsCommand** - Provides common functionality

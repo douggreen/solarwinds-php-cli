@@ -7,47 +7,7 @@ This document tracks the remaining work to complete the migration and enhancemen
 **Current Priority:**
 1. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
 2. **Implement DDoS Detection** - Detect coordinated exploit campaigns
-3. **Refactor DatabaseService Architecture** - Separate concerns between database layer and application logic
-4. Research and implement testing framework
-
-## Architecture Refactoring
-
-### 1. DatabaseService Separation of Concerns (TECHNICAL DEBT)
-
-**Problem:** DatabaseService currently mixes database connection/query management with application-specific logic (campaign analysis, bot IP operations, sync tracking). This violates separation of concerns and makes the codebase harder to test and maintain.
-
-**Current State:**
-- DatabaseService has 1,294 lines mixing infrastructure and domain logic
-- Methods like `saveCampaignAnalysis()`, `getCampaignAnalysisByIp()`, `hasRecentCampaignAnalysis()` embed application logic
-- Services like `BotIpService` need raw PDO access via `getConnection()` (quick fix added with @todo)
-
-**Target Architecture:**
-- **DatabaseService**: Connection management, schema management, basic query execution only
-- **CampaignAnalysisService**: All campaign-related database operations
-- **BotIpService**: Bot IP verification and related database operations (already exists, needs integration)
-- **SyncTrackingService**: Sync range tracking and gap detection
-
-**Benefits:**
-- Clear separation of concerns (infrastructure vs domain logic)
-- Easier unit testing (mock domain services without database)
-- Better code organization and discoverability
-- Follows single responsibility principle
-
-**Implementation Tasks:**
-1. Create `CampaignAnalysisService` and move campaign methods from DatabaseService
-2. Create `SyncTrackingService` and move sync tracking methods from DatabaseService
-3. Update `BotIpService` to accept DatabaseService and use query delegation instead of raw PDO
-4. Update all command classes to use domain services instead of DatabaseService directly
-5. Add `query()` / `prepare()` delegation methods to DatabaseService for domain services to use
-6. Remove `getConnection()` method once domain services no longer need raw PDO access
-
-**Affected Files:**
-- `src/Services/DatabaseService.php` - Remove application logic, add query delegation
-- `src/Services/CampaignAnalysisService.php` - New file
-- `src/Services/SyncTrackingService.php` - New file
-- `src/Services/BotIpService.php` - Update to use DatabaseService instead of raw PDO
-- `src/Commands/ExploitsCommand.php` - Use CampaignAnalysisService
-- `src/Commands/BaseSolarWindsCommand.php` - Use SyncTrackingService
+3. Research and implement testing framework
 
 ## Security Enhancements
 
