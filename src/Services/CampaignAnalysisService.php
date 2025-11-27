@@ -193,7 +193,7 @@ class CampaignAnalysisService
           'found' => TRUE,
           'last_analyzed' => $historical['analyzed_at'],
           'last_confidence' => $historical['confidence'],
-          'last_severity' => $historical['severity'],
+          'last_severity' => $historical['campaign_severity'],
           'total_historical_requests' => $historical['total_requests'],
         ];
       }
@@ -396,7 +396,7 @@ class CampaignAnalysisService
         'last_seen' => $row['last_seen'],
         'time_span_days' => $row['time_span_days'],
         'attack_types' => $row['attack_types'],
-        'severity' => $row['severity'],
+        'severity' => $row['campaign_severity'],
         'top_paths' => $row['top_paths'],
         'behavior' => $row['behavior_type'],
         'request_rate' => $row['request_rate'],
@@ -405,6 +405,7 @@ class CampaignAnalysisService
         'path_diversity' => $row['path_diversity'],
         'uri_dup_ratio' => $row['uri_dup_ratio'],
         'blocking_recommendation' => [
+          'attack_severity' => $row['attack_severity'],
           'should_block' => (bool) $row['should_block'],
           'confidence' => $row['confidence'],
           'reasons' => $row['block_reasons'],
@@ -453,7 +454,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   ip, country,
   time_start, time_end, time_range, analyzed_at,
   total_requests, exploit_requests, first_seen, last_seen, time_span_days,
-  attack_types, severity, top_paths,
+  attack_types, campaign_severity, attack_severity, top_paths,
   behavior_type, request_rate, ratio_40x, ratio_exploit, path_diversity, uri_dup_ratio,
   should_block, confidence, block_reasons,
   user_agent, bot_name, total_volume, ratio_edge_blocked,
@@ -462,7 +463,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   :ip, :country,
   :time_start, :time_end, :time_range, CURRENT_TIMESTAMP,
   :total_requests, :exploit_requests, :first_seen, :last_seen, :time_span_days,
-  :attack_types, :severity, :top_paths,
+  :attack_types, :campaign_severity, :attack_severity, :top_paths,
   :behavior_type, :request_rate, :ratio_40x, :ratio_exploit, :path_diversity, :uri_dup_ratio,
   :should_block, :confidence, :block_reasons,
   :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
@@ -485,7 +486,8 @@ SQL
       ':last_seen' => $campaign['last_seen'] ?? NULL,
       ':time_span_days' => $campaign['time_span_days'] ?? 0,
       ':attack_types' => json_encode($campaign['attack_types'] ?? []),
-      ':severity' => $campaign['severity'] ?? 'low',
+      ':campaign_severity' => $campaign['campaign_severity'] ?? 'low',
+      ':attack_severity' => $blockingRec['attack_severity'] ?? 'low',
       ':top_paths' => json_encode($campaign['top_paths'] ?? []),
       ':behavior_type' => $campaign['behavior'] ?? '',
       ':request_rate' => $campaign['request_rate'] ?? 0,
@@ -688,6 +690,14 @@ SQL
       $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
       $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
       $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
+
+      // Reconstruct blocking_recommendation object from flat database fields.
+      $row['blocking_recommendation'] = [
+        'attack_severity' => $row['attack_severity'] ?? 'low',
+        'confidence' => $row['confidence'] ?? 'none',
+        'should_block' => (bool) ($row['should_block'] ?? 0),
+        'reasons' => $row['block_reasons'],
+      ];
 
       $campaigns[] = $row;
     }
