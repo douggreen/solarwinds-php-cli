@@ -348,7 +348,9 @@ abstract class BaseSolarWindsCommand extends Command
    * Confirm time range if it requires user confirmation.
    *
    * Prompts user to confirm large time ranges (months/years/all) to prevent
-   * accidental expensive queries. Skipped if --yes flag is provided or in JSON mode.
+   * accidental expensive queries. Shows accurate information by detecting gaps
+   * and estimating final record count after sync. Skipped if --yes flag is
+   * provided or in JSON mode.
    *
    * @param InputInterface $input Command input interface
    * @param array $options Parsed query options
@@ -374,35 +376,135 @@ abstract class BaseSolarWindsCommand extends Command
       return TRUE;
     }
 
-    // For months (NM), years (Ny), and 'all', show confirmation with estimated impact.
-    $startTime = gmdate('Y-m-d H:i:s', strtotime($options['time']['start_time']));
-    $endTime = gmdate('Y-m-d H:i:s', strtotime($options['time']['end_time']));
+    // For months (NM), years (Ny), and 'all', show confirmation with accurate impact estimate.
+    $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
+    $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
 
-    // Get estimated record count from database (may take a few seconds for large ranges).
+    // Step 1: Detect missing ranges to understand what needs to be synced.
     if (!$this->jsonMode) {
-      $this->io->writeln('<comment>Estimating database records...</comment>');
+      $this->io->writeln('<comment>Analyzing data coverage...</comment>');
     }
-    $estimatedCount = $this->databaseService->getRecordCount($startTime, $endTime);
+    $rangeAnalysis = $this->databaseService->detectMissingRanges($startTime, $endTime);
+
+    // Step 2: Get current record count from database.
+    $currentCount = 0;
+    if ($rangeAnalysis['has_data']) {
+      $currentCount = $rangeAnalysis['coverage']['count'] ?? 0;
+    }
+
+    // Step 3: Calculate what needs to be synced.
+    $missingRanges = $rangeAnalysis['ranges'] ?? [];
+    $syncableRanges = array_filter($missingRanges, function($range) {
+      return $range['reason'] !== 'beyond_retention';
+    });
+
+    // Calculate total duration of missing data in days.
+    $totalMissingSeconds = 0;
+    foreach ($syncableRanges as $range) {
+      $rangeStart = strtotime($range['start']);
+      $rangeEnd = strtotime($range['end']);
+      $totalMissingSeconds += ($rangeEnd - $rangeStart);
+    }
+    $missingDays = $totalMissingSeconds / 86400;
 
     // Format dates in human-readable format.
     $startDate = date('M j, Y g:i A', strtotime($startTime));
     $endDate = date('M j, Y g:i A', strtotime($endTime));
 
+    // Show time range.
     $this->io->writeln(sprintf(
       '<comment>You requested %s which queries all records from %s to %s</comment>',
       $options['time']['human_readable'],
       $startDate,
       $endDate
     ));
+    $this->io->newLine();
 
-    if ($estimatedCount > 0) {
-      $this->io->writeln(sprintf(
-        '<comment>This is approximately %s records - a very large query that may take several minutes.</comment>',
-        number_format($estimatedCount)
-      ));
+    // Show detailed breakdown based on current state.
+    if (empty($syncableRanges)) {
+      // No sync needed - data already complete.
+      if ($currentCount > 0) {
+        $this->io->writeln(sprintf(
+          '<comment>Database status: %s records already available (no sync needed)</comment>',
+          number_format($currentCount)
+        ));
+        $this->io->writeln('<comment>This is a very large query that may take several minutes.</comment>');
+      }
+      else {
+        // Empty database, but also no syncable ranges (all beyond retention).
+        $this->io->writeln('<comment>Database status: No data available</comment>');
+        $this->io->writeln('<comment>Warning: Requested time range is beyond API retention limit (2 weeks)</comment>');
+        $this->io->writeln('<comment>No data can be fetched for this range.</comment>');
+      }
     }
     else {
-      $this->io->writeln('<comment>Note: This range may require syncing data from API (2-week retention limit applies)</comment>');
+      // Sync needed - show three-part breakdown.
+      if ($currentCount > 0) {
+        $this->io->writeln(sprintf(
+          '<comment>Current database: %s records</comment>',
+          number_format($currentCount)
+        ));
+      }
+      else {
+        $this->io->writeln('<comment>Current database: Empty (first-time sync)</comment>');
+      }
+
+      // Format missing data duration.
+      if ($missingDays < 1) {
+        $hours = round($missingDays * 24, 1);
+        $durationStr = $hours . ' hour' . ($hours != 1 ? 's' : '');
+      }
+      else {
+        $days = round($missingDays, 1);
+        $durationStr = $days . ' day' . ($days != 1 ? 's' : '');
+      }
+
+      $this->io->writeln(sprintf(
+        '<comment>Missing data: %s to sync from API (%d range%s)</comment>',
+        $durationStr,
+        count($syncableRanges),
+        count($syncableRanges) != 1 ? 's' : ''
+      ));
+
+      // Rough estimate: assume similar log density as current data, or use baseline.
+      if ($currentCount > 0 && $rangeAnalysis['has_data']) {
+        // Estimate based on current data density.
+        $coveredSeconds = strtotime($rangeAnalysis['coverage']['latest']) - strtotime($rangeAnalysis['coverage']['earliest']);
+        if ($coveredSeconds > 0) {
+          $logsPerSecond = $currentCount / $coveredSeconds;
+          $estimatedNewLogs = (int) ($totalMissingSeconds * $logsPerSecond);
+          $estimatedTotal = $currentCount + $estimatedNewLogs;
+
+          $this->io->writeln(sprintf(
+            '<comment>Estimated final: ~%s records after sync</comment>',
+            number_format($estimatedTotal)
+          ));
+        }
+        else {
+          // Can't estimate density - just show current count.
+          $this->io->writeln('<comment>Estimated final: Cannot estimate (unknown log density)</comment>');
+        }
+      }
+      else {
+        // No existing data to base estimate on.
+        $this->io->writeln('<comment>Estimated final: Cannot estimate (no baseline data)</comment>');
+      }
+
+      $this->io->newLine();
+      $this->io->writeln('<comment>This will fetch data from the API and may take several minutes.</comment>');
+    }
+
+    // Check if any ranges are beyond retention.
+    $beyondRetention = array_filter($missingRanges, function($range) {
+      return $range['reason'] === 'beyond_retention';
+    });
+    if (!empty($beyondRetention)) {
+      $this->io->newLine();
+      $this->io->writeln(sprintf(
+        '<comment>Warning: %d range%s beyond API retention limit will be skipped</comment>',
+        count($beyondRetention),
+        count($beyondRetention) != 1 ? 's are' : ' is'
+      ));
     }
 
     $this->io->newLine();
