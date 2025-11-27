@@ -38,7 +38,7 @@ Create a configuration file at `~/.solarwinds.yml`:
 token: "your-solarwinds-api-token"
 
 # Required: SolarWinds API endpoint (region-specific)
-base_url: "https://api.na-01.cloud.solarwinds.com"
+api_base_url: "https://api.na-01.cloud.solarwinds.com"
 
 # Optional: Default behavior settings
 progress: true         # Show progress bars during API calls
@@ -60,12 +60,12 @@ See [.solarwinds.yml.example](.solarwinds.yml.example) for a complete configurat
 
 **North America (most common):**
 ```yaml
-base_url: "https://api.na-01.cloud.solarwinds.com"
+api_base_url: "https://api.na-01.cloud.solarwinds.com"
 ```
 
 **Europe:**
 ```yaml
-base_url: "https://api.eu-01.cloud.solarwinds.com"
+api_base_url: "https://api.eu-01.cloud.solarwinds.com"
 ```
 
 ### API Retention Limit
@@ -151,7 +151,7 @@ Add a `sites:` section to your configuration file:
 ```yaml
 # ~/.solarwinds.yml
 token: "your-api-token"
-base_url: "https://api.na-01.cloud.solarwinds.com"
+api_base_url: "https://api.na-01.cloud.solarwinds.com"
 debug: false
 progress: true
 

@@ -16,7 +16,7 @@ echo "=== BlockingService Test ===\n\n";
 $testConfig = '/tmp/test-solarwinds-blocking-' . uniqid() . '.yml';
 file_put_contents($testConfig, <<<'YAML'
 token: "test-token"
-base_url: "https://api.test.com"
+api_base_url: "https://api.test.com"
 
 blocking:
   allowlist:

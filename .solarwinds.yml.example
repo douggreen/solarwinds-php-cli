@@ -3,7 +3,7 @@
 
 # Required: SolarWinds API credentials
 token: "your-api-token-here"
-base_url: "https://api.na-01.cloud.solarwinds.com"
+api_base_url: "https://api.na-01.cloud.solarwinds.com"
 
 # Optional: Behavior settings
 debug: false

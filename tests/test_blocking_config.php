@@ -15,7 +15,7 @@ echo "=== Blocking Configuration Test ===\n\n";
 $testConfig = '/tmp/test-solarwinds-' . uniqid() . '.yml';
 file_put_contents($testConfig, <<<'YAML'
 token: "test-token"
-base_url: "https://api.test.com"
+api_base_url: "https://api.test.com"
 
 blocking:
   allowlist:
@@ -79,7 +79,7 @@ try {
     $emptyConfig = '/tmp/test-solarwinds-empty-' . uniqid() . '.yml';
     file_put_contents($emptyConfig, <<<'YAML'
 token: "test-token"
-base_url: "https://api.test.com"
+api_base_url: "https://api.test.com"
 YAML
     );
 

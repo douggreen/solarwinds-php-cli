@@ -70,7 +70,7 @@
  * @see DatabaseService For database-backed log storage
  *
  * @note This implementation is a direct port of the working bash script pagination logic
- * @warning Requires valid API token and base_url configuration for operation
+ * @warning Requires valid API token and api_base_url configuration for operation
  */
 
 namespace SolarWinds\Services;
@@ -95,15 +95,15 @@ class ApiService
    * Initializes HTTP client with SolarWinds API credentials and configuration.
    *
    * @param ConfigurationService $config Configuration service with API credentials
-   * @throws \InvalidArgumentException If base_url or token is missing
+   * @throws \InvalidArgumentException If api_base_url or token is missing
    */
   public function __construct(ConfigurationService $config)
   {
-    $baseUrl = $config->get('base_url');
+    $baseUrl = $config->get('api_base_url');
     $this->apiToken = $config->get('token');
 
     if (empty($baseUrl)) {
-      throw new \InvalidArgumentException("Missing base_url in configuration");
+      throw new \InvalidArgumentException("Missing api_base_url in configuration");
     }
 
     if (empty($this->apiToken)) {

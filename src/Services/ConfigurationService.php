@@ -16,7 +16,7 @@
  *
  * **Required Settings:**
  * - token: SolarWinds API authentication token
- * - base_url: Region-specific SolarWinds API endpoint
+ * - api_base_url: Region-specific SolarWinds API endpoint
  *
  * **Optional Settings:**
  * - debug: Enable debug output (default: false)
@@ -48,7 +48,7 @@
  * @code{.yaml}
  * # Required API configuration
  * token: "your-api-token"
- * base_url: "https://api.na-01.cloud.solarwinds.com"
+ * api_base_url: "https://api.na-01.cloud.solarwinds.com"
  *
  * # Optional behavior settings
  * debug: false
@@ -79,7 +79,7 @@
  * @see AliasCommand For dynamic command generation
  *
  * @note Configuration is loaded once at service instantiation and cached
- * @warning API token and base_url are required for proper operation
+ * @warning API token and api_base_url are required for proper operation
  */
 
 namespace SolarWinds\Services;
@@ -120,7 +120,7 @@ class ConfigurationService
     if (!file_exists($this->configPath)) {
       $this->config = [
         'token' => '',
-        'base_url' => '',  // No default - force users to configure.
+        'api_base_url' => '',  // No default - force users to configure.
         'debug' => FALSE,
         'validate' => FALSE,
         'progress' => TRUE,
@@ -139,15 +139,11 @@ class ConfigurationService
 
     $this->config = array_merge([
       'token' => '',
-      'base_url' => '',  // No default - must be configured.
+      'api_base_url' => '',  // No default - must be configured.
       'debug' => FALSE,
       'validate' => FALSE,
       'progress' => TRUE,
     ], $this->config);
-
-    if (!empty($this->config['api_base_url']) && empty($this->config['base_url'])) {
-      $this->config['base_url'] = $this->config['api_base_url'];
-    }
   }
 
   /**
