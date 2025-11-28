@@ -5,9 +5,13 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
-2. **Implement DDoS Detection** - Detect coordinated exploit campaigns
-3. Research and implement testing framework
+1. **Track Blocked IPs** - Avoid showing 'BLOCK NOW' for already-blocked IPs
+2. **Investigate Record Count Discrepancy** - Database contains 10,527,622 vs Analyzing 9,759,784 (768k difference)
+3. **Factor Recency into Blocking** - Prioritize active campaigns over dormant ones
+4. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
+5. **Implement Reverse DNS Bot Verification** - Secure bot verification (prevents User-Agent spoofing)
+6. **Implement DDoS Detection** - Detect coordinated exploit campaigns
+7. Research and implement testing framework
 
 ## Security Enhancements
 
@@ -93,18 +97,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
    - Implement automated validation of backward compatibility
    - Set up continuous integration testing pipeline
 
-2. **Cleanup Codebase & Identify Refactoring Opportunities**
-   - Review entire codebase for code quality issues
-   - Identify duplicate code that can be consolidated
-   - Look for long methods that should be broken down
-   - Find opportunities to improve naming and clarity
-   - Identify violations of SOLID principles
-   - Check for unused code, variables, or imports
-   - Look for magic numbers and strings that should be constants
-   - Review error handling and logging consistency
-   - Identify areas where design patterns could improve code structure
-   - Document findings and prioritize refactoring tasks
-
 ### Display and Output Improvements
 
 2. **Highlight Blocking Decision Factors in Campaign Display**
@@ -121,12 +113,6 @@ We chose [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots
    - Consistent visual language between legend and campaign display
    - Makes legend easier to scan and reference
 
-4. **Query Display Control**: Only show query output when debug mode is enabled
-
-### Code Refactoring
-
-5. **Display Service Consolidation**: Refactor color and formatting logic for consistency
-6. **Enhanced Debugging Framework**: Add comprehensive API request/response details and query transformation tracking
 
 ## Future Enhancements (Lower Priority)
 

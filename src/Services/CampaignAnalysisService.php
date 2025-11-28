@@ -398,6 +398,7 @@ class CampaignAnalysisService
         'attack_types' => $row['attack_types'],
         'severity' => $row['campaign_severity'],
         'top_paths' => $row['top_paths'],
+        'targeted_sites' => $row['targeted_sites'] ?? [],
         'behavior' => $row['behavior_type'],
         'request_rate' => $row['request_rate'],
         'ratio_40x' => $row['ratio_40x'],
@@ -458,7 +459,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   behavior_type, request_rate, ratio_40x, ratio_exploit, path_diversity, uri_dup_ratio,
   should_block, confidence, block_reasons,
   user_agent, bot_name, total_volume, ratio_edge_blocked,
-  from_deep_dive
+  from_deep_dive, targeted_sites
 ) VALUES (
   :ip, :country,
   :time_start, :time_end, :time_range, CURRENT_TIMESTAMP,
@@ -467,7 +468,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   :behavior_type, :request_rate, :ratio_40x, :ratio_exploit, :path_diversity, :uri_dup_ratio,
   :should_block, :confidence, :block_reasons,
   :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
-  :from_deep_dive
+  :from_deep_dive, :targeted_sites
 )
 SQL
     );
@@ -503,6 +504,7 @@ SQL
       ':total_volume' => $volumeAnalysis['total_volume'] ?? 0,
       ':ratio_edge_blocked' => $volumeAnalysis['ratio_edge_blocked'] ?? 0,
       ':from_deep_dive' => $fromDeepDive ? 1 : 0,
+      ':targeted_sites' => json_encode($campaign['targeted_sites'] ?? []),
     ]);
 
     return (int) $this->database->lastInsertId();
@@ -535,6 +537,7 @@ SQL
     $result['attack_types'] = json_decode($result['attack_types'] ?? '[]', TRUE);
     $result['top_paths'] = json_decode($result['top_paths'] ?? '[]', TRUE);
     $result['block_reasons'] = json_decode($result['block_reasons'] ?? '[]', TRUE);
+    $result['targeted_sites'] = json_decode($result['targeted_sites'] ?? '[]', TRUE);
 
     return $result;
   }
@@ -690,6 +693,7 @@ SQL
       $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
       $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
       $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
+      $row['targeted_sites'] = json_decode($row['targeted_sites'] ?? '[]', TRUE);
 
       // Reconstruct blocking_recommendation object from flat database fields.
       $row['blocking_recommendation'] = [

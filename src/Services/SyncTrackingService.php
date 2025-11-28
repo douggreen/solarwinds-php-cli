@@ -393,18 +393,30 @@ SQL
     if ($hasSyncRanges) {
       $gaps = $this->detectGapsInSyncedRanges($requestedStart, $requestedEnd);
 
-      // Get coverage info from logs table for compatibility.
+      // Calculate coverage from sync_ranges instead of expensive logs table query.
+      // Get all completed syncs that overlap with requested range.
       $stmt = $this->database->prepare(<<<'SQL'
-SELECT MIN(time) as earliest, MAX(time) as latest, COUNT(*) as count
-FROM logs
-WHERE time >= :start AND time <= :end
+SELECT MIN(start_time) as earliest, MAX(end_time) as latest, SUM(records_inserted) as count
+FROM sync_ranges
+WHERE status = 'completed'
+  AND end_time >= :req_start
+  AND start_time <= :req_end
 SQL
       );
       $stmt->execute([
-        ':start' => $requestedStart,
-        ':end' => $requestedEnd,
+        ':req_start' => $requestedStart,
+        ':req_end' => $requestedEnd,
       ]);
       $coverage = $stmt->fetch(PDO::FETCH_ASSOC);
+
+      // Handle case where no completed syncs overlap (shouldn't happen after initialization)
+      if ($coverage['count'] === NULL) {
+        $coverage = [
+          'earliest' => NULL,
+          'latest' => NULL,
+          'count' => 0,
+        ];
+      }
 
       return [
         'has_data' => $coverage['count'] > 0,

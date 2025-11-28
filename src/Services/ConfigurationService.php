@@ -260,23 +260,163 @@ class ConfigurationService
    * Get hostname to display label mappings for output shortening.
    *
    * Maps full hostnames to short display labels for result formatting.
+   * Supports new format where site name is key with label and hosts array.
    *
-   * @return array Hostname to display label mappings
+   * New format:
+   *   sites:
+   *     site1:
+   *       label: Site 1
+   *       hosts:
+   *         - site1
+   *         - example.com
+   *         - "*.example.com"
+   *
+   * Note: With wildcard support, this returns only exact matches.
+   * Use matchHostnameToLabel() for wildcard-aware matching.
+   *
+   * @return array Hostname to display label mappings (for caching/performance)
    */
   public function getHostDisplayMappings(): array
   {
     $sites = $this->getSites();
     $mappings = [];
 
-    foreach ($sites as $hostname => $siteConfig) {
+    foreach ($sites as $key => $siteConfig) {
+      // New format: key is site name, config has 'label' and 'hosts'
+      if (isset($siteConfig['label']) && isset($siteConfig['hosts'])) {
+        $label = $siteConfig['label'];
+        // We can't pre-build all wildcard mappings, so we return patterns
+        // The matching logic will be in matchHostnameToLabel()
+        continue;
+      }
+
+      // Old format: key is hostname, config has 'label'
       $label = $siteConfig['label'] ?? NULL;
       if ($label) {
-        $cleanHost = preg_replace('/^www\./', '', $hostname);
+        $cleanHost = preg_replace('/^www\./', '', $key);
         $mappings[$cleanHost] = $label;
       }
     }
 
     return $mappings;
+  }
+
+  /**
+   * Match a hostname to its display label, supporting wildcard patterns.
+   *
+   * Checks both exact matches and wildcard patterns ("*.example.com").
+   *
+   * New format:
+   *   sites:
+   *     example:
+   *       label: Example Site
+   *       hosts:
+   *         - example
+   *         - example.com
+   *         - "*.example.com"
+   *
+   * @param string $hostname Hostname to match
+   * @return string|null Label if match found, NULL otherwise
+   */
+  public function matchHostnameToLabel(string $hostname): ?string
+  {
+    $sites = $this->getSites();
+    $cleanHost = preg_replace('/^www\./', '', $hostname);
+
+    foreach ($sites as $key => $siteConfig) {
+      // New format: key is site name, config has 'label' and 'hosts'
+      if (isset($siteConfig['label']) && isset($siteConfig['hosts'])) {
+        $label = $siteConfig['label'];
+        $patterns = $siteConfig['hosts'];
+
+        // Hosts should be an array from YAML
+        if (!is_array($patterns)) {
+          continue;
+        }
+
+        foreach ($patterns as $pattern) {
+          if ($this->hostnameMatchesPattern($cleanHost, $pattern)) {
+            return $label;
+          }
+        }
+      }
+      // Old format: key is hostname, config has 'label'
+      elseif ($key === $cleanHost || $key === $hostname) {
+        return $siteConfig['label'] ?? NULL;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Match a hostname to its site key (e.g., "abag", "mtc").
+   *
+   * Returns the site key for display in tables (legend provides full mapping).
+   *
+   * @param string $hostname Hostname to match
+   * @return string|null Site key if match found, NULL otherwise
+   */
+  public function matchHostnameToSiteKey(string $hostname): ?string
+  {
+    $sites = $this->getSites();
+    $cleanHost = preg_replace('/^www\./', '', $hostname);
+
+    foreach ($sites as $key => $siteConfig) {
+      // New format: key is site name, config has 'label' and 'hosts'
+      if (isset($siteConfig['label']) && isset($siteConfig['hosts'])) {
+        $patterns = $siteConfig['hosts'];
+
+        // Hosts should be an array from YAML
+        if (!is_array($patterns)) {
+          continue;
+        }
+
+        foreach ($patterns as $pattern) {
+          if ($this->hostnameMatchesPattern($cleanHost, $pattern)) {
+            return $key; // Return site key (e.g., "abag", "mtc")
+          }
+        }
+      }
+      // Old format: key is hostname, return the name if configured
+      elseif ($key === $cleanHost || $key === $hostname) {
+        return $siteConfig['name'] ?? NULL;
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Check if hostname matches a pattern (supports wildcards).
+   *
+   * Patterns:
+   *   - "example.com" - exact match
+   *   - "*.example.com" - matches base domain AND any subdomain
+   *
+   * @param string $hostname Hostname to check
+   * @param string $pattern Pattern to match against
+   * @return bool TRUE if hostname matches pattern
+   */
+  public function hostnameMatchesPattern(string $hostname, string $pattern): bool
+  {
+    // Exact match
+    if ($hostname === $pattern) {
+      return TRUE;
+    }
+
+    // Wildcard pattern: "*.example.com"
+    if (str_starts_with($pattern, '*.')) {
+      $baseDomain = substr($pattern, 2);
+      // Match base domain: example.com
+      if ($hostname === $baseDomain) {
+        return TRUE;
+      }
+      // Match subdomains: foo.example.com, bar.baz.example.com
+      return str_ends_with($hostname, '.' . $baseDomain);
+    }
+
+    return FALSE;
   }
 
   /**

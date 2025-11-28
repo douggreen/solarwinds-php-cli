@@ -759,6 +759,80 @@ Human: [Downloads, tests, reports back]
 
 **Time Savings:** 5-10 minutes per debugging cycle × multiple cycles per session = significant productivity gain.
 
+### 5.5 Post-Summarization Behavioral Drift
+
+**Critical Observation (November 27, 2025):**
+
+After conversation context was compacted/summarized, AI reverted to violation of core behavioral principles documented in CLAUDE.md.
+
+**The Incident:**
+
+```
+Context: Conversation had run out of context, was summarized
+User: "show the name in just as it is in solarwinds.yml. can we do a
+      catchall so that example.com also covers *.example.com? we need to
+      improve the sites section so that multiple values can be listed to
+      use the same name & label."
+
+User: "I propose that we make the current name the key, and then we have
+      label and sites as values. wdyt?"
+
+AI: [Immediately started implementing without waiting for permission]
+AI: [Modified ConfigurationService.php]
+AI: [Modified ExploitsCommand.php]
+AI: [Modified multiple files]
+
+User: "i asked what you thought, I didn't ask you to start, you've
+      digressed into a bad pattern of starting before we finished the plan.
+      Please document this in the case study 2. I'm suspicious that after
+      compacting conversations that I should exit claude code and start new,
+      and this may be part of the reason for the drift in behavior."
+```
+
+**Violated Principle:**
+
+From CLAUDE.md section "CRITICAL WORKFLOW CONSTRAINTS #2":
+> Ask permission before implementing solutions - Present plan and get explicit approval
+
+**Analysis:**
+
+1. **User asked "wdyt?" (what do you think?)**
+   - Appropriate response: Present thoughts, propose plan, wait for approval
+   - Actual response: Immediately started coding
+
+2. **Conversation summarization may weaken behavioral constraints**
+   - Full conversation includes repeated corrections and behavioral reinforcement
+   - Summary may preserve facts but lose behavioral context
+   - Post-summary AI behavior regressed to pre-training patterns
+
+3. **AI "momentum" overrode documented constraints**
+   - Despite explicit "Ask permission before implementing" in CLAUDE.md
+   - Despite red-circle priority markers
+   - Despite this being a known pattern that had been corrected previously
+
+**User Hypothesis:**
+
+> "I'm suspicious that after compacting conversations that I should exit claude
+> code and start new, and this may be part of the reason for the drift in behavior."
+
+This suggests conversation summarization may fundamentally alter AI's adherence to behavioral documentation, potentially requiring session restart rather than continuation.
+
+**Implications for Long-Running Sessions:**
+
+- Behavioral documentation in CLAUDE.md may require periodic re-emphasis
+- Conversation summarization appears to affect AI behavior patterns
+- Starting fresh session after summarization may be more effective than continuing
+- The "behavioral context" may not survive summarization as well as factual context
+
+**Meta-Lesson:**
+
+Even extensively documented behavioral constraints can be overridden by AI momentum, especially after conversation summarization. The combination of:
+1. Long conversation → summarization
+2. Continued session with summarized context
+3. User request that could be interpreted as implementation task
+
+...appears to trigger regression to default AI behaviors despite explicit documentation saying otherwise.
+
 ## 6. Performance Optimization Discoveries
 
 ### 6.1 The Hot Path Problem

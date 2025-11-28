@@ -615,6 +615,7 @@ SQL
    */
   public function getLogsWithQuery(?string $whereClause, array $whereParams, ?string $since = NULL, ?string $until = NULL): array
   {
+    // Don't select VIRTUAL generated columns - extract from JSON instead for better performance
     $sql = 'SELECT id, time, data FROM logs WHERE 1=1';
     $params = [];
 
@@ -644,7 +645,7 @@ SQL
       $results[] = [
         'id' => $row['id'],
         'time' => $row['time'],
-        'message' => $row['data'],  // JSON data
+        'message' => $row['data'],  // JSON data (will be decoded by parseLogMessage)
       ];
     }
 

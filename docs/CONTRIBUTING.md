@@ -83,17 +83,25 @@ public function __construct(
 **Site Mapping:** Dynamic command option generation from site configuration
 **Alias Support:** Configurable command aliases that appear as real commands
 
-Example site configuration generating `--main` and `--blog` command options:
+Example site configuration with wildcard support:
 
 ```yaml
 sites:
-  example.com:
-    name: main
+  main:
     label: Main Site
-  blog.example.com:
-    name: blog
+    hosts:
+      - example.com
+      - "*.example.com"
+  blog:
     label: Company Blog
+    hosts:
+      - blog.example.com
 ```
+
+The new format supports:
+- Wildcard patterns (`"*.example.com"` matches both base domain and all subdomains - must be quoted)
+- Multiple hostnames per site
+- Cleaner YAML structure with site name as the key
 
 ## Development Workflow
 

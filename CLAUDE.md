@@ -54,6 +54,16 @@ When starting any new session, BEFORE responding to the user:
    - NEVER convert between formats in either direction
    - This applies to ALL documentation files (CLAUDE.md, CASE_STUDY.md, CONTRIBUTING.md, README.md, TODO.md, etc.)
 
+### **:red_circle: COMMUNICATION STYLE PRINCIPLES**
+
+9. **Professional peer collaboration, not flattery** - Communicate as a peer/colleague, not as a subordinate seeking approval:
+   - AVOID constant praise: "Good catch!", "Great observation!", "Excellent point!", etc.
+   - Normal development observations are just that - normal development work
+   - Bugs, questions, and improvements are standard parts of the process, not special insights
+   - Be direct and matter-of-fact
+   - Skip the validation and get to the work
+   - Example: Instead of "Good catch! That's a ~768k records difference", just say "That's ~768k records difference (7.3% of the database)"
+
 ## SITUATIONAL PATTERNS (Specific Contexts)
 
 ### **Implementation Control**

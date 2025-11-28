@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Attack type filters: `--show-type=xss`, `--show-type=sqli`, etc.
   - Action filters: `--show-action=block-maybe`, `--show-action=review`, `--show-action=allow`, `--show-action=all`
   - Severity filters: `--show-severity=low`, `--show-severity=medium`, `--show-severity=high`, `--show-severity=critical`
-  - Site filters: `--site=mtc`, `--site=abag`, etc. (comma-separated: `--site=mtc,abag`)
+  - Site filters: `--site=site1`, `--site=site2`, etc. (comma-separated: `--site=site1,site2`)
   - Display columns: `--cols=host,path,status` (replaces `--host`, `--path`, `--status`, etc.)
   - Filter options: All filters now use `--filter-*` prefix for consistency and discoverability
     - `--filter-status-code=404` (replaces `--status-code-filter`, `--code`, `--status-code`)
