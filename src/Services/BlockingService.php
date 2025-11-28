@@ -25,9 +25,12 @@ class BlockingService
    * Constructor.
    *
    * @param ConfigurationService $config Configuration service for allowlist and bot patterns
+   * @param BotIpService|null $botIpService Bot IP verification service (optional)
    */
-  public function __construct(protected ConfigurationService $config)
-  {
+  public function __construct(
+    protected ConfigurationService $config,
+    protected ?BotIpService $botIpService = NULL
+  ) {
   }
 
   /**
@@ -88,12 +91,15 @@ class BlockingService
   }
 
   /**
-   * Classify a user-agent string.
+   * Classify a user-agent string with optional IP verification.
+   *
+   * When IP is provided, performs bot IP verification to detect spoofing.
    *
    * @param string $userAgent User-agent string
-   * @return string Classification: 'trusted_bot', 'suspicious', or 'unknown'
+   * @param string $ip IP address (optional, enables bot verification)
+   * @return string Classification: 'trusted_bot', 'bot_spoofing', 'suspicious', or 'unknown'
    */
-  public function classifyUserAgent(string $userAgent): string
+  public function classifyUserAgent(string $userAgent, string $ip = ''): string
   {
     if (empty($userAgent)) {
       return 'suspicious';
@@ -101,14 +107,25 @@ class BlockingService
 
     $trustedBots = $this->config->getTrustedBots();
 
-    // Check if user-agent matches any trusted bot pattern
+    // Check if user-agent matches any trusted bot pattern.
     foreach ($trustedBots as $botPattern) {
       if (stripos($userAgent, $botPattern) !== FALSE) {
+        // If IP verification is available, verify the bot IP.
+        if (!empty($ip) && $this->botIpService !== NULL) {
+          $botName = $this->extractBotName($userAgent, $botPattern);
+          $verification = $this->botIpService->verifyBot($ip, $botName);
+
+          if (!$verification['verified']) {
+            // Bot UA matches but IP doesn't verify - spoofing detected.
+            return 'bot_spoofing';
+          }
+        }
+
         return 'trusted_bot';
       }
     }
 
-    // Check for suspicious patterns
+    // Check for suspicious patterns.
     $suspiciousPatterns = [
       'python-requests',
       'curl/',
@@ -130,5 +147,39 @@ class BlockingService
     }
 
     return 'unknown';
+  }
+
+  /**
+   * Extract bot name from user-agent string.
+   *
+   * Maps UA patterns to bot names used by BotIpService.
+   *
+   * @param string $userAgent Full user-agent string
+   * @param string $botPattern Matched bot pattern from config
+   * @return string Bot name for BotIpService lookup
+   */
+  protected function extractBotName(string $userAgent, string $botPattern): string
+  {
+    // Map common bot patterns to normalized bot names.
+    $botMap = [
+      'googlebot' => 'googlebot',
+      'bingbot' => 'bingbot',
+      'duckduckbot' => 'duckduckbot',
+      'facebookbot' => 'facebookbot',
+      'ahrefsbot' => 'ahrefsbot',
+      'semrushbot' => 'semrushbot',
+      'yandexbot' => 'yandexbot',
+      'claudebot' => 'claudebot',
+    ];
+
+    $botPatternLower = strtolower($botPattern);
+
+    // Check for exact matches.
+    if (isset($botMap[$botPatternLower])) {
+      return $botMap[$botPatternLower];
+    }
+
+    // Default to lowercase pattern.
+    return $botPatternLower;
   }
 }
