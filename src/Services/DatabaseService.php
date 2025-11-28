@@ -301,13 +301,62 @@ CREATE TABLE IF NOT EXISTS bot_ip_metadata (
   last_checked TEXT NOT NULL,          -- When we last checked for updates
   last_updated TEXT NOT NULL,          -- When we last successfully updated ranges
   range_count INTEGER NOT NULL DEFAULT 0,
-  enabled INTEGER NOT NULL DEFAULT 1   -- Allow disabling specific bot verification
+  enabled INTEGER NOT NULL DEFAULT 1,  -- Allow disabling specific bot verification
+  etag TEXT,                           -- ETag from HTTP response headers
+  last_modified TEXT,                  -- Last-Modified from HTTP response headers
+  content_hash TEXT,                   -- SHA-256 hash of source content
+  range_version TEXT                   -- Hash of all IP ranges for cache invalidation
 );
 SQL;
     $this->db->exec($botIpMetadataSql);
 
+    // Migrate existing metadata table if needed (add new columns).
+    // Check which columns exist to avoid duplicate column errors.
+    $metadataColumns = [];
+    $result = $this->db->query("PRAGMA table_info(bot_ip_metadata)");
+    if ($result) {
+      while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
+        $metadataColumns[] = $row['name'];
+      }
+    }
+
+    if (!in_array('etag', $metadataColumns)) {
+      $this->db->exec("ALTER TABLE bot_ip_metadata ADD COLUMN etag TEXT");
+    }
+    if (!in_array('last_modified', $metadataColumns)) {
+      $this->db->exec("ALTER TABLE bot_ip_metadata ADD COLUMN last_modified TEXT");
+    }
+    if (!in_array('content_hash', $metadataColumns)) {
+      $this->db->exec("ALTER TABLE bot_ip_metadata ADD COLUMN content_hash TEXT");
+    }
+    if (!in_array('range_version', $metadataColumns)) {
+      $this->db->exec("ALTER TABLE bot_ip_metadata ADD COLUMN range_version TEXT");
+    }
+
     // Create index for bot_ip_metadata.
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_bot_metadata_last_checked ON bot_ip_metadata(last_checked)");
+
+    // Create bot_verification_cache table for caching verification results.
+    $botVerificationCacheSql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS bot_verification_cache (
+  ip TEXT NOT NULL,
+  bot_name TEXT NOT NULL,
+  verified INTEGER NOT NULL,           -- 0 or 1
+  method TEXT NOT NULL,                -- 'cidr', 'reverse_dns', 'cidr_failed', etc.
+  hostname TEXT,                       -- Hostname from reverse DNS (if applicable)
+  ttl INTEGER,                         -- TTL from DNS records (if applicable)
+  cached_at TEXT NOT NULL,             -- When verification was performed
+  expires_at TEXT NOT NULL,            -- When cache entry expires
+  cidr_range TEXT,                     -- Which CIDR matched (for CIDR method)
+  range_version TEXT,                  -- Hash of bot ranges at cache time
+  PRIMARY KEY (ip, bot_name)
+);
+SQL;
+    $this->db->exec($botVerificationCacheSql);
+
+    // Create indexes for bot_verification_cache.
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_bot_cache_expires ON bot_verification_cache(expires_at)");
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_bot_cache_bot_name ON bot_verification_cache(bot_name)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_status ON realtime_alerts(status)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_ip ON realtime_alerts(ip)");
 

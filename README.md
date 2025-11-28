@@ -259,7 +259,7 @@ blocking:
 
 ### Trusted Bots Configuration
 
-The system includes default trusted bots (Googlebot, bingbot, Slackbot, etc.). Add custom trusted bot patterns:
+The system includes default trusted bots with automatic IP verification. You can add custom trusted bot patterns:
 
 ```yaml
 blocking:
@@ -268,6 +268,14 @@ blocking:
     - "PartnerCrawler"
     - "MonitoringService"
 ```
+
+**Default Trusted Bots:**
+- **Search Engines**: Googlebot, Bingbot, DuckDuckBot, YandexBot, Baiduspider
+- **Social Media**: FacebookBot (including facebookexternalhit), TwitterBot, LinkedInBot
+- **Messaging**: Slackbot, TelegramBot, WhatsApp, DiscordBot
+- **Other Services**: Applebot
+
+Bots with IP verification (Googlebot, Bingbot, etc.) are validated against published IP ranges to detect spoofing.
 
 ### Blocking Thresholds
 
@@ -304,13 +312,6 @@ blocking:
 - **Decrease `min_requests_per_hour`** (e.g., 5) for low-traffic sites to catch smaller attacks
 - **Adjust `min_duration_ratio`** (e.g., 0.2 = 20%) to require more sustained attacks
 - **Tune `high_confidence_40x_ratio`** for sensitivity (lower = more strict, e.g., 0.6 = 60%+ failures)
-
-**Default Trusted Bots:**
-- Googlebot, bingbot, DuckDuckBot (search engines)
-- Slackbot, facebookexternalhit, Twitterbot (social media)
-- LinkedInBot, WhatsApp, TelegramBot (messaging)
-- Discordbot, Applebot (other services)
-- Baiduspider, YandexBot (international search engines)
 
 ## Command Aliases
 
@@ -437,8 +438,11 @@ bin/solarwinds status --filter-status-code=5 --cols=country    # 5xx errors by c
 bin/solarwinds search "error"                                   # Text search for "error"
 bin/solarwinds search "timeout" --cols=host                     # Text search with host column
 
-# Bot analysis
-bin/solarwinds bot                                              # Bot traffic (last 15m)
+# Bot analysis with IP verification
+bin/solarwinds bot                                              # Bot traffic with verification (last 15m)
+bin/solarwinds bot googlebot --time=1d                          # Googlebot activity analysis
+bin/solarwinds bot --verified-only                              # Show only verified bots
+bin/solarwinds bot --spoofed-only                               # Show bot spoofing attempts
 bin/solarwinds bot crawler --cols=host                          # Crawler traffic by host
 ```
 
@@ -494,6 +498,49 @@ Supports comprehensive time range options:
   - `--vars=post.name,post.pass` - Access nested JSON fields using dot notation
   - Deep array references work with any nested structure (e.g., `geoip.country_code2`)
 - `--filter=PATTERN` - Client-side regex filtering in format "field:regex" (can be used multiple times, AND logic)
+
+### Bot Verification
+
+The `bot` command includes sophisticated IP verification to distinguish legitimate bots from spoofed ones:
+
+- **Verified Bots** (✓ green): IP addresses match known bot ranges (e.g., real Googlebot from 66.249.*)
+- **Spoofed Bots** (✗ red): User-Agent claims to be a bot but IP verification failed
+- **Unknown Bots** (? yellow): Bots without verification capability (no IP ranges available)
+
+**Verification Methods:**
+1. **CIDR Range Matching** (primary): Fast IP range verification against published bot ranges
+2. **Reverse DNS Verification** (fallback): DNS-based verification for bots without published ranges
+
+**Filter Options:**
+- `--verified-only` - Show only bots with verified IPs
+- `--spoofed-only` - Show only bot spoofing attempts (critical security indicator)
+- `--unverified-only` - Show only bots without verification
+
+**Supported Bots with IP Verification:**
+- **Search Engines**: Googlebot, Bingbot, DuckDuckBot, YandexBot
+- **Social Media**: FacebookBot, TwitterBot
+- **Messaging**: TelegramBot
+- **SEO Tools**: AhrefsBot, SemrushBot
+- **AI Crawlers**: OpenAI
+- **Other**: Applebot
+
+**Automatic Updates & Smart Caching:**
+
+Bot IP ranges are intelligently updated using a **content-based update system**:
+
+1. **HTTP Conditional Requests**: Uses ETag and Last-Modified headers to avoid unnecessary downloads
+2. **Content Hashing**: SHA-256 comparison ensures ranges only update when content actually changes
+3. **Smart Cache Invalidation**: Only invalidates affected IPs when ranges change
+4. **Two-Tier Caching Strategy**:
+   - **DNS Verifications**: Cached using actual DNS TTL (~1-2 hours, varies by bot)
+   - **CIDR Verifications**: Cached for 7 days, invalidated only when specific ranges are removed
+
+**Update Sources:**
+- [sefinek/known-bots-ip-whitelist](https://github.com/sefinek/known-bots-ip-whitelist) - Most bots
+- [AnTheMaker/GoodBots](https://github.com/AnTheMaker/GoodBots) - TwitterBot
+- [Apple Official](https://search.developer.apple.com/applebot.json) - Applebot
+
+**Performance**: Cached verifications are **44x faster** than initial lookups, with no false cache invalidations.
 
 ### Filter Options
 - `--filter-status-code=CODE` - Filter by HTTP status code (e.g., `404`, `5` for 5xx)

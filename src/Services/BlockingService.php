@@ -22,15 +22,24 @@ namespace SolarWinds\Services;
 class BlockingService
 {
   /**
+   * Whether to allow reverse DNS fallback for bot verification.
+   * Defaults to TRUE for real-time monitoring, but should be FALSE for batch processing.
+   */
+  protected bool $allowReverseDnsFallback = TRUE;
+
+  /**
    * Constructor.
    *
    * @param ConfigurationService $config Configuration service for allowlist and bot patterns
    * @param BotIpService|null $botIpService Bot IP verification service (optional)
+   * @param bool $allowReverseDnsFallback Allow reverse DNS lookups (set FALSE for batch to avoid DNS spam)
    */
   public function __construct(
     protected ConfigurationService $config,
-    protected ?BotIpService $botIpService = NULL
+    protected ?BotIpService $botIpService = NULL,
+    bool $allowReverseDnsFallback = TRUE
   ) {
+    $this->allowReverseDnsFallback = $allowReverseDnsFallback;
   }
 
   /**
@@ -97,7 +106,7 @@ class BlockingService
    *
    * @param string $userAgent User-agent string
    * @param string $ip IP address (optional, enables bot verification)
-   * @return string Classification: 'trusted_bot', 'bot_spoofing', 'suspicious', or 'unknown'
+   * @return string Classification: 'trusted_bot', 'bot_spoofing', 'bot_unverified', 'suspicious', or 'unknown'
    */
   public function classifyUserAgent(string $userAgent, string $ip = ''): string
   {
@@ -113,14 +122,27 @@ class BlockingService
         // If IP verification is available, verify the bot IP.
         if (!empty($ip) && $this->botIpService !== NULL) {
           $botName = $this->extractBotName($userAgent, $botPattern);
-          $verification = $this->botIpService->verifyBot($ip, $botName);
+          $verification = $this->botIpService->verifyBot($ip, $botName, $this->allowReverseDnsFallback);
 
-          if (!$verification['verified']) {
-            // Bot UA matches but IP doesn't verify - spoofing detected.
+          if ($verification['verified']) {
+            // IP verification passed.
+            return 'trusted_bot';
+          }
+
+          // Check if verification was actually attempted and failed.
+          // 'cidr_failed' or 'reverse_dns_failed' means we had verification
+          // capability and it failed - this is spoofing.
+          if ($verification['method'] === 'cidr_failed' ||
+              $verification['method'] === 'reverse_dns_failed') {
+            // Verification attempted and failed - spoofing detected.
             return 'bot_spoofing';
           }
+
+          // 'none' means no verification method available - mark as unverified.
+          return 'bot_unverified';
         }
 
+        // No IP provided or no BotIpService - assume trusted.
         return 'trusted_bot';
       }
     }
@@ -165,11 +187,20 @@ class BlockingService
       'googlebot' => 'googlebot',
       'bingbot' => 'bingbot',
       'duckduckbot' => 'duckduckbot',
+      'yandexbot' => 'yandexbot',
       'facebookbot' => 'facebookbot',
+      'facebookexternalhit' => 'facebookbot',
+      'twitterbot' => 'twitterbot',
       'ahrefsbot' => 'ahrefsbot',
       'semrushbot' => 'semrushbot',
-      'yandexbot' => 'yandexbot',
+      'applebot' => 'applebot',
+      'telegrambot' => 'telegrambot',
       'claudebot' => 'claudebot',
+      'baiduspider' => 'baiduspider',
+      'slackbot' => 'slackbot',
+      'linkedinbot' => 'linkedinbot',
+      'whatsapp' => 'whatsapp',
+      'discordbot' => 'discordbot',
     ];
 
     $botPatternLower = strtolower($botPattern);

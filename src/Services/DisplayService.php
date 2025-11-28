@@ -15,7 +15,7 @@
  * **Color Coding:**
  * - HTTP status codes: Green (2xx), Yellow (3xx), Orange (4xx), Red (5xx)
  * - Host names: Color-coded based on site configuration
- * - Bot highlighting: Automatic detection and highlighting of bot-related terms
+ * - Bot verification: Verified (green), Spoofed (red), Unknown (yellow)
  * - Respects NO_COLOR environment variable for accessibility
  *
  * **Grouping and Formatting:**
@@ -25,10 +25,10 @@
  * - Path truncation with configurable segment limits
  *
  * **Multiple Display Formats:**
- * - Simple field extraction (country, IP, etc.)
+ * - Simple field extraction (country, IP, bot name, etc.)
  * - Host-based grouping with path details
  * - Status code analysis with color coding
- * - User agent analysis with bot highlighting
+ * - User agent analysis with bot verification status
  * - Time-based grouping (hourly breakdown)
  *
  * @section display_options Display Options
@@ -37,8 +37,10 @@
  * - --status: HTTP status codes with color coding
  * - --host: Originating hosts with site-based coloring
  * - --path[=N]: Request paths (optionally truncated to N segments)
- * - --ua: User agents with bot term highlighting
+ * - --ua: User agents
  * - --ip: IP addresses
+ * - --bot_name: Bot name extracted from user agent
+ * - --verified: Bot verification status (verified/spoofed/unverified)
  * - --country: Geographic country information
  * - --region: Geographic region information
  * - --by-hour: Hourly time-based grouping
@@ -171,9 +173,12 @@ class DisplayService
       'status' => 'Status',
       'path' => 'Path',
       'ip' => 'IP',
+      'bot_name' => 'Bot Name',
+      'verified' => 'Verified',
       'ua' => 'User Agent',
       'country' => 'Country',
       'region' => 'Region',
+      'last_seen' => 'Last Seen',
     ];
   }
 
@@ -273,6 +278,20 @@ class DisplayService
           'unknown';
         return $this->colorizeUnknownValue($region);
 
+      case 'bot_name':
+        return $log['bot_name'] ?? 'Unknown';
+
+      case 'verified':
+        $verified = $log['bot_verified'] ?? 'unknown';
+        return $this->colorizeBotVerificationStatus($verified);
+
+      case 'last_seen':
+        $timestamp = $log['timestamp'] ?? $log['@timestamp'] ?? NULL;
+        if ($timestamp) {
+          return gmdate('m-d H:i:s', strtotime($timestamp));
+        }
+        return 'unknown';
+
       default:
         return 'unknown';
     }
@@ -364,11 +383,48 @@ class DisplayService
 
       // Add values for enabled columns (without color codes).
       foreach ($enabledColumns as $column) {
-        $value = $this->extractDisplayColumnValue($column, $log, $displayOptions, NULL);
-        // Strip ANSI color codes and Symfony console tags for JSON output.
-        $value = preg_replace('/\033\[[0-9;]*m/', '', $value);
-        $value = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $value);
-        $item[$column] = $value;
+        // Special handling for IP column - show prefix and all IPs when IPv6 grouped.
+        if ($column === 'ip' && isset($data['logs']) && count($data['logs']) > 0) {
+          $uniqueIps = $this->getUniqueIpsFromGroup($data['logs']);
+          if (count($uniqueIps) > 1) {
+            $firstIp = $uniqueIps[0];
+            if (strpos($firstIp, ':') !== FALSE) {
+              // IPv6 addresses - provide prefix and full list.
+              $normalizedPrefix = $this->normalizeIpv6Prefix($firstIp);
+              $item[$column] = [
+                'prefix' => $normalizedPrefix,
+                'ips' => $uniqueIps,
+                'count' => count($uniqueIps),
+              ];
+            }
+            else {
+              // IPv4 addresses - provide as array.
+              $item[$column] = $uniqueIps;
+            }
+          }
+          else {
+            $value = $this->extractDisplayColumnValue($column, $log, $displayOptions, NULL);
+            $value = preg_replace('/\033\[[0-9;]*m/', '', $value);
+            $value = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $value);
+            $item[$column] = $value;
+          }
+        }
+        // Special handling for UA column - show all unique UAs as array.
+        elseif ($column === 'ua' && isset($data['logs']) && count($data['logs']) > 1) {
+          $uniqueUAs = [];
+          foreach ($data['logs'] as $groupLog) {
+            $ua = $groupLog['req_user_agent'] ?? $groupLog['user_agent'] ?? $groupLog['useragent'] ?? 'unknown';
+            $uniqueUAs[$ua] = TRUE;
+          }
+          $item[$column] = array_keys($uniqueUAs);
+        }
+        else {
+          $value = $this->extractDisplayColumnValue($column, $log, $displayOptions, NULL);
+          // Strip ANSI color codes and Symfony console tags for JSON output.
+          $value = preg_replace('/\033\[[0-9;]*m/', '', $value);
+          $value = preg_replace('/<\/?[a-z]+(=[^>]+)?>/i', '', $value);
+          $item[$column] = $value;
+        }
       }
 
       // Add time range.
@@ -676,11 +732,13 @@ class DisplayService
         'count' => 0,
         'first_seen' => $log['time'] ?? 'unknown',
         'last_seen' => $log['time'] ?? 'unknown',
-        'sample' => $parsedLog
+        'sample' => $parsedLog,
+        'logs' => []
       ];
 
       $grouped[$key]['count']++;
       $grouped[$key]['last_seen'] = $log['time'] ?? 'unknown';
+      $grouped[$key]['logs'][] = $parsedLog;
     }
 
     // Sort by count (descending).
@@ -705,7 +763,17 @@ class DisplayService
       if (json_last_error() === JSON_ERROR_NONE && is_array($messageData)) {
         // Merge the outer log data with the parsed message data.
         // The message data takes precedence for conflicts.
-        return array_merge($log, $messageData);
+        $merged = array_merge($log, $messageData);
+
+        // Preserve enrichment fields added by commands (e.g., bot_verified, bot_name).
+        if (isset($log['bot_verified'])) {
+          $merged['bot_verified'] = $log['bot_verified'];
+        }
+        if (isset($log['bot_name'])) {
+          $merged['bot_name'] = $log['bot_name'];
+        }
+
+        return $merged;
       }
     }
 
@@ -757,7 +825,14 @@ class DisplayService
     if (!empty($displayOptions['ip'])) {
       // Use client_ip from parsed message data.
       $ip = $log['client_ip'] ?? $log['remote_addr'] ?? $log['ip'] ?? $log['remote_ip'] ?? 'unknown';
-      $keyParts[] = 'ip:' . $ip;
+      // Normalize IPv6 addresses to /48 prefix for campaign grouping.
+      $normalizedIp = $this->normalizeIpv6Prefix($ip);
+      $keyParts[] = 'ip:' . $normalizedIp;
+    }
+
+    if (!empty($displayOptions['bot_name'])) {
+      $botName = $log['bot_name'] ?? 'Unknown';
+      $keyParts[] = 'bot_name:' . $botName;
     }
 
     if (!empty($displayOptions['ua'])) {
@@ -787,6 +862,17 @@ class DisplayService
         $log['geo']['region'] ??
         'unknown';
       $keyParts[] = 'region:' . $region;
+    }
+
+    if (!empty($displayOptions['verified'])) {
+      // Use bot_verified field added by BotCommand.
+      $verified = $log['bot_verified'] ?? 'unknown';
+      $keyParts[] = 'verified:' . $verified;
+    }
+
+    if (!empty($displayOptions['last_seen'])) {
+      // last_seen doesn't participate in grouping (it's calculated from time range).
+      // We just need it in displayOptions to trigger column display.
     }
 
     return empty($keyParts) ? 'all' : implode('|', $keyParts);
@@ -843,7 +929,42 @@ class DisplayService
 
       // Add values for enabled columns.
       foreach ($enabledColumns as $column) {
-        $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
+        // Special handling for IP column - show prefix when IPv6 grouped.
+        if ($column === 'ip' && isset($data['logs']) && count($data['logs']) > 0) {
+          $uniqueIps = $this->getUniqueIpsFromGroup($data['logs']);
+          if (count($uniqueIps) > 1) {
+            // Multiple IPs - check if they're IPv6 addresses that were normalized.
+            $firstIp = $uniqueIps[0];
+            if (strpos($firstIp, ':') !== FALSE) {
+              // IPv6 addresses - show normalized prefix.
+              $normalizedPrefix = $this->normalizeIpv6Prefix($firstIp);
+              $row[] = $normalizedPrefix . ' (' . count($uniqueIps) . ' IPs)';
+            }
+            else {
+              // IPv4 addresses - show all on separate lines.
+              $row[] = implode("\n", $uniqueIps);
+            }
+          }
+          else {
+            // Single IP - use normal extraction.
+            $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
+          }
+        }
+        // Special handling for UA column - show all unique UAs on separate lines.
+        elseif ($column === 'ua' && isset($data['logs']) && count($data['logs']) > 1) {
+          $uniqueUAs = [];
+          foreach ($data['logs'] as $groupLog) {
+            $ua = $groupLog['req_user_agent'] ?? $groupLog['user_agent'] ?? $groupLog['useragent'] ?? 'unknown';
+            if (strlen($ua) > 100) {
+              $ua = substr($ua, 0, 97) . '...';
+            }
+            $uniqueUAs[$ua] = TRUE;
+          }
+          $row[] = implode("\n", array_keys($uniqueUAs));
+        }
+        else {
+          $row[] = $this->extractDisplayColumnValue($column, $log, $displayOptions, $searchTerm);
+        }
       }
 
       // Add combined timestamp column at the end.
@@ -1098,10 +1219,33 @@ class DisplayService
   }
 
   /**
+   * Colorize bot verification status.
+   *
+   * @param string $verified Verification status: 'verified', 'spoofed', or 'unverified'
+   * @return string Colorized verification status
+   */
+  protected function colorizeBotVerificationStatus(string $verified): string
+  {
+    switch ($verified) {
+      case 'verified':
+        return "<fg=green>✓ Verified</fg=green>";
+
+      case 'spoofed':
+        return "<fg=red>✗ SPOOFED</fg=red>";
+
+      case 'unverified':
+        return "<fg=yellow>? Unknown</fg=yellow>";
+
+      default:
+        return $this->colorizeUnknownValue($verified);
+    }
+  }
+
+  /**
    * Highlight search term in user agent strings.
    *
    * @param string $ua User agent string
-   * @param string|null $searchTerm Search term to highlight (defaults to "bot")
+   * @param string|null $searchTerm Search term to highlight
    * @return string User agent with highlighted search term
    */
   protected function highlightSearchTermInUserAgent(string $ua, ?string $searchTerm = NULL): string
@@ -1435,6 +1579,65 @@ class DisplayService
     }
 
     return is_array($current) ? json_encode($current) : (string) $current;
+  }
+
+  /**
+   * Normalize IPv6 address to /48 prefix for campaign grouping.
+   *
+   * IPv6 /48 prefixes are typically allocated to a single customer/location,
+   * making them useful for identifying coordinated campaigns from the same source.
+   *
+   * @param string $ip IP address (IPv4 or IPv6)
+   * @return string Normalized IP or original IPv4
+   */
+  protected function normalizeIpv6Prefix(string $ip): string
+  {
+    // Check if it's an IPv6 address.
+    if (strpos($ip, ':') === FALSE) {
+      // IPv4 - return as-is.
+      return $ip;
+    }
+
+    // Expand IPv6 to full format for prefix extraction.
+    $expanded = inet_pton($ip);
+    if ($expanded === FALSE) {
+      // Invalid IP, return as-is.
+      return $ip;
+    }
+
+    // Convert to binary string and extract first 48 bits (6 bytes).
+    $binary = unpack('C*', $expanded);
+    // Re-index array to start at 0.
+    $binary = array_values($binary);
+
+    // Convert first 6 bytes back to IPv6 notation.
+    $prefixHex = sprintf(
+      '%02x%02x:%02x%02x:%02x%02x',
+      $binary[0], $binary[1],
+      $binary[2], $binary[3],
+      $binary[4], $binary[5]
+    );
+
+    // Return in human-readable format: 2600:1900:0:*
+    return $prefixHex . ':*';
+  }
+
+  /**
+   * Get all unique IPs from a group for display.
+   *
+   * When IPs are normalized to prefixes, this extracts all original IPs.
+   *
+   * @param array $logs All logs in the group
+   * @return array Unique IP addresses
+   */
+  protected function getUniqueIpsFromGroup(array $logs): array
+  {
+    $ips = [];
+    foreach ($logs as $log) {
+      $ip = $log['client_ip'] ?? $log['remote_addr'] ?? $log['ip'] ?? $log['remote_ip'] ?? 'unknown';
+      $ips[$ip] = TRUE;
+    }
+    return array_keys($ips);
   }
 
 }

@@ -36,7 +36,14 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
 
 ### Display and Output Improvements
 
-2. **Highlight Blocking Decision Factors in Campaign Display**
+2. **Add Progress Bar to Database Read Operations**
+   - Show progress when reading large numbers of logs from database
+   - Currently shows "Reading logs from database..." with no indication of progress
+   - For queries returning 100k+ logs, users don't know if it's stuck or working
+   - Implement progress callback during SQLite fetch operations
+   - Display estimated time remaining for very large queries
+
+3. **Highlight Blocking Decision Factors in Campaign Display**
    - Color-code table row values (scan types, severity, time span, volume, behavior, origin%) that contribute to ACTION recommendations
    - Visual indicators show WHY a campaign is BLOCK NOW vs BLOCK MAYBE vs ALLOW
    - Help users quickly understand the severity factors driving blocking decisions
@@ -44,7 +51,7 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
    - Highlight the specific factors contributing to each blocking decision
    - Improves threat assessment speed and decision confidence
 
-3. **Alphabetize and Color-Code Legend Sections**
+4. **Alphabetize and Color-Code Legend Sections**
    - Sort all legend items alphabetically (Scan Types, Action, Behavior, etc.)
    - Apply same color scheme in legend as used for blocking decision highlighting
    - Consistent visual language between legend and campaign display
@@ -72,6 +79,19 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
 - **API Integration**: REST API for programmatic access
 
 ### Performance Optimizations
+- **Denormalize JSON Message Data into Separate Columns**:
+  - Current schema stores all log data in a single JSON `message` column
+  - Querying JSON fields requires SQLite to parse JSON for every row scanned
+  - Processing 541k bot logs requires 541k JSON decode operations in PHP
+  - Migrate frequently-queried fields to dedicated columns:
+    - `client_ip` - used for grouping, filtering, and verification
+    - `req_user_agent` - used for bot detection and classification
+    - `req_uri` - used for exploit pattern matching
+    - `resp_status` - used for filtering and campaign analysis
+  - Keep `message` column for less-frequently accessed fields
+  - Massive performance improvement for large queries (--all, --2w, etc.)
+  - Migration strategy: ALTER TABLE to add columns, backfill from JSON, update sync logic
+  - Backward compatibility: Keep JSON parsing for old records without denormalized columns
 - **Database Retention & Cleanup Policy**:
   - Review data retention strategy as database grows over time
   - Consider implementing automatic cleanup of old logs (e.g., >2 weeks)
