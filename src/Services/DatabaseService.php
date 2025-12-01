@@ -99,37 +99,30 @@ class DatabaseService
    */
   protected function createSchema(): void
   {
-    // Create table with all columns for new databases.
+    // Create table with regular columns (not GENERATED) for new databases.
+    // As of December 2024, we use regular columns populated during INSERT
+    // instead of GENERATED columns for better performance.
     $sql = <<<'SQL'
 CREATE TABLE IF NOT EXISTS logs (
   id TEXT PRIMARY KEY,
   time TEXT NOT NULL,
   retrieved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   data JSON NOT NULL,
-  client_ip TEXT GENERATED ALWAYS AS (json_extract(data, '$.client_ip')) VIRTUAL,
-  req_method TEXT GENERATED ALWAYS AS (json_extract(data, '$.req_method')) VIRTUAL,
-  req_uri TEXT GENERATED ALWAYS AS (json_extract(data, '$.req_uri')) VIRTUAL,
-  req_user_agent TEXT GENERATED ALWAYS AS (json_extract(data, '$.req_user_agent')) VIRTUAL,
-  resp_status INTEGER GENERATED ALWAYS AS (json_extract(data, '$.resp_status')) VIRTUAL,
-  log_type TEXT GENERATED ALWAYS AS (json_extract(data, '$.type')) VIRTUAL,
-  log_severity TEXT GENERATED ALWAYS AS (json_extract(data, '$.severity')) VIRTUAL,
-  program TEXT GENERATED ALWAYS AS (json_extract(data, '$.program')) VIRTUAL,
-  orig_host TEXT GENERATED ALWAYS AS (json_extract(data, '$.orig_host')) VIRTUAL,
-  hostname TEXT GENERATED ALWAYS AS (json_extract(data, '$.hostname')) VIRTUAL,
-  message TEXT GENERATED ALWAYS AS (json_extract(data, '$.message')) VIRTUAL,
-  country TEXT GENERATED ALWAYS AS (COALESCE(
-    json_extract(data, '$.geoip.country_code2'),
-    json_extract(data, '$.geoip.country_name'),
-    json_extract(data, '$.country'),
-    json_extract(data, '$.geo.country')
-  )) VIRTUAL,
-  city TEXT GENERATED ALWAYS AS (COALESCE(
-    json_extract(data, '$.geoip.city_name'),
-    json_extract(data, '$.city'),
-    json_extract(data, '$.geo.city')
-  )) VIRTUAL,
-  url_arguments JSON GENERATED ALWAYS AS (json_extract(data, '$.url_arguments')) VIRTUAL,
-  base_path TEXT GENERATED ALWAYS AS (json_extract(data, '$.base_path')) VIRTUAL
+  client_ip TEXT,
+  resp_status INTEGER,
+  req_user_agent TEXT,
+  req_uri TEXT,
+  orig_host TEXT,
+  country TEXT,
+  req_method TEXT,
+  city TEXT,
+  log_type TEXT,
+  log_severity TEXT,
+  program TEXT,
+  hostname TEXT,
+  message TEXT,
+  url_arguments TEXT,
+  base_path TEXT
 );
 SQL;
 
@@ -473,10 +466,20 @@ SQL;
       // Prepare statement for checking existence (fast PRIMARY KEY lookup)
       $checkStmt = $this->db->prepare('SELECT 1 FROM logs WHERE id = :id LIMIT 1');
 
-      // Prepare statement for insertion
+      // Prepare statement for insertion with extracted columns
       $stmt = $this->db->prepare(<<<'SQL'
-INSERT OR REPLACE INTO logs (id, time, data)
-VALUES (:id, :time, :data)
+INSERT OR REPLACE INTO logs (
+  id, time, data,
+  client_ip, resp_status, req_user_agent, req_uri, orig_host,
+  country, req_method, city, log_type, log_severity,
+  program, hostname, message, url_arguments, base_path
+)
+VALUES (
+  :id, :time, :data,
+  :client_ip, :resp_status, :req_user_agent, :req_uri, :orig_host,
+  :country, :req_method, :city, :log_type, :log_severity,
+  :program, :hostname, :message, :url_arguments, :base_path
+)
 SQL
       );
 
@@ -526,15 +529,131 @@ SQL
             if ($urlParts['url_arguments'] !== NULL) {
               $logData['url_arguments'] = $urlParts['url_arguments'];
             }
-            // Use JSON_INVALID_UTF8_SUBSTITUTE to handle URIs with special characters.
-            $message = json_encode($logData, JSON_INVALID_UTF8_SUBSTITUTE);
           }
+        }
+
+        // Extract values for column storage BEFORE removing from JSON.
+        // Handle both HTTP logs and Drupal logs with fallback chains.
+        $extractedValues = [
+          'client_ip' => NULL,
+          'resp_status' => NULL,
+          'req_user_agent' => NULL,
+          'req_uri' => NULL,
+          'orig_host' => NULL,
+          'country' => NULL,
+          'req_method' => NULL,
+          'city' => NULL,
+          'log_type' => NULL,
+          'log_severity' => NULL,
+          'program' => NULL,
+          'hostname' => NULL,
+          'message' => NULL,
+          'url_arguments' => NULL,
+          'base_path' => NULL,
+        ];
+
+        if ($logData) {
+          // Extract client_ip (HTTP: geoip.ip, Drupal: ip, fallback: client_ip)
+          $extractedValues['client_ip'] = $logData['geoip']['ip'] ?? $logData['ip'] ?? $logData['client_ip'] ?? NULL;
+
+          // Extract req_method (HTTP: req_method, Drupal: request_method)
+          $extractedValues['req_method'] = $logData['req_method'] ?? $logData['request_method'] ?? NULL;
+
+          // Extract country (multiple fallbacks for different log formats)
+          $extractedValues['country'] = $logData['geoip']['country_code2']
+            ?? $logData['geoip']['country_name']
+            ?? $logData['country']
+            ?? $logData['geo']['country']
+            ?? NULL;
+
+          // Extract city (multiple fallbacks)
+          $extractedValues['city'] = $logData['geoip']['city_name']
+            ?? $logData['city']
+            ?? $logData['geo']['city']
+            ?? NULL;
+
+          // Extract other fields
+          $extractedValues['resp_status'] = $logData['resp_status'] ?? NULL;
+          $extractedValues['req_user_agent'] = $logData['req_user_agent'] ?? NULL;
+          $extractedValues['req_uri'] = $logData['req_uri'] ?? NULL;
+          $extractedValues['orig_host'] = $logData['orig_host'] ?? NULL;
+          $extractedValues['log_type'] = $logData['type'] ?? NULL;
+          $extractedValues['log_severity'] = $logData['severity'] ?? NULL;
+          $extractedValues['program'] = $logData['program'] ?? NULL;
+          $extractedValues['hostname'] = $logData['hostname'] ?? NULL;
+          $extractedValues['message'] = $logData['message'] ?? NULL;
+          $extractedValues['base_path'] = $logData['base_path'] ?? NULL;
+
+          // Handle url_arguments (may be array, needs JSON encoding)
+          if (isset($logData['url_arguments'])) {
+            $extractedValues['url_arguments'] = is_array($logData['url_arguments'])
+              ? json_encode($logData['url_arguments'])
+              : $logData['url_arguments'];
+          }
+
+          // Strip extracted fields from JSON to reduce redundancy.
+          unset(
+            $logData['client_ip'],
+            $logData['ip'],
+            $logData['resp_status'],
+            $logData['req_user_agent'],
+            $logData['req_uri'],
+            $logData['orig_host'],
+            $logData['req_method'],
+            $logData['request_method'],
+            $logData['url_arguments'],
+            $logData['type'],
+            $logData['severity'],
+            $logData['program'],
+            $logData['hostname'],
+            $logData['message'],
+            $logData['base_path'],
+            $logData['country'],
+            $logData['city']
+          );
+
+          // Remove from nested structures
+          if (isset($logData['geoip'])) {
+            unset(
+              $logData['geoip']['country_code2'],
+              $logData['geoip']['country_name'],
+              $logData['geoip']['city_name'],
+              $logData['geoip']['ip']
+            );
+            if (empty($logData['geoip'])) {
+              unset($logData['geoip']);
+            }
+          }
+          if (isset($logData['geo'])) {
+            unset($logData['geo']['country'], $logData['geo']['city']);
+            if (empty($logData['geo'])) {
+              unset($logData['geo']);
+            }
+          }
+
+          // Use JSON_INVALID_UTF8_SUBSTITUTE to handle URIs with special characters.
+          $message = json_encode($logData, JSON_INVALID_UTF8_SUBSTITUTE);
         }
 
         $stmt->execute([
           ':id' => $log['id'] ?? '',
           ':time' => $log['time'] ?? '',
-          ':data' => $message,  // Store JSON with url_arguments injected
+          ':data' => $message,
+          ':client_ip' => $extractedValues['client_ip'],
+          ':resp_status' => $extractedValues['resp_status'],
+          ':req_user_agent' => $extractedValues['req_user_agent'],
+          ':req_uri' => $extractedValues['req_uri'],
+          ':orig_host' => $extractedValues['orig_host'],
+          ':country' => $extractedValues['country'],
+          ':req_method' => $extractedValues['req_method'],
+          ':city' => $extractedValues['city'],
+          ':log_type' => $extractedValues['log_type'],
+          ':log_severity' => $extractedValues['log_severity'],
+          ':program' => $extractedValues['program'],
+          ':hostname' => $extractedValues['hostname'],
+          ':message' => $extractedValues['message'],
+          ':url_arguments' => $extractedValues['url_arguments'],
+          ':base_path' => $extractedValues['base_path'],
         ]);
 
         $inserted++;
@@ -664,8 +783,9 @@ SQL
    */
   public function getLogsWithQuery(?string $whereClause, array $whereParams, ?string $since = NULL, ?string $until = NULL): array
   {
-    // Don't select VIRTUAL generated columns - extract from JSON instead for better performance
-    $sql = 'SELECT id, time, data FROM logs WHERE 1=1';
+    // Select STORED columns directly for performance (Phase 1 optimization).
+    // These columns are pre-computed and don't require JSON parsing.
+    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country FROM logs WHERE 1=1';
     $params = [];
 
     if ($since) {
@@ -691,11 +811,7 @@ SQL
 
     $results = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-      $results[] = [
-        'id' => $row['id'],
-        'time' => $row['time'],
-        'message' => $row['data'],  // JSON data (will be decoded by parseLogMessage)
-      ];
+      $results[] = $row;
     }
 
     return $results;
@@ -711,7 +827,7 @@ SQL
    */
   public function getLogsByIp(string $ip, ?string $since = NULL, ?string $until = NULL): array
   {
-    $sql = 'SELECT id, time, data FROM logs WHERE client_ip = :ip';
+    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country FROM logs WHERE client_ip = :ip';
     $params = [':ip' => $ip];
 
     if ($since) {
@@ -731,11 +847,7 @@ SQL
 
     $results = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-      $results[] = [
-        'id' => $row['id'],
-        'time' => $row['time'],
-        'message' => $row['data'],  // JSON data
-      ];
+      $results[] = $row;
     }
 
     return $results;

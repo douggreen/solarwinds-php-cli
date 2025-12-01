@@ -796,11 +796,11 @@ abstract class BaseSolarWindsCommand extends Command
         if (isset($log[$field])) {
           $value = $log[$field];
         }
-        elseif (isset($log['message'])) {
-          // Parse JSON message to get nested fields.
-          $messageData = json_decode($log['message'], TRUE);
-          if (is_array($messageData) && isset($messageData[$field])) {
-            $value = $messageData[$field];
+        elseif (isset($log['data'])) {
+          // Parse JSON data to get nested fields.
+          $data = json_decode($log['data'], TRUE);
+          if (is_array($data) && isset($data[$field])) {
+            $value = $data[$field];
           }
         }
 
@@ -827,9 +827,8 @@ abstract class BaseSolarWindsCommand extends Command
 
         // Show what was kept (matched all filters).
         if ($debugMode) {
-          $messageData = isset($log['message']) ? json_decode($log['message'], TRUE) : [];
-          $host = $messageData['orig_host'] ?? $log['hostname'] ?? 'unknown';
-          $uri = $messageData['req_uri'] ?? 'unknown';
+          $host = $log['orig_host'] ?? $log['hostname'] ?? 'unknown';
+          $uri = $log['req_uri'] ?? 'unknown';
           $this->debugOutput("MATCHED: $host - $uri");
 
           // Show which field value matched for verification.

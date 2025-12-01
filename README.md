@@ -604,6 +604,29 @@ solarwinds exploits --1d           # Only fetches the missing ~23 hours
 
 The original shell scripts are preserved in the project for reference and comparison during migration. These provide the authoritative specification for behavior, validation, and output formatting.
 
+## Database Migration
+
+**For early users (databases created before December 1, 2024):**
+
+The database schema was updated on December 1, 2024 to use regular columns instead of GENERATED columns for better performance. If you have an existing database from before this date, you need to migrate it:
+
+```bash
+# Create a backup first
+cp ~/.solarwinds/logs.db ~/.solarwinds/backup.db
+
+# Run the migration (takes ~2-3 minutes for 12M records)
+php migrations/001_virtual_to_stored_phase1.php --yes
+```
+
+The migration:
+- Converts GENERATED VIRTUAL columns to regular columns
+- Extracts JSON fields and stores them directly in columns
+- Handles both HTTP logs and Drupal logs with proper fallback chains
+- Reduces JSON size by removing extracted fields (~40% reduction)
+- Uses native SQLite JSON functions for optimal performance
+
+**For new users:** No migration needed. The database is created with the correct schema automatically.
+
 ## Attribution
 
 **Architecture and Direction:** Doug Green (douggreen@douggreenconsulting.com)

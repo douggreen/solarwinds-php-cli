@@ -261,14 +261,6 @@ class BotCommand extends BaseSolarWindsCommand
     // This allows us to batch DNS lookups for uncached entries.
     $uniqueIpBotPairs = [];
     foreach ($logs as $log) {
-      // Parse message field if it contains JSON data.
-      if (isset($log['message']) && is_string($log['message'])) {
-        $messageData = json_decode($log['message'], TRUE);
-        if (json_last_error() === JSON_ERROR_NONE && is_array($messageData)) {
-          $log = array_merge($log, $messageData);
-        }
-      }
-
       $userAgent = $log['req_user_agent'] ?? $log['user_agent'] ?? '';
       $ip = $log['client_ip'] ?? $log['remote_addr'] ?? $log['ip'] ?? $log['remote_ip'] ?? '';
 
@@ -301,13 +293,7 @@ class BotCommand extends BaseSolarWindsCommand
     $enrichedLogs = [];
     $processed = 0;
     foreach ($logs as $log) {
-      // Parse message field if it contains JSON data (only once per log).
-      if (isset($log['message']) && is_string($log['message'])) {
-        $messageData = json_decode($log['message'], TRUE);
-        if (json_last_error() === JSON_ERROR_NONE && is_array($messageData)) {
-          $log = array_merge($log, $messageData);
-        }
-      }
+      // No need to parse JSON - STORED columns already available at top level.
 
       $userAgent = $log['req_user_agent'] ?? $log['user_agent'] ?? '';
       $ip = $log['client_ip'] ?? $log['remote_addr'] ?? $log['ip'] ?? $log['remote_ip'] ?? '';

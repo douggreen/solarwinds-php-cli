@@ -750,20 +750,34 @@ class DisplayService
   }
 
   /**
-   * Parse the log message field if it contains JSON data.
+   * Parse the log data field if it contains JSON data.
    *
-   * @param array $log Log entry with potential JSON message field
-   * @return array Parsed log entry with merged message data
+   * Phase 1 Optimization: STORED columns (client_ip, resp_status, req_user_agent,
+   * req_uri, orig_host, country) are now available at top-level in $log array
+   * from DatabaseService queries. This eliminates JSON parsing for these fields.
+   *
+   * @param array $log Log entry with potential JSON data field
+   * @return array Parsed log entry with merged data
    */
   protected function parseLogMessage(array $log): array
   {
-    // If there's a message field with JSON data, parse it.
-    if (isset($log['message']) && is_string($log['message'])) {
-      $messageData = json_decode($log['message'], TRUE);
-      if (json_last_error() === JSON_ERROR_NONE && is_array($messageData)) {
-        // Merge the outer log data with the parsed message data.
-        // The message data takes precedence for conflicts.
-        $merged = array_merge($log, $messageData);
+    // If 'data' is already an array, it's been parsed - return as-is.
+    if (isset($log['data']) && is_array($log['data'])) {
+      return $log;
+    }
+
+    // If there's a data field with JSON string, parse it once.
+    if (isset($log['data']) && is_string($log['data'])) {
+      $data = json_decode($log['data'], TRUE);
+      if (json_last_error() === JSON_ERROR_NONE && is_array($data)) {
+        // Merge the parsed JSON data with the outer log data.
+        // IMPORTANT: $log takes precedence to preserve STORED column values.
+        // Phase 1 fields (client_ip, resp_status, etc.) are at top level in $log.
+        $merged = array_merge($data, $log);
+
+        // Replace the JSON string with the parsed array to cache the parse.
+        // This prevents re-parsing if parseLogMessage() is called again.
+        $merged['data'] = $data;
 
         // Preserve enrichment fields added by commands (e.g., bot_verified, bot_name).
         if (isset($log['bot_verified'])) {
