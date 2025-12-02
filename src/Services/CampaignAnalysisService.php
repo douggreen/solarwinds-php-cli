@@ -720,4 +720,40 @@ SQL
     ];
   }
 
+  /**
+   * Get historical risk level for an IP address.
+   *
+   * Queries the campaign_analysis table for previous risk assessments of this IP.
+   * Returns the highest risk level seen within the last 30 days.
+   *
+   * @param string $ip IP address to lookup
+   * @return string|null Risk level (critical, high, medium, low, noise) or NULL if no history
+   */
+  public function getHistoricalRiskLevel(string $ip): ?string
+  {
+    $sql = "
+      SELECT risk_level
+      FROM campaign_analysis
+      WHERE ip = :ip
+        AND analyzed_at >= datetime('now', '-30 days')
+        AND risk_level IS NOT NULL
+      ORDER BY
+        CASE risk_level
+          WHEN 'critical' THEN 1
+          WHEN 'high' THEN 2
+          WHEN 'medium' THEN 3
+          WHEN 'low' THEN 4
+          WHEN 'noise' THEN 5
+          ELSE 6
+        END
+      LIMIT 1
+    ";
+
+    $stmt = $this->database->prepare($sql);
+    $stmt->execute([':ip' => $ip]);
+    $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+    return $result['risk_level'] ?? NULL;
+  }
+
 }

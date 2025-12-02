@@ -121,6 +121,7 @@ risk_scoring:
       - xxe
       - ssrf
       - ssti
+      - fakebot
     medium_patterns:
       - file
       - boot
