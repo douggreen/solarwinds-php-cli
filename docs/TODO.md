@@ -18,12 +18,8 @@ The exploit detection system currently flags too much low-volume noise as critic
    - Should emphasize: AI blindspots, human oversight requirements, iteration patterns
    - Remove marketing-style language, focus on practical lessons learned
    - Target audience: developers considering AI-assisted development, not product users
-2. **Track Blocked IPs** - Avoid showing 'BLOCK NOW' for already-blocked IPs
-3. **Investigate Record Count Discrepancy** - Database contains 10,527,622 vs Analyzing 9,759,784 (768k difference)
-4. **Factor Recency into Blocking** - Prioritize active campaigns over dormant ones
-5. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
-6. **Implement DDoS Detection** - Detect coordinated exploit campaigns
-7. Research and implement testing framework
+2. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
+3. Research and implement testing framework
 
 ## Security Enhancements
 
@@ -55,22 +51,7 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
 
 ### Display and Output Improvements
 
-2. **Add Progress Bar to Database Read Operations**
-   - Show progress when reading large numbers of logs from database
-   - Currently shows "Reading logs from database..." with no indication of progress
-   - For queries returning 100k+ logs, users don't know if it's stuck or working
-   - Implement progress callback during SQLite fetch operations
-   - Display estimated time remaining for very large queries
-
-3. **Highlight Blocking Decision Factors in Campaign Display**
-   - Color-code table row values (scan types, severity, time span, volume, behavior, origin%) that contribute to ACTION recommendations
-   - Visual indicators show WHY a campaign is BLOCK NOW vs BLOCK MAYBE vs ALLOW
-   - Help users quickly understand the severity factors driving blocking decisions
-   - Color scheme: BLOCK NOW in red, BLOCK MAYBE in orange
-   - Highlight the specific factors contributing to each blocking decision
-   - Improves threat assessment speed and decision confidence
-
-4. **Alphabetize and Color-Code Legend Sections**
+1. **Alphabetize and Color-Code Legend Sections**
    - Sort all legend items alphabetically (Scan Types, Action, Behavior, etc.)
    - Apply same color scheme in legend as used for blocking decision highlighting
    - Consistent visual language between legend and campaign display
