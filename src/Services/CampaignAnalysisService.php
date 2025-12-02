@@ -148,7 +148,8 @@ class CampaignAnalysisService
     $isShortBurst = $timeSpanDays < $thresholdDays;
 
     // Check if it ended (not continuing)
-    $timeSinceLastSeen = time() - strtotime($lastSeen);
+    // lastSeen is already a unix timestamp (INTEGER), no need for strtotime()
+    $timeSinceLastSeen = time() - $lastSeen;
     $isEnded = $timeSinceLastSeen > 3600; // 1 hour
 
     return $isShortBurst && $isEnded;
@@ -168,7 +169,8 @@ class CampaignAnalysisService
       return FALSE;
     }
 
-    $timeSinceLastSeen = time() - strtotime($lastSeen);
+    // lastSeen is already a unix timestamp (INTEGER), no need for strtotime()
+    $timeSinceLastSeen = time() - $lastSeen;
 
     // If last seen within 2 hours, consider it continuing
     return $timeSinceLastSeen < 7200;
