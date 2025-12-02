@@ -34,6 +34,15 @@
  * - blocking.trusted_bots: User-agent patterns for known good bots (supplements defaults)
  * - blocking.thresholds: Customizable thresholds for blocking decisions
  *
+ * **Risk Scoring Configuration:**
+ * - risk_scoring.weights: Weight factors for each risk component (must sum to 1.0)
+ * - risk_scoring.origin_impact: Origin impact scoring thresholds
+ * - risk_scoring.volume_rate: Volume rate thresholds and scores
+ * - risk_scoring.attack_severity: Pattern severity classifications and bonuses
+ * - risk_scoring.historical: Historical context scoring
+ * - risk_scoring.server_impact: Server impact scoring
+ * - risk_scoring.risk_levels: Risk classification thresholds
+ *
  * **Database Configuration:**
  * - database.path: Path to SQLite database file (default: ~/.solarwinds/logs.db)
  *
@@ -589,5 +598,162 @@ class ConfigurationService
     $defaultDays = 14;
     $days = $this->config['api_retention_days'] ?? $defaultDays;
     return $days * 24 * 60 * 60;
+  }
+
+  /**
+   * Get risk scoring configuration with defaults.
+   *
+   * Returns the complete risk scoring configuration including weights,
+   * thresholds, and classification levels. Merges user configuration
+   * with sensible defaults.
+   *
+   * @return array Risk scoring configuration
+   */
+  public function getRiskScoringConfig(): array
+  {
+    $defaults = [
+      'weights' => [
+        'origin_impact' => 0.30,
+        'volume_rate' => 0.25,
+        'attack_severity' => 0.20,
+        'historical' => 0.15,
+        'server_impact' => 0.10,
+      ],
+      'origin_impact' => [
+        'edge_blocked_100' => 0,
+        'edge_blocked_high' => 20,
+        'origin_50_percent' => 60,
+        'origin_high' => 100,
+      ],
+      'volume_rate' => [
+        'thresholds' => [
+          ['rate' => 10, 'score' => 10],
+          ['rate' => 50, 'score' => 30],
+          ['rate' => 100, 'score' => 50],
+          ['rate' => 500, 'score' => 70],
+          ['rate' => 1000, 'score' => 85],
+          ['rate' => 5000, 'score' => 100],
+        ],
+      ],
+      'attack_severity' => [
+        'critical_patterns' => ['sqli', 'cmdi', 'rce', 'pma'],
+        'high_patterns' => ['xss', 'lfi', 'xxe', 'ssrf', 'ssti'],
+        'medium_patterns' => ['file', 'boot', 'dbg', 'api'],
+        'low_patterns' => ['scan', 'info'],
+        'single_low' => 10,
+        'single_medium' => 20,
+        'single_high' => 40,
+        'single_critical' => 60,
+        'multiple_types_bonus' => 20,
+        'three_plus_types_bonus' => 30,
+      ],
+      'historical' => [
+        'no_history' => 0,
+        'seen_before_low' => 20,
+        'seen_before_medium' => 50,
+        'known_bad_actor' => 100,
+      ],
+      'server_impact' => [
+        'no_php_execution' => 0,
+        'php_execution_404' => 30,
+        'php_execution_40x' => 50,
+        'php_errors_5xx' => 80,
+        'php_success_200' => 100,
+      ],
+      'risk_levels' => [
+        'critical' => 80,
+        'high' => 60,
+        'medium' => 40,
+        'low' => 20,
+        'noise' => 0,
+      ],
+    ];
+
+    $configured = $this->config['risk_scoring'] ?? [];
+
+    // Deep merge to allow partial overrides
+    return $this->deepMerge($defaults, $configured);
+  }
+
+  /**
+   * Deep merge two arrays recursively.
+   *
+   * Unlike array_merge_recursive, this preserves numeric keys and
+   * replaces values instead of creating arrays for duplicates.
+   *
+   * @param array $defaults Default values
+   * @param array $overrides Override values
+   * @return array Merged array
+   */
+  protected function deepMerge(array $defaults, array $overrides): array
+  {
+    $result = $defaults;
+
+    foreach ($overrides as $key => $value) {
+      if (is_array($value) && isset($result[$key]) && is_array($result[$key])) {
+        $result[$key] = $this->deepMerge($result[$key], $value);
+      }
+      else {
+        $result[$key] = $value;
+      }
+    }
+
+    return $result;
+  }
+
+  /**
+   * Get risk scoring weights.
+   *
+   * Returns the weight factors for each risk scoring component.
+   * Weights should sum to 1.0 for normalized scoring.
+   *
+   * @return array Weight factors for risk scoring
+   */
+  public function getRiskScoringWeights(): array
+  {
+    $config = $this->getRiskScoringConfig();
+    return $config['weights'] ?? [];
+  }
+
+  /**
+   * Get risk level thresholds.
+   *
+   * Returns score thresholds for classifying risk levels.
+   *
+   * @return array Risk level thresholds
+   */
+  public function getRiskLevels(): array
+  {
+    $config = $this->getRiskScoringConfig();
+    return $config['risk_levels'] ?? [];
+  }
+
+  /**
+   * Classify a risk score into a risk level.
+   *
+   * Converts a numeric risk score (0-100) into a classification
+   * (critical, high, medium, low, noise) based on configured thresholds.
+   *
+   * @param float $score Risk score (0-100)
+   * @return string Risk level classification
+   */
+  public function classifyRiskScore(float $score): string
+  {
+    $levels = $this->getRiskLevels();
+
+    if ($score >= $levels['critical']) {
+      return 'critical';
+    }
+    if ($score >= $levels['high']) {
+      return 'high';
+    }
+    if ($score >= $levels['medium']) {
+      return 'medium';
+    }
+    if ($score >= $levels['low']) {
+      return 'low';
+    }
+
+    return 'noise';
   }
 }

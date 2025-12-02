@@ -79,3 +79,86 @@ blocking:
     # Single-event filtering
     single_event_threshold_hours: 1   # Bursts <1hr = single event
     single_event_critical_volume: 10000  # Unless >10k reqs + critical
+
+# Optional: Risk scoring configuration for exploit detection
+risk_scoring:
+  # Factor weights (total should = 1.0)
+  weights:
+    origin_impact: 0.30      # Bypassed CDN, hit origin
+    volume_rate: 0.25        # Requests per hour
+    attack_severity: 0.20    # Scan types + severity
+    historical: 0.15         # Known bad actor?
+    server_impact: 0.10      # Errors, load
+
+  # Origin impact scoring (0-100)
+  origin_impact:
+    edge_blocked_100: 0      # All blocked at edge = no risk
+    edge_blocked_high: 20    # >80% blocked at edge
+    origin_50_percent: 60    # Half getting through
+    origin_high: 100         # Most hitting origin
+
+  # Volume rate scoring (requests/hour → 0-100)
+  volume_rate:
+    thresholds:
+      - { rate: 10, score: 10 }      # Background noise
+      - { rate: 50, score: 30 }      # Low volume
+      - { rate: 100, score: 50 }     # Moderate
+      - { rate: 500, score: 70 }     # High
+      - { rate: 1000, score: 85 }    # Very high
+      - { rate: 5000, score: 100 }   # Extreme
+
+  # Attack severity scoring (0-100)
+  attack_severity:
+    # Pattern severity classifications
+    critical_patterns:
+      - sqli
+      - cmdi
+      - rce
+      - pma
+    high_patterns:
+      - xss
+      - lfi
+      - xxe
+      - ssrf
+      - ssti
+    medium_patterns:
+      - file
+      - boot
+      - dbg
+      - api
+    low_patterns:
+      - scan
+      - info
+
+    # Base scores for single pattern types
+    single_low: 10
+    single_medium: 20
+    single_high: 40
+    single_critical: 60
+
+    # Bonuses for multiple pattern types
+    multiple_types_bonus: 20         # Add for 2+ patterns
+    three_plus_types_bonus: 30       # Add for 3+ patterns
+
+  # Historical scoring (0-100)
+  historical:
+    no_history: 0
+    seen_before_low: 20         # Appeared in --1w/--1m scan
+    seen_before_medium: 50      # Previous BLOCK MAYBE
+    known_bad_actor: 100        # Previous BLOCK NOW
+
+  # Server impact scoring (0-100)
+  server_impact:
+    no_php_execution: 0         # All 404s
+    php_execution_404: 30       # Hit PHP but 404
+    php_execution_40x: 50       # Hit PHP, other 40x
+    php_errors_5xx: 80          # Generated errors
+    php_success_200: 100        # Successful exploitation?
+
+  # Final risk classification (based on weighted score 0-100)
+  risk_levels:
+    critical: 80      # >= 80 = BLOCK NOW + ALERT
+    high: 60          # >= 60 = BLOCK NOW
+    medium: 40        # >= 40 = BLOCK MAYBE
+    low: 20           # >= 20 = MONITOR
+    noise: 0          # < 20 = IGNORE
