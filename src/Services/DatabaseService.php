@@ -166,6 +166,17 @@ SQL;
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_sync_times ON sync_ranges(start_time, end_time)");
     $this->db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_range_unique ON sync_ranges(start_time, end_time, status) WHERE status IN ('in_progress', 'completed')");
 
+    // Drop and recreate campaign_analysis with new schema.
+    // Data loss is acceptable since campaigns can be regenerated.
+    // Migration: Check if we need to recreate (missing columns).
+    try {
+      $result = $this->db->query("SELECT campaign_severity, attack_severity, targeted_sites, risk_inputs FROM campaign_analysis LIMIT 1");
+    }
+    catch (\PDOException $e) {
+      // Table doesn't exist or missing columns - drop and recreate.
+      $this->db->exec("DROP TABLE IF EXISTS campaign_analysis");
+    }
+
     // Create campaign_analysis table for storing exploit campaign analysis.
     $campaignAnalysisSql = <<<'SQL'
 CREATE TABLE IF NOT EXISTS campaign_analysis (
@@ -188,8 +199,10 @@ CREATE TABLE IF NOT EXISTS campaign_analysis (
 
   -- Attack patterns (JSON arrays)
   attack_types TEXT,
-  severity TEXT,
+  campaign_severity TEXT,
+  attack_severity TEXT,
   top_paths TEXT,
+  targeted_sites TEXT,
 
   -- Behavior analysis
   behavior_type TEXT,
@@ -204,9 +217,8 @@ CREATE TABLE IF NOT EXISTS campaign_analysis (
   confidence TEXT,
   block_reasons TEXT,
 
-  -- Risk scoring
-  risk_score REAL,
-  risk_level TEXT,
+  -- Risk scoring inputs (JSON) - risk_score/risk_level calculated on load
+  risk_inputs TEXT,
 
   -- Context
   user_agent TEXT,
@@ -228,20 +240,6 @@ SQL;
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_confidence ON campaign_analysis(confidence)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_time_range ON campaign_analysis(time_range)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_last_seen ON campaign_analysis(last_seen)");
-
-    // Migrate: Add risk_score and risk_level columns if they don't exist.
-    try {
-      $this->db->exec("ALTER TABLE campaign_analysis ADD COLUMN risk_score REAL");
-    }
-    catch (\PDOException $e) {
-      // Column already exists, ignore.
-    }
-    try {
-      $this->db->exec("ALTER TABLE campaign_analysis ADD COLUMN risk_level TEXT");
-    }
-    catch (\PDOException $e) {
-      // Column already exists, ignore.
-    }
 
     // Create ip_blocklist table for tracking blocking decisions.
     $ipBlocklistSql = <<<'SQL'

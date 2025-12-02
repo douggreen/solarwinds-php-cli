@@ -29,12 +29,14 @@ class CampaignAnalysisService
    * @param DatabaseService $database Database service
    * @param LogQueryService $logQuery Log query service
    * @param SyncTrackingService $syncTracking Sync tracking service
+   * @param RiskScoringService $riskScoring Risk scoring service
    */
   public function __construct(
     protected ConfigurationService $config,
     protected DatabaseService $database,
     protected LogQueryService $logQuery,
-    protected SyncTrackingService $syncTracking
+    protected SyncTrackingService $syncTracking,
+    protected RiskScoringService $riskScoring
   ) {
   }
 
@@ -390,6 +392,16 @@ class CampaignAnalysisService
     // Convert database format to campaign format expected by display code.
     $campaigns = [];
     foreach ($cached['campaigns'] as $row) {
+      // Recalculate risk score from cached inputs.
+      $riskInputs = json_decode($row['risk_inputs'] ?? '[]', TRUE);
+      if (!empty($riskInputs)) {
+        $riskResult = $this->riskScoring->calculateRiskScore($riskInputs);
+      }
+      else {
+        // Fallback if risk_inputs missing (old cache).
+        $riskResult = ['score' => 0, 'level' => 'noise', 'breakdown' => []];
+      }
+
       // Map database columns to campaign structure.
       $campaigns[] = [
         'ip' => $row['ip'],
@@ -414,6 +426,10 @@ class CampaignAnalysisService
           'should_block' => (bool) $row['should_block'],
           'confidence' => $row['confidence'],
           'reasons' => $row['block_reasons'],
+          'risk_score' => $riskResult['score'],
+          'risk_level' => $riskResult['level'],
+          'risk_breakdown' => $riskResult['breakdown'],
+          'risk_inputs' => $riskInputs,
         ],
         'user_agent' => $row['user_agent'],
         'bot_name' => $row['bot_name'],
@@ -462,7 +478,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   attack_types, campaign_severity, attack_severity, top_paths,
   behavior_type, request_rate, ratio_40x, ratio_exploit, path_diversity, uri_dup_ratio,
   should_block, confidence, block_reasons,
-  risk_score, risk_level,
+  risk_inputs,
   user_agent, bot_name, total_volume, ratio_edge_blocked,
   from_deep_dive, targeted_sites
 ) VALUES (
@@ -472,7 +488,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   :attack_types, :campaign_severity, :attack_severity, :top_paths,
   :behavior_type, :request_rate, :ratio_40x, :ratio_exploit, :path_diversity, :uri_dup_ratio,
   :should_block, :confidence, :block_reasons,
-  :risk_score, :risk_level,
+  :risk_inputs,
   :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
   :from_deep_dive, :targeted_sites
 )
@@ -505,8 +521,7 @@ SQL
       ':should_block' => ($blockingRec['should_block'] ?? FALSE) ? 1 : 0,
       ':confidence' => $blockingRec['confidence'] ?? 'none',
       ':block_reasons' => json_encode($blockingRec['reasons'] ?? []),
-      ':risk_score' => $blockingRec['risk_score'] ?? NULL,
-      ':risk_level' => $blockingRec['risk_level'] ?? NULL,
+      ':risk_inputs' => json_encode($blockingRec['risk_inputs'] ?? NULL),
       ':user_agent' => $campaign['user_agent'] ?? '',
       ':bot_name' => $campaign['bot_name'] ?? NULL,
       ':total_volume' => $volumeAnalysis['total_volume'] ?? 0,
@@ -729,6 +744,7 @@ SQL
    *
    * Queries the campaign_analysis table for previous risk assessments of this IP.
    * Returns the highest risk level seen within the last 30 days.
+   * Recalculates risk level from cached risk_inputs.
    *
    * @param string $ip IP address to lookup
    * @return string|null Risk level (critical, high, medium, low, noise) or NULL if no history
@@ -736,28 +752,40 @@ SQL
   public function getHistoricalRiskLevel(string $ip): ?string
   {
     $sql = "
-      SELECT risk_level
+      SELECT risk_inputs
       FROM campaign_analysis
       WHERE ip = :ip
         AND analyzed_at >= datetime('now', '-30 days')
-        AND risk_level IS NOT NULL
-      ORDER BY
-        CASE risk_level
-          WHEN 'critical' THEN 1
-          WHEN 'high' THEN 2
-          WHEN 'medium' THEN 3
-          WHEN 'low' THEN 4
-          WHEN 'noise' THEN 5
-          ELSE 6
-        END
-      LIMIT 1
+        AND risk_inputs IS NOT NULL
+      ORDER BY analyzed_at DESC
+      LIMIT 10
     ";
 
     $stmt = $this->database->prepare($sql);
     $stmt->execute([':ip' => $ip]);
-    $result = $stmt->fetch(\PDO::FETCH_ASSOC);
+    $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-    return $result['risk_level'] ?? NULL;
+    if (empty($results)) {
+      return NULL;
+    }
+
+    // Recalculate risk levels from cached inputs and return highest.
+    $highestLevel = NULL;
+    $levelPriority = ['critical' => 1, 'high' => 2, 'medium' => 3, 'low' => 4, 'noise' => 5];
+
+    foreach ($results as $row) {
+      $riskInputs = json_decode($row['risk_inputs'] ?? '[]', TRUE);
+      if (!empty($riskInputs)) {
+        $riskResult = $this->riskScoring->calculateRiskScore($riskInputs);
+        $level = $riskResult['level'];
+
+        if ($highestLevel === NULL || ($levelPriority[$level] ?? 6) < ($levelPriority[$highestLevel] ?? 6)) {
+          $highestLevel = $level;
+        }
+      }
+    }
+
+    return $highestLevel;
   }
 
 }
