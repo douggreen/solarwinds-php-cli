@@ -87,8 +87,9 @@ risk_scoring:
     origin_impact: 0.30      # Bypassed CDN, hit origin
     volume_rate: 0.25        # Requests per hour
     attack_severity: 0.20    # Scan types + severity
-    historical: 0.15         # Known bad actor?
-    server_impact: 0.10      # Errors, load
+    recency: 0.15            # How recently was this seen?
+    historical: 0.05         # Known bad actor?
+    server_impact: 0.05      # Errors, load
 
   # Origin impact scoring (0-100)
   origin_impact:
@@ -140,6 +141,21 @@ risk_scoring:
     # Bonuses for multiple pattern types
     multiple_types_bonus: 20         # Add for 2+ patterns
     three_plus_types_bonus: 30       # Add for 3+ patterns
+
+  # Recency scoring (0-100)
+  # Prioritizes active/recent threats over old dormant campaigns
+  recency:
+    active_now_hours: 1              # Less than 1 hour ago
+    active_now: 100                  # Maximum priority
+    very_recent_hours: 6             # Less than 6 hours ago
+    very_recent: 90
+    recent_hours: 24                 # Less than 24 hours ago
+    recent: 70
+    moderately_recent_hours: 72      # Less than 3 days ago
+    moderately_recent: 40
+    aging_hours: 168                 # Less than 1 week ago (168h)
+    aging: 20
+    historical: 0                    # Over 1 week old
 
   # Historical scoring (0-100)
   historical:

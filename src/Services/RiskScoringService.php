@@ -31,7 +31,15 @@
  * - Multiple patterns: +20 bonus
  * - 3+ patterns: +30 bonus
  *
- * **Historical Context (default weight: 0.15):**
+ * **Recency (default weight: 0.15):**
+ * - Active now (<1h): 100 points (maximum priority)
+ * - Last 6 hours: 90 points (very recent)
+ * - Last 24 hours: 70 points (recent)
+ * - Last 3 days: 40 points (moderately recent)
+ * - Last week: 20 points (aging)
+ * - Over 1 week old: 0 points (historical only)
+ *
+ * **Historical Context (default weight: 0.10):**
  * - No history: 0 points
  * - Seen before: 20-50 points
  * - Known bad actor: 100 points
@@ -97,6 +105,7 @@ class RiskScoringService
     $originScore = $this->calculateOriginImpactScore($campaign, $riskConfig);
     $volumeScore = $this->calculateVolumeRateScore($campaign, $riskConfig);
     $severityScore = $this->calculateAttackSeverityScore($campaign, $riskConfig);
+    $recencyScore = $this->calculateRecencyScore($campaign, $riskConfig);
     $historicalScore = $this->calculateHistoricalScore($campaign, $riskConfig);
     $serverScore = $this->calculateServerImpactScore($campaign, $riskConfig);
 
@@ -105,6 +114,7 @@ class RiskScoringService
       ($originScore * $weights['origin_impact']) +
       ($volumeScore * $weights['volume_rate']) +
       ($severityScore * $weights['attack_severity']) +
+      ($recencyScore * $weights['recency']) +
       ($historicalScore * $weights['historical']) +
       ($serverScore * $weights['server_impact'])
     );
@@ -130,6 +140,11 @@ class RiskScoringService
           'score' => $severityScore,
           'weighted' => round($severityScore * $weights['attack_severity'], 1),
           'weight' => $weights['attack_severity'],
+        ],
+        'recency' => [
+          'score' => $recencyScore,
+          'weighted' => round($recencyScore * $weights['recency'], 1),
+          'weight' => $weights['recency'],
         ],
         'historical' => [
           'score' => $historicalScore,
@@ -284,6 +299,52 @@ class RiskScoringService
     }
 
     return (float) min(100, $baseScore + $bonus);
+  }
+
+  /**
+   * Calculate recency score (0-100).
+   *
+   * Evaluates how recently the campaign was active.
+   * Recent/active campaigns get higher priority than old dormant ones.
+   *
+   * @param array $campaign Campaign data
+   * @param array $riskConfig Risk scoring configuration
+   * @return float Score from 0-100
+   */
+  protected function calculateRecencyScore(array $campaign, array $riskConfig): float
+  {
+    $lastSeen = $campaign['last_seen'] ?? NULL;
+
+    if ($lastSeen === NULL) {
+      // No timestamp available, assume not recent.
+      return 0.0;
+    }
+
+    $config = $riskConfig['recency'] ?? [];
+
+    // Calculate hours since last activity.
+    $now = time();
+    $hoursAgo = ($now - $lastSeen) / 3600;
+
+    // Use configured thresholds with fallback to sensible defaults.
+    if ($hoursAgo < ($config['active_now_hours'] ?? 1)) {
+      return (float) ($config['active_now'] ?? 100);
+    }
+    if ($hoursAgo < ($config['very_recent_hours'] ?? 6)) {
+      return (float) ($config['very_recent'] ?? 90);
+    }
+    if ($hoursAgo < ($config['recent_hours'] ?? 24)) {
+      return (float) ($config['recent'] ?? 70);
+    }
+    if ($hoursAgo < ($config['moderately_recent_hours'] ?? 72)) {
+      return (float) ($config['moderately_recent'] ?? 40);
+    }
+    if ($hoursAgo < ($config['aging_hours'] ?? 168)) {
+      return (float) ($config['aging'] ?? 20);
+    }
+
+    // Over 1 week old = historical only.
+    return (float) ($config['historical'] ?? 0);
   }
 
   /**
