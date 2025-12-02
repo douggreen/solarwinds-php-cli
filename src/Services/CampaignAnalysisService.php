@@ -462,6 +462,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   attack_types, campaign_severity, attack_severity, top_paths,
   behavior_type, request_rate, ratio_40x, ratio_exploit, path_diversity, uri_dup_ratio,
   should_block, confidence, block_reasons,
+  risk_score, risk_level,
   user_agent, bot_name, total_volume, ratio_edge_blocked,
   from_deep_dive, targeted_sites
 ) VALUES (
@@ -471,6 +472,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   :attack_types, :campaign_severity, :attack_severity, :top_paths,
   :behavior_type, :request_rate, :ratio_40x, :ratio_exploit, :path_diversity, :uri_dup_ratio,
   :should_block, :confidence, :block_reasons,
+  :risk_score, :risk_level,
   :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
   :from_deep_dive, :targeted_sites
 )
@@ -503,6 +505,8 @@ SQL
       ':should_block' => ($blockingRec['should_block'] ?? FALSE) ? 1 : 0,
       ':confidence' => $blockingRec['confidence'] ?? 'none',
       ':block_reasons' => json_encode($blockingRec['reasons'] ?? []),
+      ':risk_score' => $blockingRec['risk_score'] ?? NULL,
+      ':risk_level' => $blockingRec['risk_level'] ?? NULL,
       ':user_agent' => $campaign['user_agent'] ?? '',
       ':bot_name' => $campaign['bot_name'] ?? NULL,
       ':total_volume' => $volumeAnalysis['total_volume'] ?? 0,

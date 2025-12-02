@@ -204,6 +204,10 @@ CREATE TABLE IF NOT EXISTS campaign_analysis (
   confidence TEXT,
   block_reasons TEXT,
 
+  -- Risk scoring
+  risk_score REAL,
+  risk_level TEXT,
+
   -- Context
   user_agent TEXT,
   bot_name TEXT,
@@ -224,6 +228,20 @@ SQL;
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_confidence ON campaign_analysis(confidence)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_time_range ON campaign_analysis(time_range)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_last_seen ON campaign_analysis(last_seen)");
+
+    // Migrate: Add risk_score and risk_level columns if they don't exist.
+    try {
+      $this->db->exec("ALTER TABLE campaign_analysis ADD COLUMN risk_score REAL");
+    }
+    catch (\PDOException $e) {
+      // Column already exists, ignore.
+    }
+    try {
+      $this->db->exec("ALTER TABLE campaign_analysis ADD COLUMN risk_level TEXT");
+    }
+    catch (\PDOException $e) {
+      // Column already exists, ignore.
+    }
 
     // Create ip_blocklist table for tracking blocking decisions.
     $ipBlocklistSql = <<<'SQL'
