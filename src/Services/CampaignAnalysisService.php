@@ -445,7 +445,7 @@ class CampaignAnalysisService
    * @param bool $fromDeepDive Whether from deep-dive
    * @return int Campaign analysis ID
    */
-  private function saveCampaignAnalysisToDb(
+  protected function saveCampaignAnalysisToDb(
     array $campaign,
     string $timeRange,
     string $timeStart,
@@ -524,7 +524,7 @@ SQL
    * @param string $ip IP address
    * @return array|null Campaign analysis or NULL if not found
    */
-  private function getCampaignAnalysisByIpFromDb(string $ip): ?array
+  protected function getCampaignAnalysisByIpFromDb(string $ip): ?array
   {
     $stmt = $this->database->prepare(<<<'SQL'
 SELECT * FROM campaign_analysis
@@ -558,7 +558,7 @@ SQL
    * @param string|null $minConfidence Minimum confidence level
    * @return array Array of campaign analyses
    */
-  private function getCampaignAnalysesFromDb(
+  protected function getCampaignAnalysesFromDb(
     ?string $since = NULL,
     ?string $until = NULL,
     ?string $minConfidence = NULL
@@ -612,7 +612,7 @@ SQL
    * @param int $daysBack Number of days to look back
    * @return bool TRUE if IP has recent analysis
    */
-  private function hasRecentCampaignAnalysisInDb(string $ip, int $daysBack = 7): bool
+  protected function hasRecentCampaignAnalysisInDb(string $ip, int $daysBack = 7): bool
   {
     $since = date('Y-m-d H:i:s', strtotime("-$daysBack days"));
 
@@ -640,7 +640,7 @@ SQL
    * @param string|null $timeRange Time range label for fuzzy matching
    * @return array|null Array with 'campaigns' and 'analyzed_at', or NULL
    */
-  private function getCachedCampaignsByTimeRangeFromDb(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
+  protected function getCachedCampaignsByTimeRangeFromDb(string $timeStart, string $timeEnd, int $maxAgeMinutes = 60, ?string $timeRange = NULL): ?array
   {
     // Calculate cutoff time for cache freshness.
     $cutoffTime = gmdate('Y-m-d H:i:s', time() - ($maxAgeMinutes * 60));

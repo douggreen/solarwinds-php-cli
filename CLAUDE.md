@@ -133,7 +133,11 @@ When the user asks to "show me the TODO list" or similar:
 
 ### PHP Coding Standards
 - **Use uppercase NULL, TRUE, FALSE** - Always capital letters for PHP constants
-- **Use protected instead of private** - Better extensibility
+- **Use protected instead of private** - ALWAYS use protected visibility for methods and properties, NEVER use private
+  - Services should be extensible, not sealed APIs with only pre-defined functionality
+  - Allows subclassing and extension without requiring modification of the original class
+  - Example: `protected function saveCampaignAnalysisToDb()` not `private function saveCampaignAnalysisToDb()`
+  - This applies to ALL classes: commands, services, and utilities
 - **Comments are sentences** - Start with capital, end with period
 - **Clean trailing whitespace** - `sed -i 's/ *$//' filename` on ALL PHP files
 - **Format long arrays on separate lines** - Arrays with multiple items should have each item on its own line with a trailing comma (even the last item). Example:
