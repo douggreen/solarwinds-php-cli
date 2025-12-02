@@ -2,9 +2,15 @@
 
 This document tracks the remaining work to complete the migration and enhancement of the SolarWinds log analysis system.
 
+## Current Priority: Exploit Detection Improvements
+
+**See [EXPLOITS_TODO.md](EXPLOITS_TODO.md) for detailed planning and implementation strategy.**
+
+The exploit detection system currently flags too much low-volume noise as critical threats. We need to implement intelligent risk scoring, multi-timeframe intelligence gathering, and systematic testing to tune parameters.
+
 ## Next Steps
 
-**Current Priority:**
+**Other Priorities:**
 1. **Cleanup CASE_STUDY_2.md** - Rewrite to focus on process and collaboration rather than product
    - Currently too product-focused (features, performance improvements, blocking campaigns)
    - Sounds bragadocious with too many claims about achievements
@@ -74,6 +80,12 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
 ## Future Enhancements (Lower Priority)
 
 ### Advanced Features
+- **AI-Assisted Threat Analysis**: Research feasibility of using AI to identify threats
+  - Challenge: Large data volume makes cloud APIs impractical (cost, bandwidth)
+  - Would require local AI setup (Ollama, llama3.2, etc.)
+  - Potential uses: Anomaly detection, pattern clustering, risk scoring validation
+  - Lower priority: Manual risk scoring system should be implemented and tested first
+  - Research questions: Can local AI models provide meaningful threat insights? What's the performance impact?
 - **Dynamic Attack Pattern Learning**: Adaptive pattern detection based on traffic analysis
   - Automatically identify suspicious root-level PHP files (high volume, non-200 responses)
   - Build reputation scores for observed attack patterns over time
