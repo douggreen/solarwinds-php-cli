@@ -8,8 +8,9 @@
 
 When starting any new session, BEFORE responding to the user:
 
-1. **Read docs/TODO.md completely** (no line limits)
+1. **Read docs/TODO.md and docs/EXPLOITS_TODO.md completely** (no line limits)
 2. **Present TODO list immediately** in this format:
+   - Group the EXPLOITS tasks first
    - Group tasks as numbered, actionable options by category
    - Include brief descriptions for each task
    - End with: "Which of these would you like to work on?"
