@@ -5,12 +5,19 @@ This document tracks the remaining work to complete the migration and enhancemen
 ## Next Steps
 
 **Current Priority:**
-1. **Track Blocked IPs** - Avoid showing 'BLOCK NOW' for already-blocked IPs
-2. **Investigate Record Count Discrepancy** - Database contains 10,527,622 vs Analyzing 9,759,784 (768k difference)
-3. **Factor Recency into Blocking** - Prioritize active campaigns over dormant ones
-4. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
-5. **Implement DDoS Detection** - Detect coordinated exploit campaigns
-6. Research and implement testing framework
+1. **Cleanup CASE_STUDY_2.md** - Rewrite to focus on process and collaboration rather than product
+   - Currently too product-focused (features, performance improvements, blocking campaigns)
+   - Sounds bragadocious with too many claims about achievements
+   - Should focus on: human-AI collaboration patterns, what worked/what didn't, process improvements
+   - Should emphasize: AI blindspots, human oversight requirements, iteration patterns
+   - Remove marketing-style language, focus on practical lessons learned
+   - Target audience: developers considering AI-assisted development, not product users
+2. **Track Blocked IPs** - Avoid showing 'BLOCK NOW' for already-blocked IPs
+3. **Investigate Record Count Discrepancy** - Database contains 10,527,622 vs Analyzing 9,759,784 (768k difference)
+4. **Factor Recency into Blocking** - Prioritize active campaigns over dormant ones
+5. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
+6. **Implement DDoS Detection** - Detect coordinated exploit campaigns
+7. Research and implement testing framework
 
 ## Security Enhancements
 
@@ -27,7 +34,13 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
 
 ### High Priority Tasks
 
-1. **Research and Implement Testing Framework**
+1. **Use PHP Constructor Property Promotion**
+   - Refactor all service and command constructors to use PHP 8.0+ property promotion syntax
+   - Example: `public function __construct(protected DatabaseService $database)` instead of separate property declaration and assignment
+   - Makes code more concise and eliminates boilerplate
+   - Already used in CampaignAnalysisService - apply consistently across codebase
+
+2. **Research and Implement Testing Framework**
    - Evaluate PHPUnit vs other PHP testing frameworks
    - Design test strategy for command classes and services
    - Create integration tests comparing output with original shell scripts

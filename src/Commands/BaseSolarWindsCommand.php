@@ -91,6 +91,7 @@ use SolarWinds\Services\ConfigurationService;
 use SolarWinds\Services\ApiService;
 use SolarWinds\Services\DisplayService;
 use SolarWinds\Services\DatabaseService;
+use SolarWinds\Services\LogQueryService;
 use SolarWinds\Services\SyncTrackingService;
 use SolarWinds\Services\TimeSpecifications;
 
@@ -106,6 +107,7 @@ abstract class BaseSolarWindsCommand extends Command
   protected ApiService $apiService;
   protected DisplayService $displayService;
   protected DatabaseService $databaseService;
+  protected LogQueryService $logQuery;
   protected SyncTrackingService $syncTracking;
   protected SymfonyStyle $io;
 
@@ -144,6 +146,7 @@ abstract class BaseSolarWindsCommand extends Command
     $this->apiService = new ApiService($this->config);
     $this->displayService = new DisplayService($this->config);
     $this->databaseService = new DatabaseService($this->config);
+    $this->logQuery = new LogQueryService($this->databaseService);
     $this->syncTracking = new SyncTrackingService($this->config, $this->databaseService);
   }
 
@@ -347,7 +350,8 @@ abstract class BaseSolarWindsCommand extends Command
         return [
           'start_time' => $start,
           'end_time' => $end,
-          'human_readable' => $humanReadable
+          'human_readable' => $humanReadable,
+          'time_option' => $timeOption,
         ];
       }
 
@@ -363,7 +367,8 @@ abstract class BaseSolarWindsCommand extends Command
       return [
         'start_time' => $start,
         'end_time' => $end,
-        'human_readable' => "last $defaultFlag (default)"
+        'human_readable' => "last $defaultFlag (default)",
+        'time_option' => $defaultFlag,
       ];
     }
 
@@ -1156,9 +1161,10 @@ abstract class BaseSolarWindsCommand extends Command
     $endEpoch = strtotime($options['time']['end_time']);
     $totalSeconds = $endEpoch - $startEpoch;
 
-    $progressBar = new ProgressBar($this->io, $totalSeconds);
+    // Create progress bar with DisplayService for consistent formatting.
+    $progressBar = $this->displayService->createProgressBar($this->io, $totalSeconds);
 
-    // Define custom format: bar with inline status showing elapsed, remaining, and results.
+    // Override format for sync-specific custom message display.
     ProgressBar::setFormatDefinition('custom', ' [%bar%] %message%');
     $progressBar->setFormat('custom');
 
@@ -1709,16 +1715,26 @@ abstract class BaseSolarWindsCommand extends Command
    * @param array $options Query options containing time range
    * @param string|null $sqlWhere SQL WHERE clause (without WHERE keyword)
    * @param array $sqlParams PDO parameters for SQL WHERE clause
+   * @param bool $includeData Whether to include data JSON column
+   * @param callable|null $progressCallback Optional progress callback
    * @return array Array of log entries matching the query
    */
-  protected function queryDatabase(array $options, ?string $sqlWhere = NULL, array $sqlParams = []): array
+  protected function queryDatabase(array $options, ?string $sqlWhere = NULL, array $sqlParams = [], bool $includeData = FALSE, ?callable $progressCallback = NULL): array
   {
-    // Convert time range to ISO 8601 for database queries.
-    $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
-    $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+    // When --all is used, skip time filtering for maximum performance.
+    if (isset($options['time']['time_option']) && $options['time']['time_option'] === 'all') {
+      $startTime = NULL;
+      $endTime = NULL;
+    }
+    else {
+      // Convert time range to ISO 8601 for database queries.
+      $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
+      $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+    }
 
     // Query database with SQL WHERE clause.
-    return $this->databaseService->getLogsWithQuery($sqlWhere, $sqlParams, $startTime, $endTime);
+    // includeData=TRUE for commands that need display fields like region (SearchCommand, BotCommand)
+    return $this->logQuery->getLogsWithQuery($sqlWhere, $sqlParams, $startTime, $endTime, $includeData, $progressCallback);
   }
 
   /**

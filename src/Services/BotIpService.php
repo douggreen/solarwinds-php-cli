@@ -26,6 +26,11 @@ class BotIpService
   protected DatabaseService $database;
 
   /**
+   * Display service for progress bars.
+   */
+  protected ?DisplayService $display = NULL;
+
+  /**
    * In-memory cache of verification results.
    * Loaded once per command execution to avoid repeated database queries.
    */
@@ -97,10 +102,12 @@ class BotIpService
    * Constructor.
    *
    * @param DatabaseService $database Database service
+   * @param DisplayService|null $display Display service for progress bars (optional)
    */
-  public function __construct(DatabaseService $database)
+  public function __construct(DatabaseService $database, ?DisplayService $display = NULL)
   {
     $this->database = $database;
+    $this->display = $display;
   }
 
   /**
@@ -958,10 +965,9 @@ class BotIpService
 
     // Show progress bar for batch verification if we have many uncached IPs.
     $progressBar = NULL;
-    if ($io && $totalUncached > 10) {
+    if ($io && $this->display && $totalUncached > 10) {
       $io->writeln(sprintf('<comment>Pre-verifying %d uncached bot IPs (batches of %d)...</comment>', $totalUncached, $batchSize));
-      $progressBar = $io->createProgressBar($totalUncached);
-      $progressBar->setFormat('  %current%/%max% [%bar%] %percent:3s%% %elapsed:6s%');
+      $progressBar = $this->display->createProgressBar($io, $totalUncached);
       $progressBar->start();
     }
 

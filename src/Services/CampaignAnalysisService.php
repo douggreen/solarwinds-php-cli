@@ -27,11 +27,13 @@ class CampaignAnalysisService
    *
    * @param ConfigurationService $config Configuration service
    * @param DatabaseService $database Database service
+   * @param LogQueryService $logQuery Log query service
    * @param SyncTrackingService $syncTracking Sync tracking service
    */
   public function __construct(
     protected ConfigurationService $config,
     protected DatabaseService $database,
+    protected LogQueryService $logQuery,
     protected SyncTrackingService $syncTracking
   ) {
   }
@@ -230,7 +232,7 @@ class CampaignAnalysisService
     }
 
     // Query ALL logs for this specific IP
-    $ipLogs = $this->database->getLogsByIp($ip, $firstLogDate, NULL);
+    $ipLogs = $this->logQuery->getLogsByIp($ip, $firstLogDate, NULL);
 
     if (empty($ipLogs)) {
       return NULL;

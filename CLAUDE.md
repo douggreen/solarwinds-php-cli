@@ -97,6 +97,32 @@ When the user asks to "show me the TODO list" or similar:
 - **Template Pattern:** `BaseSolarWindsCommand` provides shared functionality
 - **Services:** `ConfigurationService`, `ApiService`, `DisplayService`, `CacheService`, `DatabaseService`, `CampaignAnalysisService`, `SyncTrackingService`, `BotIpService`
 
+### Database/Application Architecture
+
+**DatabaseService is a low-level service** - contains ONLY:
+- Schema management (CREATE TABLE, indexes)
+- Raw SQL execution (query(), execute(), prepare())
+- Basic CRUD operations (insertLogs(), no business logic)
+- Transaction management (beginTransaction(), commit(), rollback())
+
+**Application logic belongs in specialized services:**
+- **CampaignAnalysisService** - campaign queries and analysis
+- **SyncTrackingService** - sync status and gap detection
+- **Command classes** - WHERE clause building, result filtering
+
+**Before adding methods to DatabaseService, ask:**
+- Does this method contain business logic? → Wrong layer
+- Does this take application-specific parameters ($whereClause, $since, $until)? → Wrong layer
+- Could this go in a specialized service? → Probably should
+
+**Example Violations:**
+- `getLogsWithQuery($whereClause, $params, $since, $until)` - application logic, should be in CampaignAnalysisService or Command
+- `getLogsByIp($ip, $since, $until)` - application-specific query, should be in specialized service
+
+**Correct Pattern:**
+- DatabaseService provides: `query($sql, $params)` - raw execution only
+- CampaignAnalysisService builds: `getCampaignLogs($ip, $timeRange)` - uses DatabaseService internally
+
 ### Template Method Implementation
 - **BaseSolarWindsCommand** - Provides common functionality
 - **Child commands implement 3 abstract methods:**

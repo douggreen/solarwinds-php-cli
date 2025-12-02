@@ -25,6 +25,19 @@ use PDOStatement;
  * Database Service - SQLite storage for HTTP logs
  *
  * Provides indexed storage and efficient querying of HTTP traffic logs.
+ *
+ * ARCHITECTURE: This service provides ONLY low-level database operations:
+ * - Schema management (CREATE TABLE, indexes)
+ * - Raw CRUD operations (INSERT, SELECT, UPDATE, DELETE)
+ * - Transaction management
+ *
+ * APPLICATION LOGIC BELONGS IN HIGHER-LEVEL SERVICES:
+ * - Query building with business logic → CampaignAnalysisService, SyncTrackingService
+ * - WHERE clause construction → Command classes
+ * - Result filtering/transformation → Command classes or specialized services
+ *
+ * If you're adding a method that takes application-specific parameters (like
+ * $whereClause, $since, $until), it probably belongs in a higher-level service.
  */
 class DatabaseService
 {
@@ -105,8 +118,8 @@ class DatabaseService
     $sql = <<<'SQL'
 CREATE TABLE IF NOT EXISTS logs (
   id TEXT PRIMARY KEY,
-  time TEXT NOT NULL,
-  retrieved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  time INTEGER NOT NULL,
+  retrieved_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
   data JSON NOT NULL,
   client_ip TEXT,
   resp_status INTEGER,
@@ -122,7 +135,9 @@ CREATE TABLE IF NOT EXISTS logs (
   hostname TEXT,
   message TEXT,
   url_arguments TEXT,
-  base_path TEXT
+  base_path TEXT,
+  cache_status TEXT,
+  region TEXT
 );
 SQL;
 
@@ -360,9 +375,18 @@ SQL;
       $existingColumns[] = $row['name'];
     }
 
+    // Create composite index on (time, req_method) first - this can serve both time-only and time+method queries
+    // This is more efficient than separate indexes and dramatically speeds up exploit command queries
+    if (in_array('time', $existingColumns) && in_array('req_method', $existingColumns)) {
+      // Drop old idx_time if it exists (redundant with idx_time_method)
+      $this->db->exec("DROP INDEX IF EXISTS idx_time");
+      $this->db->exec("CREATE INDEX IF NOT EXISTS idx_time_method ON logs(time, req_method) WHERE req_method IS NOT NULL");
+    }
+
     // Create indexes only for columns that exist.
+    // Note: idx_time is NOT created here since idx_time_method covers time queries
+    // Note: idx_req_method IS created for queries that filter only on req_method
     $indexDefinitions = [
-      'idx_time' => 'time',
       'idx_client_ip' => 'client_ip',
       'idx_req_method' => 'req_method',
       'idx_resp_status' => 'resp_status',
@@ -472,13 +496,13 @@ INSERT OR REPLACE INTO logs (
   id, time, data,
   client_ip, resp_status, req_user_agent, req_uri, orig_host,
   country, req_method, city, log_type, log_severity,
-  program, hostname, message, url_arguments, base_path
+  program, hostname, message, url_arguments, base_path, cache_status, region
 )
 VALUES (
   :id, :time, :data,
   :client_ip, :resp_status, :req_user_agent, :req_uri, :orig_host,
   :country, :req_method, :city, :log_type, :log_severity,
-  :program, :hostname, :message, :url_arguments, :base_path
+  :program, :hostname, :message, :url_arguments, :base_path, :cache_status, :region
 )
 SQL
       );
@@ -550,14 +574,16 @@ SQL
           'message' => NULL,
           'url_arguments' => NULL,
           'base_path' => NULL,
+          'cache_status' => NULL,
+          'region' => NULL,
         ];
 
         if ($logData) {
           // Extract client_ip (HTTP: geoip.ip, Drupal: ip, fallback: client_ip)
           $extractedValues['client_ip'] = $logData['geoip']['ip'] ?? $logData['ip'] ?? $logData['client_ip'] ?? NULL;
 
-          // Extract req_method (HTTP: req_method, Drupal: request_method)
-          $extractedValues['req_method'] = $logData['req_method'] ?? $logData['request_method'] ?? NULL;
+          // Extract req_method (HTTP: req_method, Drupal: request_method, alternative: method)
+          $extractedValues['req_method'] = $logData['req_method'] ?? $logData['request_method'] ?? $logData['method'] ?? NULL;
 
           // Extract country (multiple fallbacks for different log formats)
           $extractedValues['country'] = $logData['geoip']['country_code2']
@@ -572,17 +598,24 @@ SQL
             ?? $logData['geo']['city']
             ?? NULL;
 
-          // Extract other fields
+          // Extract region (multiple fallbacks)
+          $extractedValues['region'] = $logData['geoip']['region_name']
+            ?? $logData['region']
+            ?? $logData['geo']['region']
+            ?? NULL;
+
+          // Extract other fields (with fallbacks for alternative field names)
           $extractedValues['resp_status'] = $logData['resp_status'] ?? NULL;
-          $extractedValues['req_user_agent'] = $logData['req_user_agent'] ?? NULL;
-          $extractedValues['req_uri'] = $logData['req_uri'] ?? NULL;
-          $extractedValues['orig_host'] = $logData['orig_host'] ?? NULL;
+          $extractedValues['req_user_agent'] = $logData['req_user_agent'] ?? $logData['user_agent'] ?? NULL;
+          $extractedValues['req_uri'] = $logData['req_uri'] ?? $logData['uri'] ?? NULL;
+          $extractedValues['orig_host'] = $logData['orig_host'] ?? $logData['req_host'] ?? $logData['host'] ?? NULL;
           $extractedValues['log_type'] = $logData['type'] ?? NULL;
           $extractedValues['log_severity'] = $logData['severity'] ?? NULL;
           $extractedValues['program'] = $logData['program'] ?? NULL;
           $extractedValues['hostname'] = $logData['hostname'] ?? NULL;
           $extractedValues['message'] = $logData['message'] ?? NULL;
           $extractedValues['base_path'] = $logData['base_path'] ?? NULL;
+          $extractedValues['cache_status'] = $logData['cache_status'] ?? NULL;
 
           // Handle url_arguments (may be array, needs JSON encoding)
           if (isset($logData['url_arguments'])) {
@@ -597,10 +630,15 @@ SQL
             $logData['ip'],
             $logData['resp_status'],
             $logData['req_user_agent'],
+            $logData['user_agent'],
             $logData['req_uri'],
+            $logData['uri'],
             $logData['orig_host'],
+            $logData['req_host'],
+            $logData['host'],
             $logData['req_method'],
             $logData['request_method'],
+            $logData['method'],
             $logData['url_arguments'],
             $logData['type'],
             $logData['severity'],
@@ -609,7 +647,9 @@ SQL
             $logData['message'],
             $logData['base_path'],
             $logData['country'],
-            $logData['city']
+            $logData['city'],
+            $logData['cache_status'],
+            $logData['region']
           );
 
           // Remove from nested structures
@@ -618,6 +658,7 @@ SQL
               $logData['geoip']['country_code2'],
               $logData['geoip']['country_name'],
               $logData['geoip']['city_name'],
+              $logData['geoip']['region_name'],
               $logData['geoip']['ip']
             );
             if (empty($logData['geoip'])) {
@@ -625,7 +666,7 @@ SQL
             }
           }
           if (isset($logData['geo'])) {
-            unset($logData['geo']['country'], $logData['geo']['city']);
+            unset($logData['geo']['country'], $logData['geo']['city'], $logData['geo']['region']);
             if (empty($logData['geo'])) {
               unset($logData['geo']);
             }
@@ -635,9 +676,13 @@ SQL
           $message = json_encode($logData, JSON_INVALID_UTF8_SUBSTITUTE);
         }
 
+        // Convert ISO 8601 time to unix timestamp for INTEGER storage
+        $timeValue = $log['time'] ?? '';
+        $unixTime = $timeValue ? strtotime($timeValue) : 0;
+
         $stmt->execute([
           ':id' => $log['id'] ?? '',
-          ':time' => $log['time'] ?? '',
+          ':time' => $unixTime,
           ':data' => $message,
           ':client_ip' => $extractedValues['client_ip'],
           ':resp_status' => $extractedValues['resp_status'],
@@ -654,6 +699,8 @@ SQL
           ':message' => $extractedValues['message'],
           ':url_arguments' => $extractedValues['url_arguments'],
           ':base_path' => $extractedValues['base_path'],
+          ':cache_status' => $extractedValues['cache_status'],
+          ':region' => $extractedValues['region'],
         ]);
 
         $inserted++;
@@ -758,99 +805,6 @@ SQL
   public function lastInsertId(): string
   {
     return $this->db->lastInsertId();
-  }
-
-  /**
-   * Get logs from database.
-   *
-   * @param string|null $since Start time (ISO 8601)
-   * @param string|null $until End time (ISO 8601)
-   * @return array Array of log entries in original format
-   */
-  public function getLogs(?string $since = NULL, ?string $until = NULL): array
-  {
-    return $this->getLogsWithQuery(NULL, [], $since, $until);
-  }
-
-  /**
-   * Get logs from database with SQL WHERE clause filtering.
-   *
-   * @param string|null $whereClause SQL WHERE clause (without WHERE keyword)
-   * @param array $whereParams PDO parameters for WHERE clause
-   * @param string|null $since Start time (ISO 8601)
-   * @param string|null $until End time (ISO 8601)
-   * @return array Array of log entries in original format
-   */
-  public function getLogsWithQuery(?string $whereClause, array $whereParams, ?string $since = NULL, ?string $until = NULL): array
-  {
-    // Select STORED columns directly for performance (Phase 1 optimization).
-    // These columns are pre-computed and don't require JSON parsing.
-    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country FROM logs WHERE 1=1';
-    $params = [];
-
-    if ($since) {
-      $sql .= ' AND time >= :since';
-      $params[':since'] = $since;
-    }
-
-    if ($until) {
-      $sql .= ' AND time <= :until';
-      $params[':until'] = $until;
-    }
-
-    // Add custom WHERE clause if provided
-    if (!empty($whereClause)) {
-      $sql .= ' AND (' . $whereClause . ')';
-      $params = array_merge($params, $whereParams);
-    }
-
-    $sql .= ' ORDER BY time ASC';
-
-    $stmt = $this->db->prepare($sql);
-    $stmt->execute($params);
-
-    $results = [];
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-      $results[] = $row;
-    }
-
-    return $results;
-  }
-
-  /**
-   * Get logs for a specific IP address.
-   *
-   * @param string $ip IP address
-   * @param string|null $since Start time (ISO 8601)
-   * @param string|null $until End time (ISO 8601)
-   * @return array Array of log entries
-   */
-  public function getLogsByIp(string $ip, ?string $since = NULL, ?string $until = NULL): array
-  {
-    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country FROM logs WHERE client_ip = :ip';
-    $params = [':ip' => $ip];
-
-    if ($since) {
-      $sql .= ' AND time >= :since';
-      $params[':since'] = $since;
-    }
-
-    if ($until) {
-      $sql .= ' AND time <= :until';
-      $params[':until'] = $until;
-    }
-
-    $sql .= ' ORDER BY time ASC';
-
-    $stmt = $this->db->prepare($sql);
-    $stmt->execute($params);
-
-    $results = [];
-    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-      $results[] = $row;
-    }
-
-    return $results;
   }
 
   /**

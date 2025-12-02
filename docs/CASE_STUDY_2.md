@@ -835,7 +835,102 @@ Even extensively documented behavioral constraints can be overridden by AI momen
 
 ## 6. Performance Optimization Discoveries
 
-### 6.1 The Hot Path Problem
+### 6.1 The Migration Learning Curve: Multiple Iterations to Get It Right
+
+**Critical Lesson:** AI excels at implementation but struggles with architectural performance implications.
+
+**The Problem:**
+
+Over multiple hours and several migration attempts (November 20-27, 2025), the database schema migrations repeatedly missed critical performance optimizations despite explicit goals to improve query speed.
+
+**Migration Iteration History:**
+
+**Attempt 1: Virtual Columns**
+- Created columns as VIRTUAL GENERATED
+- Still required JSON parsing on every query
+- No actual performance improvement achieved
+- User only discovered issue after reviewing actual database schema
+
+**Attempt 2: Stored Columns, Still Querying JSON**
+- Changed columns to STORED
+- Forgot to remove `data` column from SELECT queries
+- Queries still reading large JSON blobs for millions of rows
+- Discovered only when timing tests showed no improvement
+
+**Attempt 3: Missing Critical Fields**
+- Found cache_status field in 90% of records
+- Found region field in 10M+ records
+- Both should have been in original migration
+- Required additional migration iteration
+
+**Attempt 4: TEXT Timestamps**
+- Used ISO 8601 TEXT format for time column
+- Missed performance implication: TEXT comparison 2-3x slower than INTEGER
+- User had to explicitly suggest: "change time to an integer timestamp"
+
+**Root Cause Analysis:**
+
+AI optimization blindspots:
+1. **Logical correctness ≠ performance correctness** - Code worked but missed performance goals
+2. **Incomplete schema analysis** - Didn't comprehensively analyze all JSON fields before migrating
+3. **Query pattern oversight** - Didn't trace all queries to verify data column removed
+4. **Data type implications** - Didn't consider timestamp format performance impact upfront
+
+**User's Observation:**
+
+> "You are a good coder but not a very good architect or performance engineer. We already know this. I think the CASE STUDY needs to make a point that where performance is concerned, especially long running processes, it would save time for the human to do a better initial code review."
+
+**Key Lesson:**
+
+For performance-critical migrations on large datasets:
+- **Human should do upfront architectural review** before AI implements
+- **Human should verify schema decisions** before running hours-long migration
+- **Human should trace query patterns** to validate optimization assumptions
+- **AI should present comprehensive analysis** rather than jumping to implementation
+
+**What Would Have Helped:**
+
+Before first migration, AI should have presented:
+```
+Migration Analysis:
+
+1. All JSON fields and usage frequency:
+   - client_ip: 100% of records
+   - req_method: 99.8% of records
+   - cache_status: 90.9% of records ← MISSED initially
+   - region: 87.3% of records ← MISSED initially
+
+2. Current query patterns:
+   - ExploitsCommand: SELECT data, time, client_ip...
+   - SearchCommand: SELECT data, time, req_uri...
+   - Issue: data column queried in all commands ← MISSED initially
+
+3. Data type performance implications:
+   - time field: TEXT (ISO 8601) vs INTEGER (unix timestamp)
+   - Performance: INTEGER 2-3x faster for comparisons ← MISSED initially
+   - Index size: INTEGER 60% smaller (8 vs 20 bytes) ← MISSED initially
+
+Recommendation: Review this analysis before 2+ hour migration.
+```
+
+**Time Cost:**
+- Multiple 2+ hour migrations
+- Multiple debugging sessions to find issues
+- Multiple schema iterations
+- Could have saved 8-10 hours with better upfront analysis
+
+**Process Improvement:**
+
+For future long-running operations:
+1. AI presents comprehensive analysis first
+2. Human reviews architectural decisions
+3. Human approves migration plan
+4. AI implements approved plan
+5. Human spot-checks actual schema before declaring success
+
+This is consistent with CLAUDE.md principle: "Ask permission before implementing solutions - Present plan and get explicit approval"
+
+### 6.2 The Hot Path Problem
 
 **Discovery:** Methods called in tight loops dominate performance
 
@@ -1076,9 +1171,80 @@ class SolarWindsPlugin implements LogSourcePlugin {
 
 **The Accidental Discovery:** By building the database architecture to solve the retention problem, we accidentally created a universal platform. The exploit detection never needed SolarWinds—it needed normalized HTTP logs in a queryable format.
 
-## 8. Conclusion
+## 8. The Collaboration Ceiling: When AI Assistance Reaches Its Limits
 
-### 8.1 Platform Impact Summary
+### 8.1 Hitting the Wall (December 1, 2025)
+
+**Context:** After multiple successful optimization sessions, the project reached a performance plateau where AI collaboration became less effective.
+
+**The Situation:**
+
+After extensive migration work to optimize database performance:
+- Multiple iterations to get schema right (VIRTUAL → STORED columns)
+- Multiple iterations to identify missing fields (cache_status, region)
+- Multiple iterations to optimize data types (TEXT → INTEGER timestamps)
+- Created composite indexes for query optimization
+- Removed unnecessary data column from queries
+
+**The Result:**
+- Query execute time: 0.00s (composite index working perfectly)
+- Fetch time: 22-26 seconds for 12M rows
+- Total time: Still 20+ seconds for `--all` queries
+
+**User's Statement:**
+> "I think I'm reaching the limits of AI collaboration. I'm not quite sure what to do now."
+
+**What This Reveals:**
+
+1. **AI excels at implementation, struggles with architecture** - Successfully implemented every optimization suggested by human, but didn't proactively identify the fundamental architectural issue.
+
+2. **Performance optimization requires domain expertise** - AI can optimize queries, indexes, and data types. But recognizing when you've hit SQLite's physical limits (reading 12M rows from disk) requires deeper understanding.
+
+3. **The "what next" problem** - When optimizations are exhausted and the problem requires rethinking the approach (batch processing? streaming? different data structure?), AI collaboration value diminishes.
+
+4. **Human uncertainty becomes AI uncertainty** - When the human doesn't know what to do next, AI can't effectively help. AI works best responding to clear direction, not exploring unknown solution spaces.
+
+**Potential Paths Forward (Require Human Architectural Decision):**
+
+- **Batch processing**: Don't load all 12M rows at once, process in chunks
+- **Streaming analysis**: Analyze rows as fetched instead of loading into memory first
+- **Pre-aggregation**: Use SQL to filter/aggregate before fetching into PHP
+- **Time-based limits**: Default to recent data (24h) instead of all-time
+- **Alternative storage**: Move to PostgreSQL for better large-dataset performance
+- **Accept the limitation**: 22s for 12M rows may be acceptable for infrequent queries
+
+**The Collaboration Breakdown Pattern:**
+
+This mirrors the pattern documented in CLAUDE.md section "The Collaboration Breakdown Pattern" - when the human reaches the limits of their own knowledge about what to do next, AI collaboration effectiveness drops significantly. The combination of:
+1. Complex performance problem
+2. Multiple failed optimization attempts
+3. Human uncertainty about next steps
+4. AI unable to provide novel architectural insights
+
+...creates a collaboration ceiling where continuing may be less productive than stepping back to research or consult domain experts.
+
+**Meta-Lesson:**
+
+AI-assisted development has clear boundaries. When you reach a point where:
+- You're not sure what the problem is
+- You're not sure what to try next
+- Optimizations aren't yielding expected results
+- The human is uncertain about direction
+
+This may signal it's time to:
+- Stop AI collaboration temporarily
+- Research the problem domain independently
+- Consult with domain experts
+- Prototype solutions manually to understand the problem better
+- Return to AI collaboration once direction is clear
+
+**Process Improvement Insight:**
+
+Perhaps the earlier observation about performance engineering was correct: "where performance is concerned, especially long running processes, it would save time for the human to do a better initial code review." But this goes further - when performance limits are reached, human expertise in database architecture, memory management, and algorithmic complexity becomes essential. AI can implement solutions but struggles to innovate when the solution space is unclear.
+
+## 9. Conclusion
+
+### 9.1 Platform Impact Summary
 
 The migration from web-based Claude to Claude Code CLI fundamentally transformed the collaboration dynamic:
 

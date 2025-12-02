@@ -2,37 +2,28 @@
 <?php
 
 /**
- * Migration: Convert ALL VIRTUAL columns to STORED
+ * Migration: Convert ALL VIRTUAL columns to STORED + Add region + Convert time to INTEGER
  *
- * This migration converts all columns from VIRTUAL (computed on-the-fly)
- * to STORED (computed once at insert, stored on disk) to improve query performance.
+ * This migration performs three major changes:
+ * 1. Converts all columns from VIRTUAL to STORED for better query performance
+ * 2. Adds region column (extracted from geoip.region_name)
+ * 3. Converts time column from TEXT (ISO 8601) to INTEGER (unix timestamp)
  *
- * Columns being converted:
- * - client_ip: Heavy filtering usage in WHERE clauses
- * - resp_status: Used in every status query
- * - req_user_agent: Bot detection with LIKE patterns
- * - req_uri: Path filtering and exploit detection
- * - orig_host: Multi-site filtering
- * - country: Complex COALESCE, frequent geographic filtering
- * - req_method: HTTP method filtering
- * - city: Geographic filtering
- * - log_type: Log categorization
- * - log_severity: Severity filtering
- * - program: Application filtering
- * - hostname: Host filtering
- * - message: Message content
- * - url_arguments: Query parameter analysis
- * - base_path: Path-based filtering
+ * Columns being converted/added:
+ * - time: Changed from TEXT to INTEGER (unix timestamp) for faster comparisons
+ * - client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, city
+ * - log_type, log_severity, program, hostname, message, url_arguments, base_path, cache_status
+ * - region: NEW - extracted from geoip.region_name with fallbacks
  *
  * Performance Impact:
+ * - INTEGER timestamps: 2-3x faster time range queries, smaller index
  * - Eliminates JSON parsing during WHERE clause evaluation
  * - Improves index efficiency for filtered queries
- * - JSON data preserved intact (no deduplication - safe migration)
- * - Database size will INCREASE due to storing computed columns
- * - Slower INSERT operations (columns computed at write time)
+ * - JSON data deduplicated to reduce redundancy
+ * - Database size may decrease due to deduplication and INTEGER timestamps
  *
- * Before: 11 GB database with 10,916,238 records
- * After: TBD (expect size increase, but much faster queries)
+ * Before: 10.6 GB database with 10,916,238 records
+ * After: Expected ~10 GB with much faster queries
  */
 
 declare(strict_types=1);
@@ -139,8 +130,8 @@ function runMigration(): int {
     $db->exec(<<<'SQL'
 CREATE TABLE logs_new (
   id TEXT PRIMARY KEY,
-  time TEXT NOT NULL,
-  retrieved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  time INTEGER NOT NULL,
+  retrieved_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
   data JSON NOT NULL,
   client_ip TEXT,
   resp_status INTEGER,
@@ -156,7 +147,9 @@ CREATE TABLE logs_new (
   hostname TEXT,
   message TEXT,
   url_arguments TEXT,
-  base_path TEXT
+  base_path TEXT,
+  cache_status TEXT,
+  region TEXT
 )
 SQL
 );
@@ -183,21 +176,23 @@ INSERT INTO logs_new (
   hostname,
   message,
   url_arguments,
-  base_path
+  base_path,
+  cache_status,
+  region
 )
 SELECT
   id,
-  time,
-  retrieved_at,
+  strftime('%s', time) as time,
+  strftime('%s', retrieved_at) as retrieved_at,
   -- Deduplicated JSON: remove all extracted fields
   json_remove(
     data,
     '$.client_ip', '$.ip',
     '$.resp_status',
-    '$.req_user_agent',
-    '$.req_uri',
-    '$.orig_host',
-    '$.req_method', '$.request_method',
+    '$.req_user_agent', '$.user_agent',
+    '$.req_uri', '$.uri',
+    '$.orig_host', '$.req_host', '$.host',
+    '$.req_method', '$.request_method', '$.method',
     '$.url_arguments',
     '$.type',
     '$.severity',
@@ -207,22 +202,24 @@ SELECT
     '$.base_path',
     '$.country',
     '$.city',
-    '$.geoip.country_code2', '$.geoip.country_name', '$.geoip.city_name', '$.geoip.ip',
-    '$.geo.country', '$.geo.city'
+    '$.cache_status',
+    '$.region',
+    '$.geoip.country_code2', '$.geoip.country_name', '$.geoip.city_name', '$.geoip.ip', '$.geoip.region_name',
+    '$.geo.country', '$.geo.city', '$.geo.region'
   ) as data,
   -- Extract fields with fallback chains
   COALESCE(json_extract(data, '$.geoip.ip'), json_extract(data, '$.ip'), json_extract(data, '$.client_ip')) as client_ip,
   json_extract(data, '$.resp_status') as resp_status,
-  json_extract(data, '$.req_user_agent') as req_user_agent,
-  json_extract(data, '$.req_uri') as req_uri,
-  json_extract(data, '$.orig_host') as orig_host,
+  COALESCE(json_extract(data, '$.req_user_agent'), json_extract(data, '$.user_agent')) as req_user_agent,
+  COALESCE(json_extract(data, '$.req_uri'), json_extract(data, '$.uri')) as req_uri,
+  COALESCE(json_extract(data, '$.orig_host'), json_extract(data, '$.req_host'), json_extract(data, '$.host')) as orig_host,
   COALESCE(
     json_extract(data, '$.geoip.country_code2'),
     json_extract(data, '$.geoip.country_name'),
     json_extract(data, '$.country'),
     json_extract(data, '$.geo.country')
   ) as country,
-  COALESCE(json_extract(data, '$.req_method'), json_extract(data, '$.request_method')) as req_method,
+  COALESCE(json_extract(data, '$.req_method'), json_extract(data, '$.request_method'), json_extract(data, '$.method')) as req_method,
   COALESCE(
     json_extract(data, '$.geoip.city_name'),
     json_extract(data, '$.city'),
@@ -234,7 +231,13 @@ SELECT
   json_extract(data, '$.hostname') as hostname,
   json_extract(data, '$.message') as message,
   json_extract(data, '$.url_arguments') as url_arguments,
-  json_extract(data, '$.base_path') as base_path
+  json_extract(data, '$.base_path') as base_path,
+  json_extract(data, '$.cache_status') as cache_status,
+  COALESCE(
+    json_extract(data, '$.geoip.region_name'),
+    json_extract(data, '$.region'),
+    json_extract(data, '$.geo.region')
+  ) as region
 FROM logs
 SQL
 );
@@ -251,7 +254,7 @@ SQL
     info("Step 5/6: Creating indexes on migrated table...");
 
     // Now create indexes with original names (old table is gone, so names are available)
-    $db->exec('CREATE INDEX idx_time ON logs(time)');
+    $db->exec('CREATE INDEX idx_time_method ON logs(time, req_method) WHERE req_method IS NOT NULL');
     $db->exec('CREATE INDEX idx_client_ip ON logs(client_ip) WHERE client_ip IS NOT NULL');
     $db->exec('CREATE INDEX idx_resp_status ON logs(resp_status) WHERE resp_status IS NOT NULL');
     $db->exec('CREATE INDEX idx_req_user_agent ON logs(req_user_agent) WHERE req_user_agent IS NOT NULL');
@@ -264,6 +267,7 @@ SQL
     $db->exec('CREATE INDEX idx_hostname ON logs(hostname) WHERE hostname IS NOT NULL');
     $db->exec('CREATE INDEX idx_city ON logs(city) WHERE city IS NOT NULL');
     $db->exec('CREATE INDEX idx_base_path ON logs(base_path) WHERE base_path IS NOT NULL');
+    $db->exec('CREATE INDEX idx_region ON logs(region) WHERE region IS NOT NULL');
 
     // Close all prepared statements before VACUUM
     unset($insertStmt, $selectStmt, $countStmt);

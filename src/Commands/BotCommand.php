@@ -235,8 +235,8 @@ class BotCommand extends BaseSolarWindsCommand
     // First apply parent filters.
     $logs = parent::filterResults($logs, $options);
 
-    // Initialize bot IP service.
-    $botIpService = new BotIpService($this->databaseService);
+    // Initialize bot IP service with DisplayService for progress bars.
+    $botIpService = new BotIpService($this->databaseService, $this->displayService);
     // Enable reverse DNS with batch parallel lookups (fast enough now).
     $blockingService = new BlockingService($this->config, $botIpService, TRUE);
 
@@ -281,8 +281,7 @@ class BotCommand extends BaseSolarWindsCommand
     $progressBar = NULL;
     if (!$this->jsonMode && $totalLogs > 100) {
       $this->io->writeln('<comment>Processing bot verification results...</comment>');
-      $progressBar = $this->io->createProgressBar($totalLogs);
-      $progressBar->setFormat('  %current%/%max% [%bar%] %percent:3s%% %elapsed:6s%');
+      $progressBar = $this->displayService->createProgressBar($this->io, $totalLogs);
       $progressBar->start();
     }
 

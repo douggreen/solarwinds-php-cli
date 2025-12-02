@@ -95,6 +95,27 @@ class DisplayService
   }
 
   /**
+   * Create a standardized progress bar.
+   *
+   * All progress bars should use this method to ensure consistent formatting
+   * across the application (equals signs instead of blocks).
+   *
+   * @param SymfonyStyle $io Symfony console I/O helper
+   * @param int $total Total number of items (0 for unknown)
+   * @return \Symfony\Component\Console\Helper\ProgressBar Configured progress bar
+   */
+  public function createProgressBar(SymfonyStyle $io, int $total = 0): \Symfony\Component\Console\Helper\ProgressBar
+  {
+    $progressBar = $io->createProgressBar($total);
+    // Custom format: "count/total [bar] percent / elapsed"
+    $progressBar->setFormat('%current%/%max% [%bar%] %percent:3s%% / %elapsed%');
+    $progressBar->setBarCharacter('=');
+    $progressBar->setEmptyBarCharacter('-');
+    $progressBar->setProgressCharacter('>');
+    return $progressBar;
+  }
+
+  /**
    * Colorize unknown/missing data values in red for consistent styling.
    *
    * @param string $value Value to colorize if unknown
@@ -264,18 +285,13 @@ class DisplayService
         return $this->highlightSearchTermInUserAgent($ua, $searchTerm);
 
       case 'country':
-        $country = $log['geoip']['country_code2'] ??
-          $log['geoip']['country_name'] ??
-          $log['country'] ??
-          $log['geo']['country'] ??
-          'unknown';
+        // Use STORED column (extracted during sync with fallback chain)
+        $country = $log['country'] ?? 'unknown';
         return $this->colorizeUnknownValue($country);
 
       case 'region':
-        $region = $log['geoip']['region_name'] ??
-          $log['region'] ??
-          $log['geo']['region'] ??
-          'unknown';
+        // Use STORED column (extracted during sync with fallback chain)
+        $region = $log['region'] ?? 'unknown';
         return $this->colorizeUnknownValue($region);
 
       case 'bot_name':
@@ -860,21 +876,14 @@ class DisplayService
     }
 
     if (!empty($displayOptions['country'])) {
-      // Use the actual SolarWinds geoip field structure based on debug output.
-      $country = $log['geoip']['country_code2'] ??
-        $log['geoip']['country_name'] ?? // Fallback in case some logs have full names.
-        $log['country'] ??
-        $log['geo']['country'] ??
-        'unknown';
+      // Use STORED column (extracted during sync with fallback chain)
+      $country = $log['country'] ?? 'unknown';
       $keyParts[] = 'country:' . $country;
     }
 
     if (!empty($displayOptions['region'])) {
-      // Use the actual SolarWinds geoip field structure based on debug output.
-      $region = $log['geoip']['region_name'] ??
-        $log['region'] ??
-        $log['geo']['region'] ??
-        'unknown';
+      // Use STORED column (extracted during sync with fallback chain)
+      $region = $log['region'] ?? 'unknown';
       $keyParts[] = 'region:' . $region;
     }
 
