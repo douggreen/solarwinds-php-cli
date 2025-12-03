@@ -678,7 +678,71 @@ Despite multiple iterations and increasingly forceful language, AI still occasio
 - Violation triggers session pause and behavioral review
 - Repeated violation considered collaboration breakdown
 
-### 5.3 Architecture as a Service
+### 5.3 TODO List Maintenance: When Documentation Becomes Stale
+
+**The Problem:** TODO lists can become outdated when features are implemented but not removed from the list.
+
+**What Happened (December 3, 2025):**
+
+User selected task #1 from TODO list: "Implement configurable risk scoring"
+
+AI's immediate response:
+```
+Let me outline the plan for implementing configurable risk scoring:
+
+1. Create RiskScoringService
+2. Add configuration structure
+3. Update ExploitsCommand
+4. Update campaign display
+5. Test with real data
+```
+
+**The Issue:** AI proposed a full implementation plan without first checking if RiskScoringService already existed.
+
+**Discovery:** After user questioned the approach, AI found RiskScoringService.php already fully implemented with all requested features.
+
+**Root Cause:** The risk scoring system was completed in earlier commits but remained in EXPLOITS_TODO.md as future work. The TODO described the desired end state, not current status.
+
+**Why This Happened:**
+1. **Separate TODO files**: EXPLOITS_TODO.md was created as a detailed planning document
+2. **Documentation drift**: As features were implemented, the planning document wasn't updated
+3. **AI assumption**: AI treated TODO as definitive truth without verifying current state
+4. **Lack of code-first verification**: AI should have checked existing implementation before planning
+
+**Violation of CLAUDE.md Principles:**
+```markdown
+"Diagnose before fixing bugs - Present root cause analysis and options
+rather than immediately implementing fixes"
+
+"Present approach before implementing - Even for 'obvious' fixes,
+show plan first"
+```
+
+Should have been:
+1. ✅ User selects task
+2. ✅ AI checks what exists (grep, read files)
+3. ✅ AI presents current state
+4. ✅ AI proposes what's actually needed
+5. ❌ INSTEAD: Jumped to implementation plan
+
+**The Separate TODO File Question:**
+
+Having EXPLOITS_TODO.md separate from TODO.md created confusion:
+- **Benefit**: Detailed planning for complex features
+- **Cost**: Harder to keep synchronized with actual implementation status
+- **Alternative**: Single TODO.md with completion markers (`- [x] Done`, `- [ ] Pending`)
+
+**Lesson Learned:**
+- TODO lists must be maintained in sync with implementation
+- AI must verify current state before proposing work
+- Consider single source of truth vs. separate planning documents
+- Code review should precede planning, not follow it
+
+**Human Reaction:** "what!? you provided a plan without reviewing the existing code?"
+
+This violation wasted time and demonstrated that even with comprehensive behavioral documentation, AI can make fundamental process errors when documentation becomes stale.
+
+### 5.4 Architecture as a Service
 
 **Observed Pattern:**
 
@@ -721,7 +785,7 @@ Human: "Great find, add to TODO: performance audit all logs queries"
 - Human: Recognition and scope expansion
 - AI: Documentation and generalization
 
-### 5.4 Test-Driven Debugging
+### 5.5 Test-Driven Debugging
 
 **Platform Advantage:** AI can run tests immediately
 
@@ -759,7 +823,7 @@ Human: [Downloads, tests, reports back]
 
 **Time Savings:** 5-10 minutes per debugging cycle × multiple cycles per session = significant productivity gain.
 
-### 5.5 Post-Summarization Behavioral Drift
+### 5.6 Post-Summarization Behavioral Drift
 
 **Critical Observation (November 27, 2025):**
 

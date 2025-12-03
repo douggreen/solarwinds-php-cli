@@ -1,27 +1,93 @@
 # SolarWinds Log Analysis Tools - TODO
 
-This document tracks the remaining work to complete the migration and enhancement of the SolarWinds log analysis system.
+This document tracks all remaining work for the SolarWinds log analysis system.
 
-## Current Priority: Exploit Detection Improvements
+**NOTE:** Previously, exploit detection tasks were in a separate EXPLOITS_TODO.md file, but consolidating here for better maintenance and synchronization with actual implementation status.
 
-**See [EXPLOITS_TODO.md](EXPLOITS_TODO.md) for detailed planning and implementation strategy.**
+---
 
-The exploit detection system currently flags too much low-volume noise as critical threats. We need to implement intelligent risk scoring, multi-timeframe intelligence gathering, and systematic testing to tune parameters.
+## 🔴 EXPLOIT DETECTION TASKS (Current Priority)
 
-## Next Steps
+The exploit detection system currently flags too much low-volume noise as critical threats. The risk scoring infrastructure is implemented but needs testing and parameter tuning. Multi-timeframe intelligence and additional filtering features are planned.
 
-**Other Priorities:**
-1. **Cleanup CASE_STUDY_2.md** - Rewrite to focus on process and collaboration rather than product
-   - Currently too product-focused (features, performance improvements, blocking campaigns)
-   - Sounds bragadocious with too many claims about achievements
-   - Should focus on: human-AI collaboration patterns, what worked/what didn't, process improvements
-   - Should emphasize: AI blindspots, human oversight requirements, iteration patterns
-   - Remove marketing-style language, focus on practical lessons learned
-   - Target audience: developers considering AI-assisted development, not product users
-2. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
-3. Research and implement testing framework
+### Current Problems
 
-## Security Enhancements
+Based on testing with real data (--1d and --all timeframes):
+
+**Issue 1: Low-Volume Noise Flagged as Critical**
+- 56 requests at 17.5/hr triggers "BLOCK NOW" (should be background noise)
+
+**Issue 2: No Recency Prioritization in Display**
+- Old attacks shown with same priority as active threats
+- ✅ Recency scoring implemented in RiskScoringService
+- ❌ Display sorting and indicators not yet implemented
+
+**Issue 3: Too Many "BLOCK MAYBE" Results**
+- 235 campaigns in 2-week dataset - too many to manually review
+- Need better filtering and noise reduction
+
+### High Priority Tasks
+
+1. **Testing Infrastructure** (Required for parameter tuning)
+   - [ ] Build ground truth dataset - Manually classify 20-30 campaigns
+   - [ ] Create parameter sweep test harness - Test ~500 configurations
+   - [ ] Implement evaluation metrics (F1, precision, recall)
+   - [ ] Generate optimization reports
+
+2. **Parameter Tuning** (After testing infrastructure)
+   - Risk scoring weights (origin, volume, severity, recency, historical, server impact)
+   - Volume thresholds (what req/hr rates map to what scores)
+   - Risk level cutoffs (critical/high/medium/low/noise boundaries)
+
+3. **Display Enhancements**
+   - [ ] Sort by recency-weighted risk score
+   - [ ] Show "Last Seen" timestamp with recency indicators
+   - [ ] Highlight high-contributing risk factors in campaign table
+
+### Medium Priority Tasks
+
+4. **Multi-Timeframe Intelligence**
+   - [ ] Add `--mode` flag (alert vs intelligence)
+   - [ ] Implement historical context boosting from campaign_analysis
+   - [ ] Document cron schedule (15m/1d/1w/1m)
+   - [ ] Add alert output format for cron emails
+
+5. **Bot & CMS Filtering**
+   - ✅ CMS-aware filtering implemented (WordPress patterns skip Drupal sites)
+   - ✅ Bot detection implemented (classifies common search engine bots)
+   - ⚠️  Bot filtering logic may need tuning (bots still appearing in results)
+   - [ ] Drupal legitimate endpoint detection (/system/ajax, /toolbar/subtrees)
+
+### Lower Priority Tasks
+
+6. **Advanced Detection Features**
+   - [ ] Parameter enumeration detection (100+ random params on same path)
+   - [ ] Coordinated attack detection (multiple IPs with same patterns)
+   - [ ] Blocked IP tracking (suppress alerts for already-blocked IPs)
+
+### Implementation Status Summary
+
+**✅ COMPLETED:**
+- Risk scoring system with 6 factors (RiskScoringService.php)
+- Recency weighting (calculateRecencyScore)
+- CMS-aware pattern filtering (getCmsType, detectAttackPatterns)
+- Bot classification (classifyUserAgent)
+
+**⚠️ PARTIALLY DONE:**
+- Bot filtering exists but may need tuning
+- Recency scoring done but display sorting/indicators missing
+
+**❌ NOT STARTED:**
+- Testing infrastructure (ground truth + parameter sweep)
+- Multi-timeframe modes and cron setup
+- Drupal endpoint filtering
+- Parameter enumeration detection
+- Coordinated attack detection
+- Blocked IP tracking
+
+---
+
+## Code Quality Improvements
 
 ### 1. Bot Verification Management Commands (Optional)
 
