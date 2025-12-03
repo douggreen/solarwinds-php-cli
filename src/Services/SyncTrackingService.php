@@ -282,8 +282,8 @@ SQL
     $gapsBeforeRetention = [];
     if ($requestedStart < $retentionStart) {
       $gapsBeforeRetention[] = [
-        'start' => $requestedStart,
-        'end' => min($retentionStart, $requestedEnd),
+        'start_time' => $requestedStart,
+        'end_time' => min($retentionStart, $requestedEnd),
         'reason' => 'beyond_retention',
       ];
       // Adjust requested start to retention limit for actual fetching
@@ -316,8 +316,8 @@ SQL
     // No completed syncs - need entire range.
     if (empty($completedRanges)) {
       return [[
-        'start' => $requestedStart,
-        'end' => $requestedEnd,
+        'start_time' => $requestedStart,
+        'end_time' => $requestedEnd,
         'reason' => 'no_sync_history',
       ]];
     }
@@ -333,8 +333,8 @@ SQL
       // Gap before this range?
       if ($currentPosition < $rangeStart) {
         $gaps[] = [
-          'start' => $currentPosition,
-          'end' => $rangeStart,
+          'start_time' => $currentPosition,
+          'end_time' => $rangeStart,
           'reason' => 'gap_between_syncs',
         ];
       }
@@ -348,8 +348,8 @@ SQL
     // Gap after last range?
     if ($currentPosition < $requestedEnd) {
       $gaps[] = [
-        'start' => $currentPosition,
-        'end' => $requestedEnd,
+        'start_time' => $currentPosition,
+        'end_time' => $requestedEnd,
         'reason' => 'recent_data',
       ];
     }
@@ -459,8 +459,8 @@ SQL
         ],
         'ranges' => [
           [
-            'start' => $requestedStart,
-            'end' => $requestedEnd,
+            'start_time' => $requestedStart,
+            'end_time' => $requestedEnd,
             'reason' => 'no_data',
           ],
         ],
@@ -474,8 +474,8 @@ SQL
     // Range before existing data?
     if ($coverage['earliest'] > $requestedStart) {
       $ranges[] = [
-        'start' => $requestedStart,
-        'end' => $coverage['earliest'],
+        'start_time' => $requestedStart,
+        'end_time' => $coverage['earliest'],
         'reason' => 'historical',
       ];
     }
@@ -483,8 +483,8 @@ SQL
     // Range after existing data?
     if ($coverage['latest'] < $requestedEnd) {
       $ranges[] = [
-        'start' => $coverage['latest'],
-        'end' => $requestedEnd,
+        'start_time' => $coverage['latest'],
+        'end_time' => $requestedEnd,
         'reason' => 'recent',
       ];
     }

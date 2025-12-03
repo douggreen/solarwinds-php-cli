@@ -427,8 +427,8 @@ abstract class BaseSolarWindsCommand extends Command
       // Calculate total duration of missing data.
       $totalMissingSeconds = 0;
       foreach ($syncableRanges as $range) {
-        $rangeStart = $range['start'];
-        $rangeEnd = $range['end'];
+        $rangeStart = $range['start_time'];
+        $rangeEnd = $range['end_time'];
         $totalMissingSeconds += ($rangeEnd - $rangeStart);
       }
       $missingDays = $totalMissingSeconds / 86400;
@@ -1593,21 +1593,21 @@ abstract class BaseSolarWindsCommand extends Command
 
       // Split large ranges into 1-day chunks to prevent memory issues.
       // Chunking is an internal optimization - show user a single progress bar for entire range.
-      $chunks = $this->splitRangeIntoChunks($range['start'], $range['end']);
+      $chunks = $this->splitRangeIntoChunks($range['start_time'], $range['end_time']);
 
       // Create sync range tracking entry.
-      $syncId = $this->syncTracking->createSyncRange($range['start'], $range['end'], count($chunks));
+      $syncId = $this->syncTracking->createSyncRange($range['start_time'], $range['end_time'], count($chunks));
 
       if (!$this->jsonMode && $showCacheMessage) {
-        $rangeMessage = $this->formatRangeMessage($range['start'], $range['end'], $range['reason']);
+        $rangeMessage = $this->formatRangeMessage($range['start_time'], $range['end_time'], $range['reason']);
         $this->io->writeln("<comment>$rangeMessage</comment>");
       }
 
       // Create single progress bar for entire range (not per-chunk).
       $rangeOptions = $options;
       $rangeOptions['time'] = [
-        'start_time' => $range['start'],
-        'end_time' => $range['end'],
+        'start_time' => $range['start_time'],
+        'end_time' => $range['end_time'],
       ];
       $progressBar = $this->createSearchProgressBar($rangeOptions);
 
@@ -1677,8 +1677,8 @@ abstract class BaseSolarWindsCommand extends Command
           if (!$this->jsonMode) {
             $this->io->error(sprintf(
               'Failed to fetch range %s to %s: %s',
-              $range['start'],
-              $range['end'],
+              $range['start_time'],
+              $range['end_time'],
               $e->getMessage()
             ));
 

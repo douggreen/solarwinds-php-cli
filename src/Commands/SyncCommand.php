@@ -179,11 +179,11 @@ class SyncCommand extends BaseSolarWindsCommand
 
       // Check if this gap still exists after sync.
       foreach ($gapsAfter as $after) {
-        if ($after['start'] === $before['start'] && $after['end'] === $before['end']) {
+        if ($after['start_time'] === $before['start_time'] && $after['end_time'] === $before['end_time']) {
           $wasFilled = FALSE;
           $remaining[] = [
-            'start' => $after['start'],
-            'end' => $after['end'],
+            'start_time' => $after['start_time'],
+            'end_time' => $after['end_time'],
             'reason' => $after['reason'],
           ];
           break;
@@ -192,8 +192,8 @@ class SyncCommand extends BaseSolarWindsCommand
 
       if ($wasFilled && !$wasExcluded) {
         $filled[] = [
-          'start' => $before['start'],
-          'end' => $before['end'],
+          'start_time' => $before['start_time'],
+          'end_time' => $before['end_time'],
           'reason' => $before['reason'],
         ];
       }
@@ -205,8 +205,8 @@ class SyncCommand extends BaseSolarWindsCommand
       foreach ($filled as $gap) {
         $label = $this->getGapLabel($gap['reason']);
         $this->io->text(sprintf('  ✓ %s to %s  %s',
-          date('M j, g:ia', $gap['start']),
-          date('M j, g:ia', $gap['end']),
+          date('M j, g:ia', $gap['start_time']),
+          date('M j, g:ia', $gap['end_time']),
           $label
         ));
       }
@@ -219,8 +219,8 @@ class SyncCommand extends BaseSolarWindsCommand
 
       foreach ($remaining as $gap) {
         $item = sprintf('%s to %s  %s',
-          date('M j, g:ia', $gap['start']),
-          date('M j, g:ia', $gap['end']),
+          date('M j, g:ia', $gap['start_time']),
+          date('M j, g:ia', $gap['end_time']),
           $this->getGapLabel($gap['reason'])
         );
 
