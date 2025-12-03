@@ -537,7 +537,7 @@ SQL
       ':risk_inputs' => json_encode($blockingRec['risk_inputs'] ?? NULL),
       ':user_agent' => $campaign['user_agent'] ?? '',
       ':bot_name' => $campaign['bot_name'] ?? NULL,
-      ':total_volume' => $volumeAnalysis['total_volume'] ?? 0,
+      ':total_volume' => $volumeAnalysis['total_requests'] ?? 0,
       ':ratio_edge_blocked' => $volumeAnalysis['ratio_edge_blocked'] ?? 0,
       ':from_deep_dive' => $fromDeepDive ? 1 : 0,
       ':targeted_sites' => json_encode($campaign['targeted_sites'] ?? []),
