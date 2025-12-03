@@ -371,8 +371,7 @@ class BotCommand extends BaseSolarWindsCommand
       if ($remaining > 0) {
         $progressBar->advance($remaining);
       }
-      $progressBar->finish();
-      $this->io->newLine(2);
+      $this->displayService->finishProgressBar($progressBar, $this->io);
     }
 
     return $enrichedLogs;

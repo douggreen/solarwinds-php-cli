@@ -985,9 +985,8 @@ class BotIpService
     }
 
     // Finish progress bar.
-    if ($progressBar) {
-      $progressBar->finish();
-      $io->newLine(2);
+    if ($progressBar && $this->display) {
+      $this->display->finishProgressBar($progressBar, $io);
     }
   }
 

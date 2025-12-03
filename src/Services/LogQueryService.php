@@ -96,11 +96,15 @@ class LogQueryService
     // Select STORED columns directly for performance (Phase 1 optimization).
     // These columns are pre-computed and don't require JSON parsing.
     // NOTE: data column is optional - only included when $includeData = TRUE for display features that might need it
+    // Use INDEXED BY hint when we have time constraints to force idx_time_method usage
+    // (prevents SQLite from using idx_req_method which causes expensive TEMP B-TREE sorts)
+    $indexHint = ($since || $until) ? ' INDEXED BY idx_time_method' : '';
+
     if ($includeData) {
-      $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region FROM logs WHERE 1=1';
+      $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM logs' . $indexHint . ' WHERE 1=1';
     }
     else {
-      $sql = 'SELECT id, time, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region FROM logs WHERE 1=1';
+      $sql = 'SELECT id, time, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM logs' . $indexHint . ' WHERE 1=1';
     }
     $params = [];
 

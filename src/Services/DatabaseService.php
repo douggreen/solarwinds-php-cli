@@ -106,7 +106,6 @@ class DatabaseService
    * - program: Program name from syslog/Drupal logs
    * - orig_host: Original host/site name (commonly used for grouping)
    * - message: Log message text (Drupal message field)
-   * - hostname: Hostname field (alternative to orig_host)
    * - country: Country code from geoip data
    * - city: City name from geoip data
    */
@@ -132,7 +131,6 @@ CREATE TABLE IF NOT EXISTS logs (
   log_type TEXT,
   log_severity TEXT,
   program TEXT,
-  hostname TEXT,
   message TEXT,
   url_arguments TEXT,
   base_path TEXT,
@@ -399,6 +397,9 @@ SQL;
       $this->db->exec("CREATE INDEX IF NOT EXISTS idx_time_method ON logs(time, req_method) WHERE req_method IS NOT NULL");
     }
 
+    // Drop old idx_hostname if it exists (hostname column is unused and being removed)
+    $this->db->exec("DROP INDEX IF EXISTS idx_hostname");
+
     // Create composite index on (client_ip, time) to optimize IP-based queries with time filtering and ordering
     // This eliminates the need for temp B-tree sorting when querying by IP and ordering by time
     if (in_array('client_ip', $existingColumns) && in_array('time', $existingColumns)) {
@@ -408,16 +409,14 @@ SQL;
     // Create indexes only for columns that exist.
     // Note: idx_time is NOT created here since idx_time_method covers time queries
     // Note: idx_req_method IS created for queries that filter only on req_method
-    // Note: idx_client_ip IS still created for queries that filter only on client_ip without time constraints
+    // Note: idx_client_ip is NOT created here since idx_client_ip_time covers client_ip queries
     $indexDefinitions = [
-      'idx_client_ip' => 'client_ip',
       'idx_req_method' => 'req_method',
       'idx_resp_status' => 'resp_status',
       'idx_log_type' => 'log_type',
       'idx_log_severity' => 'log_severity',
       'idx_program' => 'program',
       'idx_orig_host' => 'orig_host',
-      'idx_hostname' => 'hostname',
       'idx_country' => 'country',
       'idx_city' => 'city',
       'idx_base_path' => 'base_path',
@@ -453,7 +452,6 @@ SQL;
     $newColumns = [
       'program' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.program')) VIRTUAL",
       'orig_host' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.orig_host')) VIRTUAL",
-      'hostname' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.hostname')) VIRTUAL",
       'message' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.message')) VIRTUAL",
       'country' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.country_code2'), json_extract(data, '\$.geoip.country_name'), json_extract(data, '\$.country'), json_extract(data, '\$.geo.country'))) VIRTUAL",
       'city' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.city_name'), json_extract(data, '\$.city'), json_extract(data, '\$.geo.city'))) VIRTUAL",
@@ -478,7 +476,6 @@ SQL;
     $indexes = [
       'idx_program' => 'program',
       'idx_orig_host' => 'orig_host',
-      'idx_hostname' => 'hostname',
       'idx_country' => 'country',
       'idx_city' => 'city',
       'idx_base_path' => 'base_path',
@@ -519,13 +516,13 @@ INSERT OR REPLACE INTO logs (
   id, time, data,
   client_ip, resp_status, req_user_agent, req_uri, orig_host,
   country, req_method, city, log_type, log_severity,
-  program, hostname, message, url_arguments, base_path, cache_status, region
+  program, message, url_arguments, base_path, cache_status, region
 )
 VALUES (
   :id, :time, :data,
   :client_ip, :resp_status, :req_user_agent, :req_uri, :orig_host,
   :country, :req_method, :city, :log_type, :log_severity,
-  :program, :hostname, :message, :url_arguments, :base_path, :cache_status, :region
+  :program, :message, :url_arguments, :base_path, :cache_status, :region
 )
 SQL
       );
@@ -593,7 +590,6 @@ SQL
           'log_type' => NULL,
           'log_severity' => NULL,
           'program' => NULL,
-          'hostname' => NULL,
           'message' => NULL,
           'url_arguments' => NULL,
           'base_path' => NULL,
@@ -635,7 +631,6 @@ SQL
           $extractedValues['log_type'] = $logData['type'] ?? NULL;
           $extractedValues['log_severity'] = $logData['severity'] ?? NULL;
           $extractedValues['program'] = $logData['program'] ?? NULL;
-          $extractedValues['hostname'] = $logData['hostname'] ?? NULL;
           $extractedValues['message'] = $logData['message'] ?? NULL;
           $extractedValues['base_path'] = $logData['base_path'] ?? NULL;
           $extractedValues['cache_status'] = $logData['cache_status'] ?? NULL;
@@ -666,7 +661,6 @@ SQL
             $logData['type'],
             $logData['severity'],
             $logData['program'],
-            $logData['hostname'],
             $logData['message'],
             $logData['base_path'],
             $logData['country'],
@@ -718,7 +712,6 @@ SQL
           ':log_type' => $extractedValues['log_type'],
           ':log_severity' => $extractedValues['log_severity'],
           ':program' => $extractedValues['program'],
-          ':hostname' => $extractedValues['hostname'],
           ':message' => $extractedValues['message'],
           ':url_arguments' => $extractedValues['url_arguments'],
           ':base_path' => $extractedValues['base_path'],

@@ -116,6 +116,19 @@ class DisplayService
   }
 
   /**
+   * Finish a progress bar and add consistent newlines.
+   *
+   * @param \Symfony\Component\Console\Helper\ProgressBar $progressBar Progress bar to finish
+   * @param SymfonyStyle $io Output interface for newlines
+   * @return void
+   */
+  public function finishProgressBar(\Symfony\Component\Console\Helper\ProgressBar $progressBar, SymfonyStyle $io): void
+  {
+    $progressBar->finish();
+    $io->newLine(2);
+  }
+
+  /**
    * Colorize unknown/missing data values in red for consistent styling.
    *
    * @param string $value Value to colorize if unknown
@@ -254,7 +267,7 @@ class DisplayService
   {
     switch ($column) {
       case 'host':
-        $host = $log['site'] ?? $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
+        $host = $log['site'] ?? $log['orig_host'] ?? $log['host'] ?? 'unknown';
         return $this->shortenHostname($host);
 
       case 'status':
@@ -533,7 +546,7 @@ class DisplayService
       $key = "$type:" . md5($message);
 
       if (!empty($displayOptions['host'])) {
-        $host = $parsedLog['site'] ?? $parsedLog['orig_host'] ?? $parsedLog['hostname'] ?? $parsedLog['host'] ?? 'unknown';
+        $host = $parsedLog['site'] ?? $parsedLog['orig_host'] ?? $parsedLog['host'] ?? 'unknown';
         $displayHost = $this->getDisplayLabelForHost($host);
         $key .= ":host:$displayHost";
       }
@@ -822,8 +835,8 @@ class DisplayService
     $keyParts = [];
 
     if (!empty($displayOptions['host'])) {
-      // Use site field first, then fall back to orig_host, hostname, or host.
-      $host = $log['site'] ?? $log['orig_host'] ?? $log['hostname'] ?? $log['host'] ?? 'unknown';
+      // Use site field first, then fall back to orig_host or host.
+      $host = $log['site'] ?? $log['orig_host'] ?? $log['host'] ?? 'unknown';
       // Get the display label for this host so multiple hostnames (e.g., bayren.org, bayren2) group together.
       $displayHost = $this->getDisplayLabelForHost($host);
       $keyParts[] = 'host:' . $displayHost;
@@ -1407,7 +1420,7 @@ class DisplayService
       $key = "$type:" . md5($message);
 
       if (!empty($displayOptions['host'])) {
-        $host = $parsedLog['site'] ?? $parsedLog['orig_host'] ?? $parsedLog['hostname'] ?? $parsedLog['host'] ?? 'unknown';
+        $host = $parsedLog['site'] ?? $parsedLog['orig_host'] ?? $parsedLog['host'] ?? 'unknown';
         $displayHost = $this->getDisplayLabelForHost($host);
         $key .= ":host:$displayHost";
       }

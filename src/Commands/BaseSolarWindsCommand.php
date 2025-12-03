@@ -841,7 +841,7 @@ abstract class BaseSolarWindsCommand extends Command
 
         // Show what was kept (matched all filters).
         if ($debugMode) {
-          $host = $log['orig_host'] ?? $log['hostname'] ?? 'unknown';
+          $host = $log['orig_host'] ?? 'unknown';
           $uri = $log['req_uri'] ?? 'unknown';
           $this->debugOutput("MATCHED: $host - $uri");
 
@@ -1430,8 +1430,7 @@ abstract class BaseSolarWindsCommand extends Command
   protected function finishProgressBar(?ProgressBar $progressBar): void
   {
     if ($progressBar) {
-      $progressBar->finish();
-      $this->io->newLine();
+      $this->displayService->finishProgressBar($progressBar, $this->io);
     }
   }
 

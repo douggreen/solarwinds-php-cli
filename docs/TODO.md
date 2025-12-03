@@ -49,6 +49,21 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
    - Implement automated validation of backward compatibility
    - Set up continuous integration testing pipeline
 
+3. **Review DatabaseService for Abstraction Violations**
+   - Application-level code has crept into DatabaseService again
+   - DatabaseService should contain ONLY:
+     - Schema management (CREATE TABLE, indexes)
+     - Raw SQL execution (query(), execute(), prepare())
+     - Basic CRUD operations (insertLogs(), no business logic)
+     - Transaction management (beginTransaction(), commit(), rollback())
+   - Application logic belongs in specialized services:
+     - CampaignAnalysisService - campaign queries and analysis
+     - SyncTrackingService - sync status and gap detection
+     - Command classes - WHERE clause building, result filtering
+   - Audit current DatabaseService methods for business logic
+   - Move application-specific methods to appropriate services
+   - Restore DatabaseService to low-level data access only
+
 ### Display and Output Improvements
 
 1. **Alphabetize and Color-Code Legend Sections**
@@ -85,6 +100,20 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
 - **API Integration**: REST API for programmatic access
 
 ### Performance Optimizations
+- **Investigate Pattern Detection Performance Regression**:
+  - Pattern detection on 13M log entries currently takes ~5 minutes
+  - Should be ~3:20 based on previous performance (50% regression)
+  - Regression suspected around commit 2dbf10c but not confirmed
+  - Recent optimizations implemented:
+    - Added INDEXED BY hint to force idx_time_method usage (eliminates TEMP B-TREE sort on query)
+    - Added url_arguments to SELECT to avoid JSON parsing
+    - Changed getCmsType() to use cached database queries instead of in-memory filtering
+  - Bottleneck is in pattern matching loop itself, not database query
+  - Next steps:
+    - Profile the pattern matching code to identify actual bottleneck
+    - Test older commits to confirm when regression occurred
+    - Consider pattern matching optimizations (early termination, compiled regexes, etc.)
+    - Verify data volume hasn't increased (more rows = slower processing)
 - **Denormalize JSON Message Data into Separate Columns**:
   - Current schema stores all log data in a single JSON `message` column
   - Querying JSON fields requires SQLite to parse JSON for every row scanned
