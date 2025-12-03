@@ -28,19 +28,21 @@ Based on testing with real data (--1d and --all timeframes):
 
 ### High Priority Tasks
 
-1. **Analysis Run Tracking** (CURRENT - Required for iterative improvement)
-   - [ ] Add `analysis_runs` table to track each exploit detection run
-   - [ ] Capture configuration snapshot (risk_scoring, blocking config)
-   - [ ] Record git commit/branch/dirty status for reproducibility
-   - [ ] Link campaigns to runs via run_id foreign key
-   - [ ] Save summary statistics (total, block_now, block_maybe counts)
-   - [ ] Add `exploits history` command to list recent runs
-   - [ ] Add `exploits compare RUN1 RUN2` to compare before/after
-   - [ ] Add `exploits show-run RUN` to view run details
-   - [ ] Add `exploits rescore --run=RUN` to re-score with current config
+1. **Analysis Run Tracking** (:white_check_mark: COMPLETED)
+   - :white_check_mark: Add `analysis_runs` table to track each exploit detection run
+   - :white_check_mark: Capture configuration snapshot (risk_scoring, blocking config)
+   - :white_check_mark: Record git commit/branch/dirty status for reproducibility
+   - :white_check_mark: Link campaigns to runs via run_id foreign key
+   - :white_check_mark: Save summary statistics (total, block_now, block_maybe counts)
+   - :white_check_mark: Add `--save-run` flag to enable tracking
+   - :white_check_mark: Document in EXPLOITS.md
+   - [ ] Add `exploits history` command to list recent runs (optional, deferred)
+   - [ ] Add `exploits compare RUN1 RUN2` to compare before/after (optional, deferred)
+   - [ ] Add `exploits show-run RUN` to view run details (optional, deferred)
+   - [ ] Add `exploits rescore --run=RUN` to re-score with current config (optional, deferred)
 
-   **Goal:** Preserve baseline results before simplifying risk scoring system.
-   Enables iterative improvement with clear before/after comparison.
+   **Status:** Core tracking implemented. Can now run with `--save-run` to capture config snapshots.
+   Additional query commands (history/compare/show-run) are optional enhancements.
 
 2. **Risk Scoring Simplification** (After run tracking)
    - [ ] Run baseline with current config: `exploits --3d --show-action=all`
