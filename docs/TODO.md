@@ -113,12 +113,17 @@ Based on testing with real data (--1d and --all timeframes):
    - Volume thresholds (what req/hr rates map to what scores)
    - Risk level cutoffs (critical/high/medium/low/noise boundaries)
 
-9. **IP Range Combination Logic**
-   - [ ] Detect when multiple IPs from same subnet show similar attack patterns
-   - [ ] IPv4: Combine A.B.C.* ranges when multiple IPs from same /24 subnet attack together
-   - [ ] IPv6: Combine similar IPv6 addresses from same /64 subnet (e.g., 2604:a880:2:d1::*)
-   - [ ] Display combined ranges in campaign output (e.g., "192.168.1.0/24" instead of listing each IP)
-   - [ ] Example use case: Botnet attacks from multiple IPs in same cloud provider subnet
+9. **IP Range Combination Logic** (:white_check_mark: COMPLETED)
+   - :white_check_mark: Detect when multiple IPs from same subnet show similar attack patterns
+   - :white_check_mark: IPv4: Combine /24 subnets when 3+ IPs attack with matching patterns
+   - :white_check_mark: IPv6: Combine /64 subnets when 2+ IPs attack with matching patterns
+   - :white_check_mark: Display combined ranges as "192.168.1.0/24 (5 IPs)" in campaign output
+   - :white_check_mark: Pattern matching: Overlap in critical/high severity scan types
+   - :white_check_mark: Metrics aggregation: Sum requests, combined countries, recalculated rates
+   - :white_check_mark: Store original IPs for --details view
+
+   **Implementation:** Runs after bot spoofing detection, before database save. Groups campaigns
+   by subnet and combines when patterns match. Handles both IPv4 and IPv6 addresses.
 
 10. **Parameter Enumeration Detection**
     - [ ] Detect attacks using 100+ random parameter values on same endpoint
