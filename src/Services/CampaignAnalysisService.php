@@ -130,13 +130,16 @@ class CampaignAnalysisService
    * - Lasted less than threshold hours (default 1 hour)
    * - Ended more than 1 hour ago (not continuing)
    *
+   * Uses full history time span from deep dive if available, otherwise falls back to current window.
+   *
    * @param array $campaign Campaign data
    * @param array $thresholds Threshold configuration
    * @return bool TRUE if this is a single-event burst
    */
   public function isSingleEvent(array $campaign, array $thresholds): bool
   {
-    $timeSpanDays = $campaign['time_span_days'] ?? 0;
+    // Use deep dive full history time span if available (more accurate for long-term patterns)
+    $timeSpanDays = $campaign['deep_dive']['full_history_span_days'] ?? $campaign['time_span_days'] ?? 0;
     $lastSeen = $campaign['last_seen'] ?? NULL;
 
     if ($lastSeen === NULL || $lastSeen === 'unknown') {
@@ -269,24 +272,21 @@ class CampaignAnalysisService
     object $exploitsCommand
   ): array {
     foreach ($campaigns as &$campaign) {
-      // Skip if already in historical analysis
-      if ($campaign['historical']['found'] ?? FALSE) {
-        $campaign['deep_dive'] = ['performed' => FALSE, 'reason' => 'in_historical'];
-        continue;
-      }
-
       // Skip if trusted IP
       if ($this->isTrustedIp($campaign['ip'])) {
         $campaign['deep_dive'] = ['performed' => FALSE, 'reason' => 'trusted_ip'];
         continue;
       }
 
-      // Skip if low confidence/volume
+      // Deep dive BLOCK NOW and BLOCK MAYBE campaigns to evaluate against full history.
+      // This prevents false positives from IPs with long-term patterns that look harmless in short windows.
       $blockingRec = $campaign['blocking_recommendation'] ?? [];
-      $confidence = $blockingRec['confidence'] ?? 'none';
+      $shouldBlock = $blockingRec['should_block'] ?? FALSE;
+      $riskLevel = $blockingRec['risk_level'] ?? 'noise';
 
-      if (!in_array($confidence, ['medium', 'high', 'urgent'], TRUE)) {
-        $campaign['deep_dive'] = ['performed' => FALSE, 'reason' => 'low_confidence'];
+      // Only deep dive campaigns that would trigger blocking (BLOCK NOW or BLOCK MAYBE)
+      if (!$shouldBlock && !in_array($riskLevel, ['critical', 'high', 'medium'], TRUE)) {
+        $campaign['deep_dive'] = ['performed' => FALSE, 'reason' => 'low_risk'];
         continue;
       }
 

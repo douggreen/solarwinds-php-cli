@@ -44,7 +44,19 @@ Based on testing with real data (--1d and --all timeframes):
    **Status:** Core tracking implemented. Can now run with `--save-run` to capture config snapshots.
    Additional query commands (history/compare/show-run) are optional enhancements.
 
-2. **Risk Scoring Simplification** (After run tracking)
+2. **Deep Dive Architecture Refactoring** (:white_check_mark: COMPLETED)
+   - :white_check_mark: Change deep dive trigger from "new IPs only" to "BLOCK NOW/BLOCK MAYBE campaigns"
+   - :white_check_mark: Use full history time span for single-event detection (not just current window)
+   - :white_check_mark: Recalculate blocking recommendations after deep dive with full context
+   - :white_check_mark: Re-enable single-event downgrade logic using full history
+
+   **Problem Solved:** IPs attacking sporadically (e.g., once every 2 weeks) were appearing as "single events"
+   in short analysis windows (e.g., 3 days), triggering false positive downgrades. Now deep dives evaluate
+   the full attack history, preventing incorrect classifications.
+
+   **Impact:** Single-event downgrade rule now correctly identifies true one-time events vs recurring patterns.
+
+3. **Risk Scoring Simplification** (Next priority)
    - [ ] Run baseline with current config: `exploits --3d --show-action=all`
    - [ ] Analyze false positives and failure patterns
    - [ ] Simplify from 6 factors to 3 core factors (severity × volume × recency)
@@ -56,20 +68,26 @@ Based on testing with real data (--1d and --all timeframes):
    **Approach:** Human-guided simplification rather than automated parameter sweep.
    Start simple, add complexity only when justified by real failure cases.
 
-3. **Display Enhancements**
-   - [ ] Sort by recency-weighted risk score
+4. **Display Enhancements**
+   - :white_check_mark: Sort by risk score (campaigns sorted by action priority, then risk score descending)
    - [ ] Show "Last Seen" timestamp with recency indicators
    - [ ] Highlight high-contributing risk factors in campaign table
 
 ### Medium Priority Tasks
 
-4. **Multi-Timeframe Intelligence**
+5. **Multi-Timeframe Intelligence**
    - [ ] Add `--mode` flag (alert vs intelligence)
    - [ ] Implement historical context boosting from campaign_analysis
+   - [ ] Enrich deep dive data - Use full historical analysis for all metrics
+     - Currently: Deep dive calculates full campaign data but only stores 3 fields (requests, first_seen, span_days)
+     - Currently enriched: Action, Score, Time Span (show with asterisk)
+     - Not enriched: Volume, 40x%, Origin%, Behavior, Attack Types, Severity (still from current window)
+     - Enhancement: Use deep dive's full historical attack patterns, severity, volume analysis
+     - Benefit: More accurate threat assessment based on long-term patterns vs short window snapshots
    - [ ] Document cron schedule (15m/1d/1w/1m)
    - [ ] Add alert output format for cron emails
 
-5. **Bot & CMS Filtering**
+6. **Bot & CMS Filtering**
    - ✅ CMS-aware filtering implemented (WordPress patterns skip Drupal sites)
    - ✅ Bot detection implemented (classifies common search engine bots)
    - ⚠️  Bot filtering logic may need tuning (bots still appearing in results)
@@ -77,7 +95,7 @@ Based on testing with real data (--1d and --all timeframes):
 
 ### Lower Priority Tasks (Deferred)
 
-6. **Automated Testing Infrastructure** (May not be needed if simplification works)
+7. **Automated Testing Infrastructure** (May not be needed if simplification works)
    - [ ] Build ground truth dataset - Manually classify 20-30 campaigns
    - [ ] Create parameter sweep test harness - Test ~500 configurations
    - [ ] Implement evaluation metrics (F1, precision, recall)
@@ -86,12 +104,12 @@ Based on testing with real data (--1d and --all timeframes):
    **Note:** Parameter sweep approach assumes architecture is correct and just needs tuning.
    Simplification approach questions the architecture itself. Trying simplification first.
 
-7. **Parameter Tuning** (Only if automated testing proves necessary)
+8. **Parameter Tuning** (Only if automated testing proves necessary)
    - Risk scoring weights (origin, volume, severity, recency, historical, server impact)
    - Volume thresholds (what req/hr rates map to what scores)
    - Risk level cutoffs (critical/high/medium/low/noise boundaries)
 
-8. **Advanced Detection Features**
+9. **Advanced Detection Features**
    - [ ] IP range combination logic (combine similar IPs into ranges)
      - IPv4: Combine A.B.C.* ranges when multiple IPs from same /24 subnet show similar patterns
      - IPv6: Combine similar IPv6 addresses from same /64 subnet (e.g., 2604:a880:2:d1::*)
@@ -103,6 +121,9 @@ Based on testing with real data (--1d and --all timeframes):
 ### Implementation Status Summary
 
 **✅ COMPLETED:**
+- Analysis run tracking with configuration snapshots (DatabaseService, CampaignAnalysisService)
+- Deep dive architecture refactoring (evaluates full history for BLOCK NOW/BLOCK MAYBE)
+- Single-event detection using full history time span (prevents false positive downgrades)
 - Risk scoring system with 6 factors (RiskScoringService.php)
 - Recency weighting (calculateRecencyScore)
 - CMS-aware pattern filtering (getCmsType, detectAttackPatterns)
