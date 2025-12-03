@@ -145,9 +145,6 @@ use Symfony\Component\Console\Input\ArrayInput;
  */
 class AliasCommand extends Command
 {
-  protected string $targetCommand;
-  protected array $aliasArgs;
-
   /**
    * Constructor.
    *
@@ -155,11 +152,11 @@ class AliasCommand extends Command
    * @param string $targetCommand Target command to execute
    * @param array $aliasArgs Pre-configured arguments for the alias
    */
-  public function __construct(string $aliasName, string $targetCommand, array $aliasArgs)
-  {
-    $this->targetCommand = $targetCommand;
-    $this->aliasArgs = $aliasArgs;
-
+  public function __construct(
+    string $aliasName,
+    protected string $targetCommand,
+    protected array $aliasArgs
+  ) {
     parent::__construct($aliasName);
 
     $this->setDescription("Alias for: {$targetCommand} " . implode(' ', $aliasArgs));

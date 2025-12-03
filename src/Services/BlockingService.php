@@ -22,12 +22,6 @@ namespace SolarWinds\Services;
 class BlockingService
 {
   /**
-   * Whether to allow reverse DNS fallback for bot verification.
-   * Defaults to TRUE for real-time monitoring, but should be FALSE for batch processing.
-   */
-  protected bool $allowReverseDnsFallback = TRUE;
-
-  /**
    * Constructor.
    *
    * @param ConfigurationService $config Configuration service for allowlist and bot patterns
@@ -37,9 +31,8 @@ class BlockingService
   public function __construct(
     protected ConfigurationService $config,
     protected ?BotIpService $botIpService = NULL,
-    bool $allowReverseDnsFallback = TRUE
+    protected bool $allowReverseDnsFallback = TRUE
   ) {
-    $this->allowReverseDnsFallback = $allowReverseDnsFallback;
   }
 
   /**

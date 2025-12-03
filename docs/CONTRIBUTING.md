@@ -7,8 +7,8 @@ This document provides guidelines for developers working on the SolarWinds Log A
 
 When starting work on this project, follow this sequence to get properly oriented:
 
-1. **Read [README.md](README.md) first** - Understand the project overview and basic usage
-2. **Follow all documentation links from [README.md](README.md)** - Especially [CLAUDE-MUST-READ-FIRST.md](CLAUDE-MUST-READ-FIRST.md) for AI behavioral context
+1. **Read [README.md](../README.md) first** - Understand the project overview and basic usage
+2. **Read [CLAUDE.md](../CLAUDE.md)** - AI behavioral guide and collaboration patterns (essential for AI contributors)
 3. **Read the code** - Familiarize yourself with the architecture, particularly:
    - `BaseSolarWindsCommand.php` - Abstract base class with shared functionality
    - The four core commands: `StatusCommand.php`, `SearchCommand.php`, `BotCommand.php`, `ExploitsCommand.php`
@@ -17,6 +17,109 @@ When starting work on this project, follow this sequence to get properly oriente
 5. **Ask clarifying questions** - Before starting implementation work
 
 This orientation sequence ensures you understand both the technical architecture and the collaborative patterns that have proven effective for this project.
+
+## :red_circle: CRITICAL ARCHITECTURE CONSTRAINTS
+
+These architectural principles are NON-NEGOTIABLE. Violations create technical debt and break the design. Read these FIRST before making any code changes.
+
+### DatabaseService Layer Separation
+
+**DatabaseService is a LOW-LEVEL service** - It provides raw database access ONLY.
+
+**:white_check_mark: ALLOWED in DatabaseService:**
+- Schema management (CREATE TABLE, CREATE INDEX)
+- Raw SQL execution (`query()`, `execute()`, `prepare()`)
+- Basic CRUD operations (`insertLogs()` with no business logic)
+- Transaction management (`beginTransaction()`, `commit()`, `rollback()`)
+
+**:x: FORBIDDEN in DatabaseService:**
+- Business logic and domain-specific queries
+- Application-specific parameters (`$whereClause`, `$since`, `$until`, `$filters`)
+- Query building based on application state
+- Result filtering or transformation
+
+**Example violations to AVOID:**
+
+```php
+// :x: WRONG - Application logic in DatabaseService
+public function getLogsWithQuery($whereClause, $params, $since, $until) { }
+public function getLogsByIp($ip, $since, $until) { }
+public function getCampaignLogs($filters) { }
+
+// :white_check_mark: CORRECT - Raw execution only
+public function query($sql, $params = []) { }
+public function execute($sql, $params = []) { }
+public function insertLogs(array $logs) { } // Simple CRUD only
+```
+
+**Where application logic SHOULD go:**
+- **CampaignAnalysisService** - Campaign queries and analysis logic
+- **SyncTrackingService** - Sync status and gap detection logic
+- **LogQueryService** - Log retrieval and filtering logic
+- **Command classes** - WHERE clause building, result filtering, display logic
+
+**Before adding a method to DatabaseService, ask:**
+1. Does this method contain business logic? :arrow_right: Wrong layer
+2. Does this take application-specific parameters? :arrow_right: Wrong layer
+3. Could this go in a specialized service? :arrow_right: Probably should
+
+### Service Layer Principles
+
+**Single Responsibility:**
+- Each service has ONE focused responsibility
+- Services should be stateless where possible
+- Use dependency injection rather than static methods
+- Handle errors gracefully with meaningful messages
+
+**Service Examples:**
+- **ConfigurationService** - Configuration parsing and validation ONLY
+- **ApiService** - API communication and response handling ONLY
+- **DisplayService** - Display formatting and color schemes ONLY
+- **DatabaseService** - Raw database storage ONLY
+- **CampaignAnalysisService** - Campaign analysis logic
+- **RiskScoringService** - Risk calculation logic
+
+**Dependency Injection:**
+- Services are injected through constructor parameters
+- Use interface-based dependencies where appropriate
+- Maintain immutable service state where possible
+
+### Base Class Architecture
+
+**Abstract Method Contracts:**
+- Keep abstract methods focused and single-purpose
+- Implement validation in child classes, not base class
+- Use protected methods for extension points
+- Document the base class contract clearly
+
+**BaseSolarWindsCommand Pattern:**
+All commands extend `BaseSolarWindsCommand` and implement three abstract methods:
+
+```php
+abstract protected function buildSearchQuery(array $options): string;
+abstract protected function parseScriptSpecificOptions(InputInterface $input): array;
+abstract protected function validateQuery(string $query, array $options): void;
+```
+
+This ensures:
+- **Consistent behavior** across all commands
+- **Code reuse** for common functionality
+- **Extensibility** for command-specific logic
+
+### Configuration System Principles
+
+**Configuration Handling:**
+- Validate configuration on load, not on use
+- Provide clear error messages for configuration problems
+- Support both development and production configuration patterns
+- Document all configuration options with examples
+
+**YAML-Based Configuration:**
+- Uses `~/.solarwinds.yml` for all configuration
+- Site mapping with dynamic command option generation
+- Alias support that appears as real commands
+
+
 ## Project Architecture
 
 ### Overview
@@ -37,45 +140,12 @@ This project migrated from a collection of shell scripts to a modern PHP/Symfony
 - **`DisplayService`** - Output formatting, coloring, and display modes
 - **`DatabaseService`** - SQLite storage with intelligent range detection and auto-sync
 - **`BlockingService`** - IP allowlist checking, bot classification, and blocking recommendations
+- **`CampaignAnalysisService`** - Campaign analysis and risk assessment
+- **`RiskScoringService`** - Threat risk scoring logic
+- **`SyncTrackingService`** - Sync status tracking and gap detection
+- **`BotIpService`** - Bot IP verification and CIDR range management
 
 **Base Class Inheritance:** `BaseSolarWindsCommand` provides common functionality while allowing command-specific implementations through abstract methods.
-
-### Base Class Implementation
-
-All commands extend `BaseSolarWindsCommand` and implement three abstract methods:
-
-```php
-abstract protected function buildSearchQuery(array $options): string;
-abstract protected function parseScriptSpecificOptions(InputInterface $input): array;
-abstract protected function validateQuery(string $query, array $options): void;
-```
-
-This pattern ensures:
-- **Consistent behavior** across all commands (time parsing, caching, output)
-- **Code reuse** for common functionality (API calls, progress bars, error handling)
-- **Extensibility** for command-specific logic while maintaining shared infrastructure
-
-### Service Layer Architecture
-
-**Dependency Injection:** Services are injected through constructor parameters:
-
-```php
-public function __construct(
-    ConfigurationService $configService,
-    ApiService $apiService,
-    DisplayService $displayService,
-    DatabaseService $databaseService
-) {
-    parent::__construct();
-    // ...
-}
-```
-
-**Single Responsibility:** Each service has a focused responsibility:
-- Configuration parsing and validation
-- API communication and response handling
-- Display formatting and color schemes
-- Database storage with range detection and auto-sync
 
 ### Configuration System
 
@@ -102,6 +172,107 @@ The new format supports:
 - Wildcard patterns (`"*.example.com"` matches both base domain and all subdomains - must be quoted)
 - Multiple hostnames per site
 - Cleaner YAML structure with site name as the key
+
+
+## Coding Standards
+
+### PHP Standards
+
+**PSR Compliance:**
+- **PSR-4 Autoloading** - Namespace structure matches directory structure
+- **PSR-12 Extended Coding Style** - Method naming, class structure, indentation
+
+**Type Safety:**
+- **Explicit type declarations** for all parameters and return values
+- **Strict typing** enabled where appropriate
+- **Comprehensive DocBlocks** for all public methods
+
+**Constructor Property Promotion (PHP 8.0+):**
+- Use PHP 8.0+ constructor property promotion syntax consistently
+- Eliminates boilerplate property declarations and assignments
+- Already used in `CampaignAnalysisService` - apply pattern consistently across all services
+
+```php
+// :white_check_mark: Good - Constructor property promotion:
+public function __construct(
+  protected DatabaseService $database,
+  protected DisplayService $display
+) {
+}
+
+// :x: Bad - Separate property declaration and assignment:
+protected DatabaseService $database;
+protected DisplayService $display;
+
+public function __construct(DatabaseService $database, DisplayService $display)
+{
+  $this->database = $database;
+  $this->display = $display;
+}
+```
+
+**Array Formatting:**
+- Multi-item arrays should have each item on separate lines
+- Include trailing comma on last item (even the last one)
+- Makes diffs cleaner and prevents merge conflicts
+
+```php
+// :white_check_mark: Good:
+'regex' => [
+  '/_profiler',
+  '/_wdt',
+  '/debug',
+  '/trace',
+],
+
+// :x: Bad:
+'regex' => ['/_profiler', '/_wdt', '/debug', '/trace'],
+```
+
+**Code Style:**
+- **Use uppercase NULL, TRUE, FALSE** - Always capital letters for PHP constants
+- **Use protected instead of private** - Better extensibility for inheritance
+  - Services should be extensible, not sealed APIs
+  - Allows subclassing without modifying the original class
+  - Applies to ALL classes: commands, services, utilities
+- **Comments are sentences** - Start with capital letter, end with period
+- **No trailing whitespace** - Clean all files with `sed -i '' 's/ *$//' filename` (macOS)
+
+**Time Handling Conventions:**
+- **Variables ending in `_time`** - Unix timestamps (integers), e.g., `$startTime`, `$endTime`
+- **Variables ending in `_iso8601`** - ISO 8601 formatted strings, e.g., `$startTimeIso8601`
+- **Internal code uses integers** - All time values are unix timestamps throughout the application
+- **API boundary converts to ISO 8601** - Only `ApiService` converts timestamps to ISO 8601 for external APIs
+- **Benefits:** Faster comparisons, arithmetic operations, and consistent type handling
+
+### Symfony Framework Conventions
+
+**Command Structure:**
+- Commands extend `Symfony\Component\Console\Command\Command`
+- Use constructor dependency injection for services
+- Follow standard `InputInterface`/`OutputInterface` pattern
+- Implement abstract base class methods consistently
+
+**Service Integration:**
+- Register services in dependency injection container
+- Use interface-based dependencies where appropriate
+- Maintain immutable service state where possible
+
+### Code Quality Requirements
+
+**General Principles:**
+- **Single responsibility** - Classes and methods should have one clear purpose
+- **Descriptive naming** - Method and variable names should be self-documenting
+- **Comprehensive validation** - All user inputs must be validated and sanitized
+- **Consistent indentation** - 4 spaces, no tabs
+- **Error handling** - Graceful failure with informative error messages
+
+**Documentation Standards:**
+- **Class-level DocBlocks** with purpose and architectural context
+- **Method documentation** with parameter types, return values, and behavior
+- **Inline comments** for complex logic and design decisions
+- **README updates** for any user-facing changes
+
 
 ## Development Workflow
 
@@ -165,79 +336,6 @@ The project uses manual test scripts rather than a formal testing framework. See
 - Verify interrupt handling with Ctrl+C (SIGINT)
 - Test blocking recommendations with allowlist configuration
 
-## Coding Standards
-
-### PHP Standards
-
-**PSR Compliance:**
-- **PSR-4 Autoloading** - Namespace structure matches directory structure
-- **PSR-12 Extended Coding Style** - Method naming, class structure, indentation
-
-**Type Safety:**
-- **Explicit type declarations** for all parameters and return values
-- **Strict typing** enabled where appropriate
-- **Comprehensive DocBlocks** for all public methods
-
-**Code Style:**
-- **Use uppercase NULL, TRUE, FALSE** - Always capital letters for PHP constants
-- **Use protected instead of private** - Better extensibility for inheritance
-- **Comments are sentences** - Start with capital letter, end with period
-- **No trailing whitespace** - Clean all files with `sed -i 's/ *$//' filename`
-
-**Time Handling Conventions:**
-- **Variables ending in `_time`** - Unix timestamps (integers), e.g., `$startTime`, `$endTime`
-- **Variables ending in `_iso8601`** - ISO 8601 formatted strings, e.g., `$startTimeIso8601`
-- **Internal code uses integers** - All time values are unix timestamps throughout the application
-- **API boundary converts to ISO 8601** - Only `ApiService` converts timestamps to ISO 8601 for external APIs
-- **Benefits:** Faster comparisons, arithmetic operations, and consistent type handling
-
-### Symfony Framework Conventions
-
-**Command Structure:**
-- Commands extend `Symfony\Component\Console\Command\Command`
-- Use constructor dependency injection for services
-- Follow standard `InputInterface`/`OutputInterface` pattern
-- Implement abstract base class methods consistently
-
-**Service Integration:**
-- Register services in dependency injection container
-- Use interface-based dependencies where appropriate
-- Maintain immutable service state where possible
-
-### Code Quality Requirements
-
-**General Principles:**
-- **Single responsibility** - Classes and methods should have one clear purpose
-- **Descriptive naming** - Method and variable names should be self-documenting
-- **Comprehensive validation** - All user inputs must be validated and sanitized
-- **Consistent indentation** - 4 spaces, no tabs
-- **Error handling** - Graceful failure with informative error messages
-
-**Documentation Standards:**
-- **Class-level DocBlocks** with purpose and architectural context
-- **Method documentation** with parameter types, return values, and behavior
-- **Inline comments** for complex logic and design decisions
-- **README updates** for any user-facing changes
-
-### Architecture-Specific Guidelines
-
-**Base Class Architecture:**
-- Keep abstract methods focused and single-purpose
-- Implement validation in child classes, not base class
-- Use protected methods for extension points
-- Document the base class contract clearly
-
-**Service Layer:**
-- Services should be stateless where possible
-- Use dependency injection rather than static methods
-- Handle errors gracefully and provide meaningful messages
-- Use database storage for persistent data across queries
-
-**Configuration Handling:**
-- Validate configuration on load, not on use
-- Provide clear error messages for configuration problems
-- Support both development and production configuration patterns
-- Document all configuration options with examples
 
 ## Adding New Commands
 
@@ -280,21 +378,17 @@ The project uses manual test scripts rather than a formal testing framework. See
 - Implement proper color coding and visual hierarchy
 - Handle empty results gracefully
 
+
 ## Reference Materials
 
-### Original Shell Scripts
+### Development Context and Lessons Learned
 
-The original shell scripts are preserved for reference and provide authoritative specifications for:
-- **Exact API parameters** and query syntax
-- **Output formatting** and display patterns
-- **Validation logic** and error handling
-- **Performance characteristics** and optimization patterns
+- **[CLAUDE.md](../CLAUDE.md)** - AI behavioral guide and collaboration patterns (ESSENTIAL for AI contributors)
+- **[CASE STUDY](CASE_STUDY.md)** - Initial migration lessons learned about AI-assisted development
+- **[CASE STUDY 2](CASE_STUDY_2.md)** - Advanced feature development and exploit detection lessons
+- **[TODO](TODO.md)** - Current priorities and planned features
+- **[EXPLOITS](EXPLOITS.md)** - Exploit detection system documentation
 
-### Development Context
-
-- **[CASE STUDY](CASE_STUDY.md)** - Lessons learned about AI-assisted development
-- **[CLAUDE MUST READ FIRST](CLAUDE-MUST-READ-FIRST.md)** - AI development context and behavioral patterns
-- **[TODO](TODO.md)** - Additional planned features and improvements
 
 ## Troubleshooting Development Issues
 
@@ -327,6 +421,7 @@ The original shell scripts are preserved for reference and provide authoritative
 - Verify result consistency across runs
 - Check for data integrity issues
 - Validate database behavior
+
 
 ## Attribution
 

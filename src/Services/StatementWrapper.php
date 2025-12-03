@@ -23,18 +23,12 @@ use PDOStatement;
 class StatementWrapper
 {
   /**
-   * The wrapped PDOStatement.
-   */
-  protected PDOStatement $stmt;
-
-  /**
    * Constructor.
    *
    * @param PDOStatement $stmt The PDOStatement to wrap
    */
-  public function __construct(PDOStatement $stmt)
+  public function __construct(protected PDOStatement $stmt)
   {
-    $this->stmt = $stmt;
   }
 
   /**

@@ -180,19 +180,16 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
     - Test older commits to confirm when regression occurred
     - Consider pattern matching optimizations (early termination, compiled regexes, etc.)
     - Verify data volume hasn't increased (more rows = slower processing)
-- **Denormalize JSON Message Data into Separate Columns**:
-  - Current schema stores all log data in a single JSON `message` column
-  - Querying JSON fields requires SQLite to parse JSON for every row scanned
-  - Processing 541k bot logs requires 541k JSON decode operations in PHP
-  - Migrate frequently-queried fields to dedicated columns:
+- **✅ Denormalize JSON Message Data into Separate Columns** (COMPLETED):
+  - Migrated frequently-queried fields to dedicated columns:
     - `client_ip` - used for grouping, filtering, and verification
     - `req_user_agent` - used for bot detection and classification
     - `req_uri` - used for exploit pattern matching
     - `resp_status` - used for filtering and campaign analysis
-  - Keep `message` column for less-frequently accessed fields
-  - Massive performance improvement for large queries (--all, --2w, etc.)
-  - Migration strategy: ALTER TABLE to add columns, backfill from JSON, update sync logic
-  - Backward compatibility: Keep JSON parsing for old records without denormalized columns
+  - Kept `message` column for less-frequently accessed fields
+  - Implemented migration strategy: ALTER TABLE, backfill from JSON, updated sync logic
+  - Maintained backward compatibility: JSON parsing for old records without denormalized columns
+  - Achieved massive performance improvement for large queries (--all, --2w, etc.)
 - **Database Retention & Cleanup Policy**:
   - Review data retention strategy as database grows over time
   - Consider implementing automatic cleanup of old logs (e.g., >2 weeks)

@@ -20,15 +20,6 @@ use PDO;
  */
 class BotIpService
 {
-  /**
-   * Database service.
-   */
-  protected DatabaseService $database;
-
-  /**
-   * Display service for progress bars.
-   */
-  protected ?DisplayService $display = NULL;
 
   /**
    * In-memory cache of verification results.
@@ -104,10 +95,10 @@ class BotIpService
    * @param DatabaseService $database Database service
    * @param DisplayService|null $display Display service for progress bars (optional)
    */
-  public function __construct(DatabaseService $database, ?DisplayService $display = NULL)
-  {
-    $this->database = $database;
-    $this->display = $display;
+  public function __construct(
+    protected DatabaseService $database,
+    protected ?DisplayService $display = NULL
+  ) {
   }
 
   /**
