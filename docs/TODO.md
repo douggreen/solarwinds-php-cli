@@ -113,14 +113,27 @@ Based on testing with real data (--1d and --all timeframes):
    - Volume thresholds (what req/hr rates map to what scores)
    - Risk level cutoffs (critical/high/medium/low/noise boundaries)
 
-9. **Advanced Detection Features**
-   - [ ] IP range combination logic (combine similar IPs into ranges)
-     - IPv4: Combine A.B.C.* ranges when multiple IPs from same /24 subnet show similar patterns
-     - IPv6: Combine similar IPv6 addresses from same /64 subnet (e.g., 2604:a880:2:d1::*)
-     - Example: Multiple IPs scanning same site with same attack patterns likely part of same campaign
-   - [ ] Parameter enumeration detection (100+ random params on same path)
-   - [ ] Coordinated attack detection (multiple IPs with same patterns)
-   - [ ] Blocked IP tracking (suppress alerts for already-blocked IPs)
+9. **IP Range Combination Logic**
+   - [ ] Detect when multiple IPs from same subnet show similar attack patterns
+   - [ ] IPv4: Combine A.B.C.* ranges when multiple IPs from same /24 subnet attack together
+   - [ ] IPv6: Combine similar IPv6 addresses from same /64 subnet (e.g., 2604:a880:2:d1::*)
+   - [ ] Display combined ranges in campaign output (e.g., "192.168.1.0/24" instead of listing each IP)
+   - [ ] Example use case: Botnet attacks from multiple IPs in same cloud provider subnet
+
+10. **Parameter Enumeration Detection**
+    - [ ] Detect attacks using 100+ random parameter values on same endpoint
+    - [ ] Example: /api/endpoint?param=value1, /api/endpoint?param=value2, etc.
+    - [ ] Flag as distinct attack pattern separate from path enumeration
+
+11. **Coordinated Attack Detection**
+    - [ ] Detect multiple IPs with identical attack patterns (same paths, same timing)
+    - [ ] Group coordinated attacks into single campaign with multiple source IPs
+    - [ ] Distinguish from coincidental similar attacks
+
+12. **Blocked IP Tracking**
+    - [ ] Track IPs that have been blocked at firewall/WAF level
+    - [ ] Suppress BLOCK NOW alerts for already-blocked IPs
+    - [ ] Show "Already Blocked" status in campaign display
 
 ### Implementation Status Summary
 
