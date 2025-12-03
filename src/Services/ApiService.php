@@ -138,13 +138,13 @@ class ApiService
    * @throws GuzzleException
    */
   public function retrieveLogs(
-    string $startTime,
-    string $endTime,
+    int|string $startTime,
+    int|string $endTime,
     ?callable $progressCallback = NULL,
     ?callable $debugCallback = NULL,
     ?callable $saveCallback = NULL
   ): array {
-    // Convert human-readable times to ISO format.
+    // Convert unix timestamps or human-readable times to ISO format.
     $startTimeIso = $this->convertToIsoTime($startTime);
     $endTimeIso = $this->convertToIsoTime($endTime);
 
@@ -337,11 +337,17 @@ class ApiService
    * @return string ISO-8601 formatted timestamp
    * @throws \InvalidArgumentException If time string cannot be parsed
    */
-  protected function convertToIsoTime(string $timeString): string
+  protected function convertToIsoTime(int|string $time): string
   {
-    $timestamp = strtotime($timeString);
+    // If already an integer timestamp, use it directly.
+    if (is_int($time)) {
+      return gmdate('Y-m-d\TH:i:s\Z', $time);
+    }
+
+    // Otherwise convert string to timestamp.
+    $timestamp = strtotime($time);
     if ($timestamp === FALSE) {
-      throw new \InvalidArgumentException("Invalid time format: $timeString");
+      throw new \InvalidArgumentException("Invalid time format: $time");
     }
 
     return gmdate('Y-m-d\TH:i:s\Z', $timestamp);

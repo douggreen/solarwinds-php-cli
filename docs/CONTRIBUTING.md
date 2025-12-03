@@ -184,6 +184,13 @@ The project uses manual test scripts rather than a formal testing framework. See
 - **Comments are sentences** - Start with capital letter, end with period
 - **No trailing whitespace** - Clean all files with `sed -i 's/ *$//' filename`
 
+**Time Handling Conventions:**
+- **Variables ending in `_time`** - Unix timestamps (integers), e.g., `$startTime`, `$endTime`
+- **Variables ending in `_iso8601`** - ISO 8601 formatted strings, e.g., `$startTimeIso8601`
+- **Internal code uses integers** - All time values are unix timestamps throughout the application
+- **API boundary converts to ISO 8601** - Only `ApiService` converts timestamps to ISO 8601 for external APIs
+- **Benefits:** Faster comparisons, arithmetic operations, and consistent type handling
+
 ### Symfony Framework Conventions
 
 **Command Structure:**

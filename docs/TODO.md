@@ -11,15 +11,23 @@ The exploit detection system currently flags too much low-volume noise as critic
 ## Next Steps
 
 **Other Priorities:**
-1. **Cleanup CASE_STUDY_2.md** - Rewrite to focus on process and collaboration rather than product
+1. **Standardize Gap Array Naming** - Rename gap array keys to follow `_time` convention
+   - Currently: gap arrays use `'start'` and `'end'` (ambiguous)
+   - Should be: `'start_time'` and `'end_time'` (follows timestamp naming convention)
+   - Files to update:
+     - SyncTrackingService.php - all gap array creations in detectGapsInSyncedRanges() and detectMissingRanges()
+     - BaseSolarWindsCommand.php - all gap array usages
+     - SyncCommand.php - all gap array usages in displayCoverageReport()
+   - Improves consistency with naming convention where `*_time` = unix timestamp integer
+2. **Cleanup CASE_STUDY_2.md** - Rewrite to focus on process and collaboration rather than product
    - Currently too product-focused (features, performance improvements, blocking campaigns)
    - Sounds bragadocious with too many claims about achievements
    - Should focus on: human-AI collaboration patterns, what worked/what didn't, process improvements
    - Should emphasize: AI blindspots, human oversight requirements, iteration patterns
    - Remove marketing-style language, focus on practical lessons learned
    - Target audience: developers considering AI-assisted development, not product users
-2. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
-3. Research and implement testing framework
+3. **Performance Review** - Review frequently-called methods (like getProgressCallback) for repeated expensive operations like strtotime()
+4. Research and implement testing framework
 
 ## Security Enhancements
 

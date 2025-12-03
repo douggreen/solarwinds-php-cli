@@ -332,8 +332,8 @@ abstract class BaseSolarWindsCommand extends Command
           )->fetch();
 
           if ($coverage && $coverage['earliest'] && $coverage['latest']) {
-            $earliest = date('M j, Y', strtotime($coverage['earliest']));
-            $latest = date('M j, Y', strtotime($coverage['latest']));
+            $earliest = date('M j, Y', $coverage['earliest']);
+            $latest = date('M j, Y', $coverage['latest']);
             $humanReadable = "all database coverage ($earliest to $latest)";
           }
           else {
@@ -348,8 +348,8 @@ abstract class BaseSolarWindsCommand extends Command
         }
 
         return [
-          'start_time' => $start,
-          'end_time' => $end,
+          'start_time' => strtotime($start),
+          'end_time' => strtotime($end),
           'human_readable' => $humanReadable,
           'time_option' => $timeOption,
         ];
@@ -365,8 +365,8 @@ abstract class BaseSolarWindsCommand extends Command
     if ($mapping !== NULL) {
       [$start, $end] = $mapping;
       return [
-        'start_time' => $start,
-        'end_time' => $end,
+        'start_time' => strtotime($start),
+        'end_time' => strtotime($end),
         'human_readable' => "last $defaultFlag (default)",
         'time_option' => $defaultFlag,
       ];
@@ -408,8 +408,8 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     // For months (NM), years (Ny), and 'all', show confirmation with accurate impact estimate.
-    $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
-    $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+    $startTime = $options['time']['start_time'];
+    $endTime = $options['time']['end_time'];
 
     // Step 1: Detect missing ranges to understand what needs to be synced.
     // This is typically very fast (< 1 second), so no need for a progress message.
@@ -427,8 +427,8 @@ abstract class BaseSolarWindsCommand extends Command
       // Calculate total duration of missing data.
       $totalMissingSeconds = 0;
       foreach ($syncableRanges as $range) {
-        $rangeStart = strtotime($range['start']);
-        $rangeEnd = strtotime($range['end']);
+        $rangeStart = $range['start'];
+        $rangeEnd = $range['end'];
         $totalMissingSeconds += ($rangeEnd - $rangeStart);
       }
       $missingDays = $totalMissingSeconds / 86400;
@@ -471,21 +471,30 @@ abstract class BaseSolarWindsCommand extends Command
     // Format dates in human-readable format.
     // For 'all', use actual database coverage dates instead of theoretical range.
     if ($timeFlag === 'all' && $rangeAnalysis['has_data'] && isset($rangeAnalysis['coverage'])) {
-      $startDate = date('M j, Y g:i A', strtotime($rangeAnalysis['coverage']['earliest']));
-      $endDate = date('M j, Y g:i A', strtotime($rangeAnalysis['coverage']['latest']));
+      $startDate = date('M j, Y g:i A', $rangeAnalysis['coverage']['earliest']);
+      $endDate = date('M j, Y g:i A', $rangeAnalysis['coverage']['latest']);
     }
     else {
-      $startDate = date('M j, Y g:i A', strtotime($startTime));
-      $endDate = date('M j, Y g:i A', strtotime($endTime));
+      $startDate = date('M j, Y g:i A', $startTime);
+      $endDate = date('M j, Y g:i A', $endTime);
     }
 
     // Show time range.
-    $this->io->writeln(sprintf(
-      '<comment>You requested %s which queries all records from %s to %s</comment>',
-      $options['time']['human_readable'],
-      $startDate,
-      $endDate
-    ));
+    // For 'all', the human_readable already contains date range, so don't repeat it
+    if ($timeFlag === 'all') {
+      $this->io->writeln(sprintf(
+        '<comment>You requested %s</comment>',
+        $options['time']['human_readable']
+      ));
+    }
+    else {
+      $this->io->writeln(sprintf(
+        '<comment>You requested %s (%s to %s)</comment>',
+        $options['time']['human_readable'],
+        $startDate,
+        $endDate
+      ));
+    }
     $this->io->newLine();
 
     // Show actual database status (after sync has completed).
@@ -1083,10 +1092,10 @@ abstract class BaseSolarWindsCommand extends Command
    * @param string $reason Range reason (historical, recent, no_data)
    * @return string Human-readable range message
    */
-  protected function formatRangeMessage(string $startTime, string $endTime, string $reason): string
+  protected function formatRangeMessage(int $startTime, int $endTime, string $reason): string
   {
-    $start = strtotime($startTime);
-    $end = strtotime($endTime);
+    $start = $startTime;
+    $end = $endTime;
     $duration = $end - $start;
 
     // Calculate duration in human-readable format.
@@ -1157,8 +1166,8 @@ abstract class BaseSolarWindsCommand extends Command
     }
 
     // Calculate total time range in seconds for progress tracking.
-    $startEpoch = strtotime($options['time']['start_time']);
-    $endEpoch = strtotime($options['time']['end_time']);
+    $startEpoch = $options['time']['start_time'];
+    $endEpoch = $options['time']['end_time'];
     $totalSeconds = $endEpoch - $startEpoch;
 
     // Create progress bar with DisplayService for consistent formatting.
@@ -1187,8 +1196,8 @@ abstract class BaseSolarWindsCommand extends Command
       return NULL;
     }
 
-    $startEpoch = strtotime($options['time']['start_time']);
-    $endEpoch = strtotime($options['time']['end_time']);
+    $startEpoch = $options['time']['start_time'];
+    $endEpoch = $options['time']['end_time'];
     $totalSeconds = $endEpoch - $startEpoch;
     $lastMessage = '';
     $dayRates = [];  // Rolling average of seconds per day: [realTimeForDay]
@@ -1464,18 +1473,16 @@ abstract class BaseSolarWindsCommand extends Command
    * creating middle gaps if interrupted. This ensures interrupted fetches only have
    * missing historical data at the beginning, which range detection handles naturally.
    *
-   * @param string $start Start time (ISO 8601)
-   * @param string $end End time (ISO 8601)
-   * @return array Array of chunk definitions with 'start' and 'end' times (newest first)
+   * @param int $start Start time (unix timestamp)
+   * @param int $end End time (unix timestamp)
+   * @return array Array of chunk definitions with 'start' and 'end' unix timestamps (newest first)
    */
-  protected function splitRangeIntoChunks(string $start, string $end): array
+  protected function splitRangeIntoChunks(int $start, int $end): array
   {
     $chunks = [];
     $chunkSize = 86400; // 1 day in seconds
 
-    $startTs = strtotime($start);
-    $endTs = strtotime($end);
-    $duration = $endTs - $startTs;
+    $duration = $end - $start;
 
     // If range is less than 1 day, no need to chunk.
     if ($duration <= $chunkSize) {
@@ -1484,13 +1491,13 @@ abstract class BaseSolarWindsCommand extends Command
 
     // Split into 1-day chunks, working backwards from newest to oldest.
     // This prevents middle gaps if interrupted (only old data will be missing).
-    $currentEnd = $endTs;
-    while ($currentEnd > $startTs) {
-      $currentStart = max($currentEnd - $chunkSize, $startTs);
+    $currentEnd = $end;
+    while ($currentEnd > $start) {
+      $currentStart = max($currentEnd - $chunkSize, $start);
 
       $chunks[] = [
-        'start' => gmdate('Y-m-d\TH:i:s\Z', $currentStart),
-        'end' => gmdate('Y-m-d\TH:i:s\Z', $currentEnd),
+        'start' => $currentStart,
+        'end' => $currentEnd,
       ];
 
       $currentEnd = $currentStart;
@@ -1541,9 +1548,9 @@ abstract class BaseSolarWindsCommand extends Command
       }
     }
 
-    // Convert time range to ISO 8601 for database queries.
-    $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
-    $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+    // Get time range as unix timestamps.
+    $startTime = $options['time']['start_time'];
+    $endTime = $options['time']['end_time'];
 
     // Check for incomplete syncs and report them.
     if ($showCacheMessage && !$this->jsonMode) {
@@ -1727,9 +1734,9 @@ abstract class BaseSolarWindsCommand extends Command
       $endTime = NULL;
     }
     else {
-      // Convert time range to ISO 8601 for database queries.
-      $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
-      $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+      // Get time range as unix timestamps for database queries.
+      $startTime = $options['time']['start_time'];
+      $endTime = $options['time']['end_time'];
     }
 
     // Query database with SQL WHERE clause.

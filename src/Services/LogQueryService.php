@@ -45,25 +45,23 @@ class LogQueryService
   /**
    * Get all logs within a time range.
    *
-   * @param string|null $since Start time (ISO 8601)
-   * @param string|null $until End time (ISO 8601)
+   * @param int|null $since Start time (unix timestamp)
+   * @param int|null $until End time (unix timestamp)
    * @return array Array of log entries
    */
-  public function getLogs(?string $since = NULL, ?string $until = NULL): array
+  public function getLogs(?int $since = NULL, ?int $until = NULL): array
   {
     $sql = 'SELECT * FROM logs WHERE 1=1';
     $params = [];
 
     if ($since) {
       $sql .= ' AND time >= :since';
-      // Convert ISO 8601 to unix timestamp for INTEGER comparison
-      $params[':since'] = strtotime($since);
+      $params[':since'] = $since;
     }
 
     if ($until) {
       $sql .= ' AND time <= :until';
-      // Convert ISO 8601 to unix timestamp for INTEGER comparison
-      $params[':until'] = strtotime($until);
+      $params[':until'] = $until;
     }
 
     $sql .= ' ORDER BY time ASC';
@@ -87,13 +85,13 @@ class LogQueryService
    *
    * @param string|null $whereClause SQL WHERE clause (without 'WHERE' keyword)
    * @param array $whereParams PDO parameters for WHERE clause
-   * @param string|null $since Start time (ISO 8601)
-   * @param string|null $until End time (ISO 8601)
+   * @param int|null $since Start time (unix timestamp)
+   * @param int|null $until End time (unix timestamp)
    * @param bool $includeData Whether to include the data JSON column (for display features)
    * @param callable|null $progressCallback Optional callback(current, total) for progress updates
    * @return array Array of log entries
    */
-  public function getLogsWithQuery(?string $whereClause, array $whereParams, ?string $since = NULL, ?string $until = NULL, bool $includeData = FALSE, ?callable $progressCallback = NULL): array
+  public function getLogsWithQuery(?string $whereClause, array $whereParams, ?int $since = NULL, ?int $until = NULL, bool $includeData = FALSE, ?callable $progressCallback = NULL): array
   {
     // Select STORED columns directly for performance (Phase 1 optimization).
     // These columns are pre-computed and don't require JSON parsing.
@@ -108,14 +106,12 @@ class LogQueryService
 
     if ($since) {
       $sql .= ' AND time >= :since';
-      // Convert ISO 8601 to unix timestamp for INTEGER comparison
-      $params[':since'] = strtotime($since);
+      $params[':since'] = $since;
     }
 
     if ($until) {
       $sql .= ' AND time <= :until';
-      // Convert ISO 8601 to unix timestamp for INTEGER comparison
-      $params[':until'] = strtotime($until);
+      $params[':until'] = $until;
     }
 
     // Add custom WHERE clause if provided
@@ -194,25 +190,23 @@ class LogQueryService
    * Get logs for a specific IP address.
    *
    * @param string $ip IP address
-   * @param string|null $since Start time (ISO 8601)
-   * @param string|null $until End time (ISO 8601)
+   * @param int|null $since Start time (unix timestamp)
+   * @param int|null $until End time (unix timestamp)
    * @return array Array of log entries
    */
-  public function getLogsByIp(string $ip, ?string $since = NULL, ?string $until = NULL): array
+  public function getLogsByIp(string $ip, ?int $since = NULL, ?int $until = NULL): array
   {
     $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country FROM logs WHERE client_ip = :ip';
     $params = [':ip' => $ip];
 
     if ($since) {
       $sql .= ' AND time >= :since';
-      // Convert ISO 8601 to unix timestamp for INTEGER comparison
-      $params[':since'] = strtotime($since);
+      $params[':since'] = $since;
     }
 
     if ($until) {
       $sql .= ' AND time <= :until';
-      // Convert ISO 8601 to unix timestamp for INTEGER comparison
-      $params[':until'] = strtotime($until);
+      $params[':until'] = $until;
     }
 
     $sql .= ' ORDER BY time ASC';

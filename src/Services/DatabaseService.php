@@ -399,9 +399,16 @@ SQL;
       $this->db->exec("CREATE INDEX IF NOT EXISTS idx_time_method ON logs(time, req_method) WHERE req_method IS NOT NULL");
     }
 
+    // Create composite index on (client_ip, time) to optimize IP-based queries with time filtering and ordering
+    // This eliminates the need for temp B-tree sorting when querying by IP and ordering by time
+    if (in_array('client_ip', $existingColumns) && in_array('time', $existingColumns)) {
+      $this->db->exec("CREATE INDEX IF NOT EXISTS idx_client_ip_time ON logs(client_ip, time) WHERE client_ip IS NOT NULL");
+    }
+
     // Create indexes only for columns that exist.
     // Note: idx_time is NOT created here since idx_time_method covers time queries
     // Note: idx_req_method IS created for queries that filter only on req_method
+    // Note: idx_client_ip IS still created for queries that filter only on client_ip without time constraints
     $indexDefinitions = [
       'idx_client_ip' => 'client_ip',
       'idx_req_method' => 'req_method',

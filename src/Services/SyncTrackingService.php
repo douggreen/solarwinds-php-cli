@@ -24,6 +24,14 @@ use PDO;
 class SyncTrackingService
 {
   /**
+   * Cache for earliest log date (per-session).
+   * Set to 0 if database is empty.
+   *
+   * @var int|null
+   */
+  protected ?int $earliestLogDateCache = NULL;
+
+  /**
    * Constructor.
    *
    * @param ConfigurationService $config Configuration service
@@ -45,7 +53,7 @@ class SyncTrackingService
    * @param string $until End time (ISO 8601 format)
    * @return int Estimated record count
    */
-  public function getRecordCount(string $since, string $until): int
+  public function getRecordCount(int $since, int $until): int
   {
     $sql = 'SELECT COUNT(*) as count FROM logs WHERE time >= :since AND time <= :until';
     $stmt = $this->database->prepare($sql);
@@ -68,7 +76,7 @@ class SyncTrackingService
    * @param int $chunksTotal Total number of chunks to process
    * @return int Sync range ID
    */
-  public function createSyncRange(string $startTime, string $endTime, int $chunksTotal): int
+  public function createSyncRange(int $startTime, int $endTime, int $chunksTotal): int
   {
     $stmt = $this->database->prepare(<<<'SQL'
 INSERT INTO sync_ranges (start_time, end_time, status, chunks_total)
@@ -263,12 +271,12 @@ SQL
    * @param string $requestedEnd End of requested range (ISO 8601)
    * @return array Array of gap ranges that need to be synced
    */
-  public function detectGapsInSyncedRanges(string $requestedStart, string $requestedEnd): array
+  public function detectGapsInSyncedRanges(int $requestedStart, int $requestedEnd): array
   {
     // Clamp requested start time to API retention limit
     // E.g., if retention is 14 days and user requests 1 month, only fetch last 14 days
     $retentionLimit = $this->config->getApiRetentionLimit();
-    $retentionStart = gmdate('Y-m-d\TH:i:s\Z', time() - $retentionLimit);
+    $retentionStart = time() - $retentionLimit;
 
     // If requested start is before retention limit, mark that range as beyond retention
     $gapsBeforeRetention = [];
@@ -365,7 +373,7 @@ SQL
    * @param string $requestedEnd End of requested range (ISO 8601)
    * @return array Array with 'has_data', 'coverage' info and 'ranges' (missing ranges) to fetch
    */
-  public function detectMissingRanges(string $requestedStart, string $requestedEnd): array
+  public function detectMissingRanges(int $requestedStart, int $requestedEnd): array
   {
     // Check if sync_ranges table exists and has data.
     $hasSyncRanges = FALSE;
@@ -494,12 +502,19 @@ SQL
    *
    * Used for deep-dive queries to determine how far back to search.
    *
-   * @return string|null ISO 8601 timestamp or NULL if no logs
+   * @return int Unix timestamp (0 if no logs)
    */
-  public function getEarliestLogDate(): ?string
+  public function getEarliestLogDate(): int
   {
+    // Return cached value if available (result never changes during session).
+    if ($this->earliestLogDateCache !== NULL) {
+      return $this->earliestLogDateCache;
+    }
+
     $stmt = $this->database->query('SELECT MIN(time) as earliest FROM logs');
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    return $row['earliest'] ?? NULL;
+    $this->earliestLogDateCache = $row['earliest'] ?? 0;
+
+    return $this->earliestLogDateCache;
   }
 }

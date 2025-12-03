@@ -116,8 +116,8 @@ class SyncCommand extends BaseSolarWindsCommand
 
       // Check coverage BEFORE sync.
       $this->io->writeln('<comment>Checking current database coverage...</comment>');
-      $startTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['start_time']));
-      $endTime = gmdate('Y-m-d\TH:i:s\Z', strtotime($options['time']['end_time']));
+      $startTime = $options['time']['start_time'];
+      $endTime = $options['time']['end_time'];
       $beforeSync = $this->syncTracking->detectMissingRanges($startTime, $endTime);
 
       // Sync logs to database (this will fill gaps).
@@ -154,8 +154,8 @@ class SyncCommand extends BaseSolarWindsCommand
     $this->io->section('Coverage Report');
     $this->io->text([
       sprintf('Time range: %s to %s',
-        date('M j, g:ia', strtotime($startTime)),
-        date('M j, g:ia', strtotime($endTime))
+        date('M j, g:ia', $startTime),
+        date('M j, g:ia', $endTime)
       ),
       sprintf('Total records: %s', number_format($count)),
     ]);
@@ -205,8 +205,8 @@ class SyncCommand extends BaseSolarWindsCommand
       foreach ($filled as $gap) {
         $label = $this->getGapLabel($gap['reason']);
         $this->io->text(sprintf('  ✓ %s to %s  %s',
-          date('M j, g:ia', strtotime($gap['start'])),
-          date('M j, g:ia', strtotime($gap['end'])),
+          date('M j, g:ia', $gap['start']),
+          date('M j, g:ia', $gap['end']),
           $label
         ));
       }
@@ -219,8 +219,8 @@ class SyncCommand extends BaseSolarWindsCommand
 
       foreach ($remaining as $gap) {
         $item = sprintf('%s to %s  %s',
-          date('M j, g:ia', strtotime($gap['start'])),
-          date('M j, g:ia', strtotime($gap['end'])),
+          date('M j, g:ia', $gap['start']),
+          date('M j, g:ia', $gap['end']),
           $this->getGapLabel($gap['reason'])
         );
 
