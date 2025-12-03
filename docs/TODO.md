@@ -92,6 +92,10 @@ Based on testing with real data (--1d and --all timeframes):
    - Risk level cutoffs (critical/high/medium/low/noise boundaries)
 
 8. **Advanced Detection Features**
+   - [ ] IP range combination logic (combine similar IPs into ranges)
+     - IPv4: Combine A.B.C.* ranges when multiple IPs from same /24 subnet show similar patterns
+     - IPv6: Combine similar IPv6 addresses from same /64 subnet (e.g., 2604:a880:2:d1::*)
+     - Example: Multiple IPs scanning same site with same attack patterns likely part of same campaign
    - [ ] Parameter enumeration detection (100+ random params on same path)
    - [ ] Coordinated attack detection (multiple IPs with same patterns)
    - [ ] Blocked IP tracking (suppress alerts for already-blocked IPs)
