@@ -9,8 +9,8 @@
  *
  * This service implements a multi-factor risk scoring system that evaluates
  * exploit campaigns based on origin impact, volume rate, attack severity,
- * historical context, and server impact. Scores are normalized to 0-100
- * and classified into risk levels (critical, high, medium, low, noise).
+ * recency, and server impact. Scores are normalized to 0-100 and classified
+ * into risk levels (critical, high, medium, low, noise).
  *
  * @section scoring_factors Scoring Factors
  *
@@ -31,20 +31,15 @@
  * - Multiple patterns: +20 bonus
  * - 3+ patterns: +30 bonus
  *
- * **Recency (default weight: 0.15):**
+ * **Recency (default weight: 0.20):**
  * - Active now (<1h): 100 points (maximum priority)
  * - Last 6 hours: 90 points (very recent)
  * - Last 24 hours: 70 points (recent)
  * - Last 3 days: 40 points (moderately recent)
  * - Last week: 20 points (aging)
- * - Over 1 week old: 0 points (historical only)
+ * - Over 1 week old: 0 points (low priority)
  *
- * **Historical Context (default weight: 0.10):**
- * - No history: 0 points
- * - Seen before: 20-50 points
- * - Known bad actor: 100 points
- *
- * **Server Impact (default weight: 0.10):**
+ * **Server Impact (default weight: 0.05):**
  * - All 404s: 0 points (no PHP execution)
  * - PHP errors: 80 points
  * - Successful exploitation: 100 points
@@ -68,7 +63,6 @@
  * @see ExploitsCommand For campaign analysis usage
  *
  * @note All scores are normalized to 0-100 range before weighting
- * @warning Requires campaign_analysis database for historical context
  */
 
 namespace SolarWinds\Services;
@@ -106,7 +100,6 @@ class RiskScoringService
     $volumeScore = $this->calculateVolumeRateScore($campaign, $riskConfig);
     $severityScore = $this->calculateAttackSeverityScore($campaign, $riskConfig);
     $recencyScore = $this->calculateRecencyScore($campaign, $riskConfig);
-    $historicalScore = $this->calculateHistoricalScore($campaign, $riskConfig);
     $serverScore = $this->calculateServerImpactScore($campaign, $riskConfig);
 
     // Calculate weighted total
@@ -115,7 +108,6 @@ class RiskScoringService
       ($volumeScore * $weights['volume_rate']) +
       ($severityScore * $weights['attack_severity']) +
       ($recencyScore * $weights['recency']) +
-      ($historicalScore * $weights['historical']) +
       ($serverScore * $weights['server_impact'])
     );
 
@@ -145,11 +137,6 @@ class RiskScoringService
           'score' => $recencyScore,
           'weighted' => round($recencyScore * $weights['recency'], 1),
           'weight' => $weights['recency'],
-        ],
-        'historical' => [
-          'score' => $historicalScore,
-          'weighted' => round($historicalScore * $weights['historical'], 1),
-          'weight' => $weights['historical'],
         ],
         'server_impact' => [
           'score' => $serverScore,
@@ -345,37 +332,6 @@ class RiskScoringService
 
     // Over 1 week old = historical only.
     return (float) ($config['historical'] ?? 0);
-  }
-
-  /**
-   * Calculate historical context score (0-100).
-   *
-   * Evaluates IP history from campaign_analysis database.
-   * Higher score for repeat offenders.
-   *
-   * @param array $campaign Campaign data
-   * @param array $riskConfig Risk scoring configuration
-   * @return float Score from 0-100
-   */
-  protected function calculateHistoricalScore(array $campaign, array $riskConfig): float
-  {
-    $historicalRiskLevel = $campaign['historical_risk_level'] ?? NULL;
-    $config = $riskConfig['historical'];
-
-    if ($historicalRiskLevel === NULL) {
-      return (float) $config['no_history'];
-    }
-
-    // Map historical risk level to score
-    $mapping = [
-      'critical' => $config['known_bad_actor'],
-      'high' => $config['known_bad_actor'],
-      'medium' => $config['seen_before_medium'],
-      'low' => $config['seen_before_low'],
-      'noise' => $config['no_history'],
-    ];
-
-    return (float) ($mapping[$historicalRiskLevel] ?? $config['no_history']);
   }
 
   /**

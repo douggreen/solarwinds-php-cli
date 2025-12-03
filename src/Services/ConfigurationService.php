@@ -616,8 +616,7 @@ class ConfigurationService
         'origin_impact' => 0.30,
         'volume_rate' => 0.25,
         'attack_severity' => 0.20,
-        'recency' => 0.15,
-        'historical' => 0.05,
+        'recency' => 0.20,
         'server_impact' => 0.05,
       ],
       'origin_impact' => [
@@ -660,12 +659,6 @@ class ConfigurationService
         'aging_hours' => 168,
         'aging' => 20,
         'historical' => 0,
-      ],
-      'historical' => [
-        'no_history' => 0,
-        'seen_before_low' => 20,
-        'seen_before_medium' => 50,
-        'known_bad_actor' => 100,
       ],
       'server_impact' => [
         'no_php_execution' => 0,

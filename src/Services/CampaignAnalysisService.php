@@ -754,55 +754,6 @@ SQL
   }
 
   /**
-   * Get historical risk level for an IP address.
-   *
-   * Queries the campaign_analysis table for previous risk assessments of this IP.
-   * Returns the highest risk level seen within the last 30 days.
-   * Recalculates risk level from cached risk_inputs.
-   *
-   * @param string $ip IP address to lookup
-   * @return string|null Risk level (critical, high, medium, low, noise) or NULL if no history
-   */
-  public function getHistoricalRiskLevel(string $ip): ?string
-  {
-    $sql = "
-      SELECT risk_inputs
-      FROM campaign_analysis
-      WHERE ip = :ip
-        AND analyzed_at >= datetime('now', '-30 days')
-        AND risk_inputs IS NOT NULL
-      ORDER BY analyzed_at DESC
-      LIMIT 10
-    ";
-
-    $stmt = $this->database->prepare($sql);
-    $stmt->execute([':ip' => $ip]);
-    $results = $stmt->fetchAll(\PDO::FETCH_ASSOC);
-
-    if (empty($results)) {
-      return NULL;
-    }
-
-    // Recalculate risk levels from cached inputs and return highest.
-    $highestLevel = NULL;
-    $levelPriority = ['critical' => 1, 'high' => 2, 'medium' => 3, 'low' => 4, 'noise' => 5];
-
-    foreach ($results as $row) {
-      $riskInputs = json_decode($row['risk_inputs'] ?? '[]', TRUE);
-      if (!empty($riskInputs)) {
-        $riskResult = $this->riskScoring->calculateRiskScore($riskInputs);
-        $level = $riskResult['level'];
-
-        if ($highestLevel === NULL || ($levelPriority[$level] ?? 6) < ($levelPriority[$highestLevel] ?? 6)) {
-          $highestLevel = $level;
-        }
-      }
-    }
-
-    return $highestLevel;
-  }
-
-  /**
    * Create an analysis run record.
    *
    * Captures configuration snapshot, git context, and summary statistics.

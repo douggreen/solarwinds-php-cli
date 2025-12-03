@@ -56,14 +56,18 @@ Based on testing with real data (--1d and --all timeframes):
 
    **Impact:** Single-event downgrade rule now correctly identifies true one-time events vs recurring patterns.
 
-3. **Risk Scoring Simplification** (Next priority)
-   - [ ] Run baseline with current config: `exploits --3d --show-action=all`
+3. **Risk Scoring Simplification** (In progress)
+   - :white_check_mark: Run baseline with current config
+   - :white_check_mark: Remove historical factor (5% weight, redundant with deep dive)
+   - :white_check_mark: Test with cached data - no blocking decision changes
    - [ ] Analyze false positives and failure patterns
-   - [ ] Simplify from 6 factors to 3 core factors (severity × volume × recency)
-   - [ ] Remove/defer: origin_impact, historical, server_impact
-   - [ ] Implement simplified multiplicative formula instead of weighted sum
+   - [ ] Further simplification: Remove server_impact, keep origin_impact
+   - [ ] Evaluate multiplicative formula vs weighted sum
    - [ ] Test with same timeframe, compare results
    - [ ] Iterate based on improvements/regressions
+
+   **Status:** Reduced from 6 to 5 factors. Current weights: origin_impact (30%), volume (25%),
+   severity (20%), recency (20%), server_impact (5%).
 
    **Approach:** Human-guided simplification rather than automated parameter sweep.
    Start simple, add complexity only when justified by real failure cases.
