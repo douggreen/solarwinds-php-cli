@@ -200,7 +200,7 @@ class LogQueryService
    */
   public function getLogsByIp(string $ip, ?int $since = NULL, ?int $until = NULL): array
   {
-    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country FROM logs WHERE client_ip = :ip';
+    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status FROM logs WHERE client_ip = :ip';
     $params = [':ip' => $ip];
 
     if ($since) {
