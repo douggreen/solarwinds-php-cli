@@ -323,22 +323,32 @@ class CampaignAnalysisService
   /**
    * Save campaigns to campaign_analysis table.
    *
+   * Optionally creates an analysis run record and links all campaigns to it.
+   *
    * @param array $campaigns Array of campaigns
    * @param string $timeRange Time range used
    * @param string $timeStart Start timestamp
    * @param string $timeEnd End timestamp
-   * @return int Number of campaigns saved
+   * @param bool $saveRun Whether to create analysis_run record (development feature)
+   * @return array ['saved' => int, 'run_id' => int|null]
    */
   public function saveCampaigns(
     array $campaigns,
     string $timeRange,
     string $timeStart,
-    string $timeEnd
-  ): int {
+    string $timeEnd,
+    bool $saveRun = FALSE
+  ): array {
+    // Create analysis run if enabled (development feature).
+    $runId = NULL;
+    if ($saveRun) {
+      $runId = $this->createAnalysisRun($campaigns, $timeRange, $timeStart, $timeEnd);
+    }
+
     $saved = 0;
 
     foreach ($campaigns as $campaign) {
-      // Skip saving trusted IPs and very low confidence campaigns
+      // Skip saving trusted IPs and very low confidence campaigns.
       if ($this->isTrustedIp($campaign['ip'])) {
         continue;
       }
@@ -355,13 +365,14 @@ class CampaignAnalysisService
         $timeRange,
         $timeStart,
         $timeEnd,
-        $fromDeepDive
+        $fromDeepDive,
+        $runId
       );
 
       $saved++;
     }
 
-    return $saved;
+    return ['saved' => $saved, 'run_id' => $runId];
   }
 
   /**
@@ -459,6 +470,7 @@ class CampaignAnalysisService
    * @param string $timeStart ISO 8601 timestamp
    * @param string $timeEnd ISO 8601 timestamp
    * @param bool $fromDeepDive Whether from deep-dive
+   * @param int|null $runId Optional analysis run ID to link this campaign to
    * @return int Campaign analysis ID
    */
   protected function saveCampaignAnalysisToDb(
@@ -466,7 +478,8 @@ class CampaignAnalysisService
     string $timeRange,
     string $timeStart,
     string $timeEnd,
-    bool $fromDeepDive = FALSE
+    bool $fromDeepDive = FALSE,
+    ?int $runId = NULL
   ): int {
     $blockingRec = $campaign['blocking_recommendation'] ?? [];
 
@@ -480,7 +493,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   should_block, confidence, block_reasons,
   risk_inputs,
   user_agent, bot_name, total_volume, ratio_edge_blocked,
-  from_deep_dive, targeted_sites
+  from_deep_dive, targeted_sites, run_id
 ) VALUES (
   :ip, :country,
   :time_start, :time_end, :time_range, CURRENT_TIMESTAMP,
@@ -490,7 +503,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   :should_block, :confidence, :block_reasons,
   :risk_inputs,
   :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
-  :from_deep_dive, :targeted_sites
+  :from_deep_dive, :targeted_sites, :run_id
 )
 SQL
     );
@@ -528,6 +541,7 @@ SQL
       ':ratio_edge_blocked' => $volumeAnalysis['ratio_edge_blocked'] ?? 0,
       ':from_deep_dive' => $fromDeepDive ? 1 : 0,
       ':targeted_sites' => json_encode($campaign['targeted_sites'] ?? []),
+      ':run_id' => $runId,
     ]);
 
     return (int) $this->database->lastInsertId();
@@ -786,6 +800,174 @@ SQL
     }
 
     return $highestLevel;
+  }
+
+  /**
+   * Create an analysis run record.
+   *
+   * Captures configuration snapshot, git context, and summary statistics.
+   *
+   * @param array $campaigns Array of campaigns to be saved
+   * @param string $timeRange Time range used
+   * @param string $timeStart Start timestamp (ISO 8601)
+   * @param string $timeEnd End timestamp (ISO 8601)
+   * @return int The run_id of the created analysis run
+   */
+  public function createAnalysisRun(
+    array $campaigns,
+    string $timeRange,
+    string $timeStart,
+    string $timeEnd
+  ): int {
+    // Get configuration snapshots.
+    $riskScoringConfig = $this->config->getRiskScoringConfig();
+    $blockingConfig = $this->config->get('blocking', []);
+
+    // Get git information.
+    $gitInfo = $this->getGitInfo();
+
+    // Calculate summary statistics.
+    $stats = $this->calculateSummaryStats($campaigns);
+
+    // Insert analysis run.
+    $stmt = $this->database->prepare(<<<'SQL'
+INSERT INTO analysis_runs (
+  run_at, time_range, time_start, time_end,
+  risk_scoring_config, blocking_config,
+  git_commit, git_branch, git_dirty,
+  total_campaigns, block_now_count, block_maybe_count, review_count, allow_count,
+  critical_count, high_count, medium_count, low_count
+) VALUES (
+  CURRENT_TIMESTAMP, :time_range, :time_start, :time_end,
+  :risk_scoring_config, :blocking_config,
+  :git_commit, :git_branch, :git_dirty,
+  :total_campaigns, :block_now_count, :block_maybe_count, :review_count, :allow_count,
+  :critical_count, :high_count, :medium_count, :low_count
+)
+SQL
+    );
+
+    $stmt->execute([
+      ':time_range' => $timeRange,
+      ':time_start' => $timeStart,
+      ':time_end' => $timeEnd,
+      ':risk_scoring_config' => json_encode($riskScoringConfig),
+      ':blocking_config' => json_encode($blockingConfig),
+      ':git_commit' => $gitInfo['commit'],
+      ':git_branch' => $gitInfo['branch'],
+      ':git_dirty' => $gitInfo['dirty'] ? 1 : 0,
+      ':total_campaigns' => $stats['total'],
+      ':block_now_count' => $stats['block_now'],
+      ':block_maybe_count' => $stats['block_maybe'],
+      ':review_count' => $stats['review'],
+      ':allow_count' => $stats['allow'],
+      ':critical_count' => $stats['critical'],
+      ':high_count' => $stats['high'],
+      ':medium_count' => $stats['medium'],
+      ':low_count' => $stats['low'],
+    ]);
+
+    return (int) $this->database->lastInsertId();
+  }
+
+  /**
+   * Get git repository information.
+   *
+   * @return array Git information (commit, branch, dirty)
+   */
+  protected function getGitInfo(): array
+  {
+    $info = [
+      'commit' => NULL,
+      'branch' => NULL,
+      'dirty' => FALSE,
+    ];
+
+    // Check if we're in a git repository.
+    $gitDir = getcwd();
+    while ($gitDir !== '/' && !is_dir($gitDir . '/.git')) {
+      $gitDir = dirname($gitDir);
+    }
+
+    if (!is_dir($gitDir . '/.git')) {
+      return $info;
+    }
+
+    // Get current commit.
+    $commit = @shell_exec('cd ' . escapeshellarg($gitDir) . ' && git rev-parse HEAD 2>/dev/null');
+    if ($commit) {
+      $info['commit'] = trim($commit);
+    }
+
+    // Get current branch.
+    $branch = @shell_exec('cd ' . escapeshellarg($gitDir) . ' && git rev-parse --abbrev-ref HEAD 2>/dev/null');
+    if ($branch) {
+      $info['branch'] = trim($branch);
+    }
+
+    // Check if working directory is dirty.
+    $status = @shell_exec('cd ' . escapeshellarg($gitDir) . ' && git status --porcelain 2>/dev/null');
+    if ($status && trim($status) !== '') {
+      $info['dirty'] = TRUE;
+    }
+
+    return $info;
+  }
+
+  /**
+   * Calculate summary statistics from campaigns.
+   *
+   * @param array $campaigns Array of campaigns
+   * @return array Summary statistics
+   */
+  protected function calculateSummaryStats(array $campaigns): array
+  {
+    $stats = [
+      'total' => 0,
+      'block_now' => 0,
+      'block_maybe' => 0,
+      'review' => 0,
+      'allow' => 0,
+      'critical' => 0,
+      'high' => 0,
+      'medium' => 0,
+      'low' => 0,
+    ];
+
+    foreach ($campaigns as $campaign) {
+      // Skip trusted IPs and none confidence.
+      if ($this->isTrustedIp($campaign['ip'])) {
+        continue;
+      }
+
+      $blockingRec = $campaign['blocking_recommendation'] ?? [];
+      $confidence = $blockingRec['confidence'] ?? 'none';
+
+      if ($confidence === 'none') {
+        continue;
+      }
+
+      $stats['total']++;
+
+      // Count by blocking decision.
+      if ($confidence === 'urgent' || $confidence === 'high') {
+        $stats['block_now']++;
+      }
+      elseif ($confidence === 'medium') {
+        $stats['block_maybe']++;
+      }
+      elseif ($confidence === 'low') {
+        $stats['review']++;
+      }
+
+      // Count by severity.
+      $severity = $campaign['campaign_severity'] ?? 'low';
+      if (isset($stats[$severity])) {
+        $stats[$severity]++;
+      }
+    }
+
+    return $stats;
   }
 
 }

@@ -28,16 +28,31 @@ Based on testing with real data (--1d and --all timeframes):
 
 ### High Priority Tasks
 
-1. **Testing Infrastructure** (Required for parameter tuning)
-   - [ ] Build ground truth dataset - Manually classify 20-30 campaigns
-   - [ ] Create parameter sweep test harness - Test ~500 configurations
-   - [ ] Implement evaluation metrics (F1, precision, recall)
-   - [ ] Generate optimization reports
+1. **Analysis Run Tracking** (CURRENT - Required for iterative improvement)
+   - [ ] Add `analysis_runs` table to track each exploit detection run
+   - [ ] Capture configuration snapshot (risk_scoring, blocking config)
+   - [ ] Record git commit/branch/dirty status for reproducibility
+   - [ ] Link campaigns to runs via run_id foreign key
+   - [ ] Save summary statistics (total, block_now, block_maybe counts)
+   - [ ] Add `exploits history` command to list recent runs
+   - [ ] Add `exploits compare RUN1 RUN2` to compare before/after
+   - [ ] Add `exploits show-run RUN` to view run details
+   - [ ] Add `exploits rescore --run=RUN` to re-score with current config
 
-2. **Parameter Tuning** (After testing infrastructure)
-   - Risk scoring weights (origin, volume, severity, recency, historical, server impact)
-   - Volume thresholds (what req/hr rates map to what scores)
-   - Risk level cutoffs (critical/high/medium/low/noise boundaries)
+   **Goal:** Preserve baseline results before simplifying risk scoring system.
+   Enables iterative improvement with clear before/after comparison.
+
+2. **Risk Scoring Simplification** (After run tracking)
+   - [ ] Run baseline with current config: `exploits --3d --show-action=all`
+   - [ ] Analyze false positives and failure patterns
+   - [ ] Simplify from 6 factors to 3 core factors (severity × volume × recency)
+   - [ ] Remove/defer: origin_impact, historical, server_impact
+   - [ ] Implement simplified multiplicative formula instead of weighted sum
+   - [ ] Test with same timeframe, compare results
+   - [ ] Iterate based on improvements/regressions
+
+   **Approach:** Human-guided simplification rather than automated parameter sweep.
+   Start simple, add complexity only when justified by real failure cases.
 
 3. **Display Enhancements**
    - [ ] Sort by recency-weighted risk score
@@ -58,9 +73,23 @@ Based on testing with real data (--1d and --all timeframes):
    - ⚠️  Bot filtering logic may need tuning (bots still appearing in results)
    - [ ] Drupal legitimate endpoint detection (/system/ajax, /toolbar/subtrees)
 
-### Lower Priority Tasks
+### Lower Priority Tasks (Deferred)
 
-6. **Advanced Detection Features**
+6. **Automated Testing Infrastructure** (May not be needed if simplification works)
+   - [ ] Build ground truth dataset - Manually classify 20-30 campaigns
+   - [ ] Create parameter sweep test harness - Test ~500 configurations
+   - [ ] Implement evaluation metrics (F1, precision, recall)
+   - [ ] Generate optimization reports
+
+   **Note:** Parameter sweep approach assumes architecture is correct and just needs tuning.
+   Simplification approach questions the architecture itself. Trying simplification first.
+
+7. **Parameter Tuning** (Only if automated testing proves necessary)
+   - Risk scoring weights (origin, volume, severity, recency, historical, server impact)
+   - Volume thresholds (what req/hr rates map to what scores)
+   - Risk level cutoffs (critical/high/medium/low/noise boundaries)
+
+8. **Advanced Detection Features**
    - [ ] Parameter enumeration detection (100+ random params on same path)
    - [ ] Coordinated attack detection (multiple IPs with same patterns)
    - [ ] Blocked IP tracking (suppress alerts for already-blocked IPs)

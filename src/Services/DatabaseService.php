@@ -382,6 +382,68 @@ SQL;
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_status ON realtime_alerts(status)");
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_alerts_ip ON realtime_alerts(ip)");
 
+    // Create analysis_runs table for tracking exploit detection runs.
+    $analysisRunsSql = <<<'SQL'
+CREATE TABLE IF NOT EXISTS analysis_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+  -- When and what was analyzed
+  run_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  time_range TEXT NOT NULL,
+  time_start TEXT NOT NULL,
+  time_end TEXT NOT NULL,
+
+  -- Configuration snapshot (JSON)
+  risk_scoring_config TEXT NOT NULL,
+  blocking_config TEXT NOT NULL,
+
+  -- Git context
+  git_commit TEXT,
+  git_branch TEXT,
+  git_dirty INTEGER DEFAULT 0,
+
+  -- Summary statistics
+  total_campaigns INTEGER DEFAULT 0,
+  block_now_count INTEGER DEFAULT 0,
+  block_maybe_count INTEGER DEFAULT 0,
+  review_count INTEGER DEFAULT 0,
+  allow_count INTEGER DEFAULT 0,
+
+  -- Severity breakdown
+  critical_count INTEGER DEFAULT 0,
+  high_count INTEGER DEFAULT 0,
+  medium_count INTEGER DEFAULT 0,
+  low_count INTEGER DEFAULT 0,
+
+  -- User notes
+  notes TEXT,
+
+  UNIQUE(run_at, time_start, time_end)
+);
+SQL;
+    $this->db->exec($analysisRunsSql);
+
+    // Create indexes for analysis_runs.
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_runs_time_range ON analysis_runs(time_range)");
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_runs_run_at ON analysis_runs(run_at)");
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_runs_git_commit ON analysis_runs(git_commit)");
+
+    // Add run_id column to campaign_analysis if it doesn't exist.
+    $campaignColumns = [];
+    $result = $this->db->query("PRAGMA table_info(campaign_analysis)");
+    if ($result) {
+      while ($row = $result->fetch(PDO::FETCH_ASSOC)) {
+        $campaignColumns[] = $row['name'];
+      }
+    }
+
+    if (!in_array('run_id', $campaignColumns)) {
+      $this->db->exec("ALTER TABLE campaign_analysis ADD COLUMN run_id INTEGER REFERENCES analysis_runs(id)");
+    }
+
+    // Create index for campaign_analysis.run_id.
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_campaign_run_id ON campaign_analysis(run_id)");
+
     // Get list of existing columns to avoid creating indexes on non-existent columns.
     $existingColumns = [];
     $result = $this->db->query("PRAGMA table_info(logs)");
