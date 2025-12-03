@@ -98,7 +98,8 @@ class LogQueryService
     // NOTE: data column is optional - only included when $includeData = TRUE for display features that might need it
     // Use INDEXED BY hint when we have time constraints to force idx_time_method usage
     // (prevents SQLite from using idx_req_method which causes expensive TEMP B-TREE sorts)
-    $indexHint = ($since || $until) ? ' INDEXED BY idx_time_method' : '';
+    // However, don't use hint if there's a custom WHERE clause - let SQLite choose the optimal index
+    $indexHint = (($since || $until) && empty($whereClause)) ? ' INDEXED BY idx_time_method' : '';
 
     if ($includeData) {
       $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM logs' . $indexHint . ' WHERE 1=1';
