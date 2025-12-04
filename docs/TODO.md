@@ -6,7 +6,7 @@ This document tracks all remaining work for the SolarWinds log analysis system.
 
 ---
 
-## 🔴 EXPLOIT DETECTION TASKS (Current Priority)
+## :red_circle: EXPLOIT DETECTION TASKS (Current Priority)
 
 The exploit detection system currently flags too much low-volume noise as critical threats. The risk scoring infrastructure is implemented but needs testing and parameter tuning. Multi-timeframe intelligence and additional filtering features are planned.
 
@@ -19,8 +19,8 @@ Based on testing with real data (--1d and --all timeframes):
 
 **Issue 2: No Recency Prioritization in Display**
 - Old attacks shown with same priority as active threats
-- ✅ Recency scoring implemented in RiskScoringService
-- ❌ Display sorting and indicators not yet implemented
+- :white_check_mark: Recency scoring implemented in RiskScoringService
+- :x: Display sorting and indicators not yet implemented
 
 **Issue 3: Too Many "BLOCK MAYBE" Results**
 - 235 campaigns in 2-week dataset - too many to manually review
@@ -28,35 +28,15 @@ Based on testing with real data (--1d and --all timeframes):
 
 ### High Priority Tasks
 
-1. **Analysis Run Tracking** (:white_check_mark: COMPLETED)
-   - :white_check_mark: Add `analysis_runs` table to track each exploit detection run
-   - :white_check_mark: Capture configuration snapshot (risk_scoring, blocking config)
-   - :white_check_mark: Record git commit/branch/dirty status for reproducibility
-   - :white_check_mark: Link campaigns to runs via run_id foreign key
-   - :white_check_mark: Save summary statistics (total, block_now, block_maybe counts)
-   - :white_check_mark: Add `--save-run` flag to enable tracking
-   - :white_check_mark: Document in EXPLOITS.md
-   - [ ] Add `exploits history` command to list recent runs (optional, deferred)
-   - [ ] Add `exploits compare RUN1 RUN2` to compare before/after (optional, deferred)
-   - [ ] Add `exploits show-run RUN` to view run details (optional, deferred)
-   - [ ] Add `exploits rescore --run=RUN` to re-score with current config (optional, deferred)
+1. **Analysis Run Query Commands** (optional, deferred)
+   - [ ] Add `exploits history` command to list recent runs
+   - [ ] Add `exploits compare RUN1 RUN2` to compare before/after
+   - [ ] Add `exploits show-run RUN` to view run details
+   - [ ] Add `exploits rescore --run=RUN` to re-score with current config
 
-   **Status:** Core tracking implemented. Can now run with `--save-run` to capture config snapshots.
-   Additional query commands (history/compare/show-run) are optional enhancements.
+   Note: Core run tracking is implemented (`--save-run`). These are optional query enhancements.
 
-2. **Deep Dive Architecture Refactoring** (:white_check_mark: COMPLETED)
-   - :white_check_mark: Change deep dive trigger from "new IPs only" to "BLOCK NOW/BLOCK MAYBE campaigns"
-   - :white_check_mark: Use full history time span for single-event detection (not just current window)
-   - :white_check_mark: Recalculate blocking recommendations after deep dive with full context
-   - :white_check_mark: Re-enable single-event downgrade logic using full history
-
-   **Problem Solved:** IPs attacking sporadically (e.g., once every 2 weeks) were appearing as "single events"
-   in short analysis windows (e.g., 3 days), triggering false positive downgrades. Now deep dives evaluate
-   the full attack history, preventing incorrect classifications.
-
-   **Impact:** Single-event downgrade rule now correctly identifies true one-time events vs recurring patterns.
-
-3. **Risk Scoring Simplification** (In progress)
+2. **Risk Scoring Simplification** (In progress)
    - :white_check_mark: Run baseline with current config
    - :white_check_mark: Remove historical factor (5% weight, redundant with deep dive)
    - :white_check_mark: Test with cached data - no blocking decision changes
@@ -92,9 +72,9 @@ Based on testing with real data (--1d and --all timeframes):
    - [ ] Add alert output format for cron emails
 
 6. **Bot & CMS Filtering**
-   - ✅ CMS-aware filtering implemented (WordPress patterns skip Drupal sites)
-   - ✅ Bot detection implemented (classifies common search engine bots)
-   - ⚠️  Bot filtering logic may need tuning (bots still appearing in results)
+   - :white_check_mark: CMS-aware filtering implemented (WordPress patterns skip Drupal sites)
+   - :white_check_mark: Bot detection implemented (classifies common search engine bots)
+   - :warning: Bot filtering logic may need tuning (bots still appearing in results)
    - [ ] Drupal legitimate endpoint detection (/system/ajax, /toolbar/subtrees)
 
 ### Lower Priority Tasks (Deferred)
@@ -113,61 +93,26 @@ Based on testing with real data (--1d and --all timeframes):
    - Volume thresholds (what req/hr rates map to what scores)
    - Risk level cutoffs (critical/high/medium/low/noise boundaries)
 
-9. **IP Range Combination Logic** (:white_check_mark: COMPLETED)
-   - :white_check_mark: Detect when multiple IPs from same subnet show similar attack patterns
-   - :white_check_mark: IPv4: Combine /24 subnets when 3+ IPs attack with matching patterns
-   - :white_check_mark: IPv6: Combine /64 subnets when 2+ IPs attack with matching patterns
-   - :white_check_mark: Display combined ranges as "192.168.1.0/24 (5 IPs)" in campaign output
-   - :white_check_mark: Pattern matching: Overlap in critical/high severity scan types
-   - :white_check_mark: Metrics aggregation: Sum requests, combined countries, recalculated rates
-   - :white_check_mark: Store original IPs for --details view
-
-   **Implementation:** Runs after bot spoofing detection, before database save. Groups campaigns
-   by subnet and combines when patterns match. Handles both IPv4 and IPv6 addresses.
-
-10. **Parameter Enumeration Detection**
+9. **Parameter Enumeration Detection**
     - [ ] Detect attacks using 100+ random parameter values on same endpoint
     - [ ] Example: /api/endpoint?param=value1, /api/endpoint?param=value2, etc.
     - [ ] Flag as distinct attack pattern separate from path enumeration
 
-11. **Coordinated Attack Detection**
+10. **Coordinated Attack Detection**
     - [ ] Detect multiple IPs with identical attack patterns (same paths, same timing)
     - [ ] Group coordinated attacks into single campaign with multiple source IPs
     - [ ] Distinguish from coincidental similar attacks
 
-12. **Blocked IP Tracking**
+11. **Blocked IP Tracking**
     - [ ] Track IPs that have been blocked at firewall/WAF level
     - [ ] Suppress BLOCK NOW alerts for already-blocked IPs
     - [ ] Show "Already Blocked" status in campaign display
-
-### Implementation Status Summary
-
-**✅ COMPLETED:**
-- Analysis run tracking with configuration snapshots (DatabaseService, CampaignAnalysisService)
-- Deep dive architecture refactoring (evaluates full history for BLOCK NOW/BLOCK MAYBE)
-- Single-event detection using full history time span (prevents false positive downgrades)
-- Risk scoring system with 6 factors (RiskScoringService.php)
-- Recency weighting (calculateRecencyScore)
-- CMS-aware pattern filtering (getCmsType, detectAttackPatterns)
-- Bot classification (classifyUserAgent)
-
-**⚠️ PARTIALLY DONE:**
-- Bot filtering exists but may need tuning
-- Recency scoring done but display sorting/indicators missing
-
-**❌ NOT STARTED:**
-- Testing infrastructure (ground truth + parameter sweep)
-- Multi-timeframe modes and cron setup
-- Drupal endpoint filtering
-- Parameter enumeration detection
-- Coordinated attack detection
-- Blocked IP tracking
 
 ---
 
 ## Code Quality Improvements
 
-### 1. Bot Verification Management Commands (Optional)
+### Bot Verification Management Commands (Optional)
 
 **Optional CLI Tools for Bot IP Verification:**
    - `solarwinds bot:update-ranges --all` - Force update all bot ranges
@@ -176,24 +121,16 @@ Based on testing with real data (--1d and --all timeframes):
 
 Note: Bot IP verification is fully functional and automatic (updates every 6 hours). These commands would only provide manual control and debugging capabilities.
 
-## Code Quality Improvements
-
 ### High Priority Tasks
 
-1. **Use PHP Constructor Property Promotion**
-   - Refactor all service and command constructors to use PHP 8.0+ property promotion syntax
-   - Example: `public function __construct(protected DatabaseService $database)` instead of separate property declaration and assignment
-   - Makes code more concise and eliminates boilerplate
-   - Already used in CampaignAnalysisService - apply consistently across codebase
-
-2. **Research and Implement Testing Framework**
+1. **Research and Implement Testing Framework**
    - Evaluate PHPUnit vs other PHP testing frameworks
    - Design test strategy for command classes and services
    - Create integration tests comparing output with original shell scripts
    - Implement automated validation of backward compatibility
    - Set up continuous integration testing pipeline
 
-3. **Review DatabaseService for Abstraction Violations**
+2. **Review DatabaseService for Abstraction Violations**
    - Application-level code has crept into DatabaseService again
    - DatabaseService should contain ONLY:
      - Schema management (CREATE TABLE, indexes)
@@ -258,16 +195,6 @@ Note: Bot IP verification is fully functional and automatic (updates every 6 hou
     - Test older commits to confirm when regression occurred
     - Consider pattern matching optimizations (early termination, compiled regexes, etc.)
     - Verify data volume hasn't increased (more rows = slower processing)
-- **✅ Denormalize JSON Message Data into Separate Columns** (COMPLETED):
-  - Migrated frequently-queried fields to dedicated columns:
-    - `client_ip` - used for grouping, filtering, and verification
-    - `req_user_agent` - used for bot detection and classification
-    - `req_uri` - used for exploit pattern matching
-    - `resp_status` - used for filtering and campaign analysis
-  - Kept `message` column for less-frequently accessed fields
-  - Implemented migration strategy: ALTER TABLE, backfill from JSON, updated sync logic
-  - Maintained backward compatibility: JSON parsing for old records without denormalized columns
-  - Achieved massive performance improvement for large queries (--all, --2w, etc.)
 - **Database Retention & Cleanup Policy**:
   - Review data retention strategy as database grows over time
   - Consider implementing automatic cleanup of old logs (e.g., >2 weeks)

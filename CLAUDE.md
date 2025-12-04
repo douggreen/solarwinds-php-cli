@@ -86,6 +86,10 @@ When the user asks to "show me the TODO list" or similar:
 - Automatically present the TODO list using the SESSION STARTUP PROTOCOL format
 - This helps maintain momentum and allows the user to choose the next task
 
+**TODO List Maintenance:**
+- Remove completed items from TODO.md entirely rather than marking them as completed
+- Keep TODO.md focused on remaining work, not as a historical record
+
 ### **Collaboration Management**
 - Watch for cascade violations - Multiple pattern violations signal collaboration breakdown threshold
 - Recognize collaboration breakdown threshold - When correction overhead exceeds implementation benefit
