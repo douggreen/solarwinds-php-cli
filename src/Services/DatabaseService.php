@@ -196,7 +196,7 @@ CREATE TABLE IF NOT EXISTS campaign_analysis (
   time_span_days REAL,
 
   -- Attack patterns (JSON arrays)
-  attack_types TEXT,
+  scan_types TEXT,
   campaign_severity TEXT,
   attack_severity TEXT,
   top_paths TEXT,
@@ -281,7 +281,7 @@ CREATE TABLE IF NOT EXISTS realtime_alerts (
   time_window TEXT NOT NULL,
   requests_in_window INTEGER,
   request_rate REAL,
-  attack_types TEXT,
+  scan_types TEXT,
 
   -- Context
   in_historical_analysis INTEGER DEFAULT 0,

@@ -422,7 +422,7 @@ class CampaignAnalysisService
         'first_seen' => $row['first_seen'],
         'last_seen' => $row['last_seen'],
         'time_span_days' => $row['time_span_days'],
-        'attack_types' => $row['attack_types'],
+        'scan_types' => $row['scan_types'],
         'severity' => $row['campaign_severity'],
         'top_paths' => $row['top_paths'],
         'targeted_sites' => $row['targeted_sites'] ?? [],
@@ -488,7 +488,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   ip, country,
   time_start, time_end, time_range, analyzed_at,
   total_requests, exploit_requests, first_seen, last_seen, time_span_days,
-  attack_types, campaign_severity, attack_severity, top_paths,
+  scan_types, campaign_severity, attack_severity, top_paths,
   behavior_type, request_rate, ratio_40x, ratio_exploit, path_diversity, uri_dup_ratio,
   should_block, confidence, block_reasons,
   risk_inputs,
@@ -498,7 +498,7 @@ INSERT OR REPLACE INTO campaign_analysis (
   :ip, :country,
   :time_start, :time_end, :time_range, CURRENT_TIMESTAMP,
   :total_requests, :exploit_requests, :first_seen, :last_seen, :time_span_days,
-  :attack_types, :campaign_severity, :attack_severity, :top_paths,
+  :scan_types, :campaign_severity, :attack_severity, :top_paths,
   :behavior_type, :request_rate, :ratio_40x, :ratio_exploit, :path_diversity, :uri_dup_ratio,
   :should_block, :confidence, :block_reasons,
   :risk_inputs,
@@ -521,7 +521,7 @@ SQL
       ':first_seen' => $campaign['first_seen'] ?? NULL,
       ':last_seen' => $campaign['last_seen'] ?? NULL,
       ':time_span_days' => $campaign['time_span_days'] ?? 0,
-      ':attack_types' => json_encode($campaign['attack_types'] ?? []),
+      ':scan_types' => json_encode($campaign['scan_types'] ?? []),
       ':campaign_severity' => $campaign['campaign_severity'] ?? 'low',
       ':attack_severity' => $blockingRec['attack_severity'] ?? 'low',
       ':top_paths' => json_encode($campaign['top_paths'] ?? []),
@@ -571,7 +571,7 @@ SQL
     }
 
     // Decode JSON fields.
-    $result['attack_types'] = json_decode($result['attack_types'] ?? '[]', TRUE);
+    $result['scan_types'] = json_decode($result['scan_types'] ?? '[]', TRUE);
     $result['top_paths'] = json_decode($result['top_paths'] ?? '[]', TRUE);
     $result['block_reasons'] = json_decode($result['block_reasons'] ?? '[]', TRUE);
     $result['targeted_sites'] = json_decode($result['targeted_sites'] ?? '[]', TRUE);
@@ -625,7 +625,7 @@ SQL
     $results = [];
     while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
       // Decode JSON fields.
-      $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
+      $row['scan_types'] = json_decode($row['scan_types'] ?? '[]', TRUE);
       $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
       $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
       $results[] = $row;
@@ -727,7 +727,7 @@ SQL
 
     while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
       // Decode JSON fields.
-      $row['attack_types'] = json_decode($row['attack_types'] ?? '[]', TRUE);
+      $row['scan_types'] = json_decode($row['scan_types'] ?? '[]', TRUE);
       $row['top_paths'] = json_decode($row['top_paths'] ?? '[]', TRUE);
       $row['block_reasons'] = json_decode($row['block_reasons'] ?? '[]', TRUE);
       $row['targeted_sites'] = json_decode($row['targeted_sites'] ?? '[]', TRUE);
