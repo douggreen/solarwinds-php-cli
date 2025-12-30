@@ -138,6 +138,7 @@ When the user asks to "show me the TODO list" or similar:
 
 ### PHP Coding Standards
 - **Use uppercase NULL, TRUE, FALSE** - Always capital letters for PHP constants
+- **Space after type casts** - Use `(int) $value` not `(int)$value` (PSR-12 style)
 - **Use protected instead of private** - ALWAYS use protected visibility for methods and properties, NEVER use private
   - Services should be extensible, not sealed APIs with only pre-defined functionality
   - Allows subclassing and extension without requiring modification of the original class

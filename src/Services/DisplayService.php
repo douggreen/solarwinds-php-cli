@@ -1306,52 +1306,46 @@ class DisplayService
   /**
    * Format timestamp for display using compact m-d H:i:s format.
    *
-   * @param string $timestamp ISO timestamp to format
-   * @return string Formatted timestamp
+   * @param string $timestamp Unix timestamp (integer stored as string)
+   * @return string Formatted timestamp or 'unknown'
    */
   protected function formatTimestamp(string $timestamp): string
   {
-    try {
-      $dt = new \DateTime($timestamp);
-      return $dt->format('m-d H:i:s');
-    }
-    catch (\Exception $e) {
-      return $timestamp;
-    }
+    return is_numeric($timestamp) ? date('m-d H:i:s', (int) $timestamp) : 'unknown';
   }
 
   /**
    * Format time range for display (combines first and last seen).
    *
-   * @param string $firstSeen First timestamp
-   * @param string $lastSeen Last timestamp
+   * @param string $firstSeen First timestamp (Unix timestamp as string)
+   * @param string $lastSeen Last timestamp (Unix timestamp as string)
    * @return string Formatted time range
    */
   protected function formatTimeRange(string $firstSeen, string $lastSeen): string
   {
-    $first = $this->formatTimestamp($firstSeen);
-    $last = $this->formatTimestamp($lastSeen);
+    $first = is_numeric($firstSeen) ? (int) $firstSeen : NULL;
+    $last = is_numeric($lastSeen) ? (int) $lastSeen : NULL;
 
-    // If they're the same, just show one timestamp.
-    if ($first === $last) {
-      return $first;
+    // Neither valid.
+    if ($first === NULL && $last === NULL) {
+      return 'unknown';
     }
 
-    // If they're on the same day, show "m-d H:i:s - H:i:s".
-    try {
-      $firstDt = new \DateTime($firstSeen);
-      $lastDt = new \DateTime($lastSeen);
-
-      if ($firstDt->format('m-d') === $lastDt->format('m-d')) {
-        return $firstDt->format('m-d H:i:s') . ' - ' . $lastDt->format('H:i:s');
-      }
+    // Only one valid - show it.
+    if ($first === NULL) {
+      return date('m-d H:i:s', $last);
     }
-    catch (\Exception $e) {
-      // Fall through to default format.
+    if ($last === NULL || $first === $last) {
+      return date('m-d H:i:s', $first);
     }
 
-    // Different days, show full range.
-    return "$first - $last";
+    // Same day - show "m-d H:i:s - H:i:s".
+    if (date('m-d', $first) === date('m-d', $last)) {
+      return date('m-d H:i:s', $first) . ' - ' . date('H:i:s', $last);
+    }
+
+    // Different days - show full range.
+    return date('m-d H:i:s', $first) . ' - ' . date('m-d H:i:s', $last);
   }
 
   /**

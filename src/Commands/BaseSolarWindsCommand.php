@@ -573,12 +573,8 @@ abstract class BaseSolarWindsCommand extends Command
     $display = [];
     $explicitOptions = []; // Track which options were explicitly set by user.
 
-    // Apply default display options first.
-    foreach ($this->defaultDisplayOptions as $option) {
-      $display[$option] = TRUE;
-    }
-
     // Parse --cols option for column display.
+    // If --cols is specified, it replaces defaults; otherwise use defaults.
     $colsOption = $input->getOption('cols');
     if ($colsOption) {
       $cols = array_map('trim', explode(',', $colsOption));
@@ -594,6 +590,12 @@ abstract class BaseSolarWindsCommand extends Command
       }
       // Store column order for display service.
       $display['_order'] = $columnOrder;
+    }
+    else {
+      // No --cols specified, apply default display options.
+      foreach ($this->defaultDisplayOptions as $option) {
+        $display[$option] = TRUE;
+      }
     }
 
     // Handle drupal option (special formatting).
