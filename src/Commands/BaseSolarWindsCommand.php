@@ -1592,94 +1592,86 @@ abstract class BaseSolarWindsCommand extends Command
         break;
       }
 
-      // Split large ranges into 1-day chunks to prevent memory issues.
-      // Chunking is an internal optimization - show user a single progress bar for entire range.
-      $chunks = $this->splitRangeIntoChunks($range['start_time'], $range['end_time']);
+      // Drain the range one chunk at a time. claimNextChunk() atomically
+      // hands out the next unclaimed chunk-sized window — a sibling process
+      // calling the same method against the same range gets a different
+      // chunk, so multi-hour gaps fill cooperatively in parallel.
+      $rangeMessage = $this->formatRangeMessage($range['start_time'], $range['end_time'], $range['reason']);
+      $rangeMessageShown = FALSE;
 
-      // Create sync range tracking entry.
-      $syncId = $this->syncTracking->createSyncRange($range['start_time'], $range['end_time'], count($chunks));
-
-      if (!$this->jsonMode && $showCacheMessage) {
-        $rangeMessage = $this->formatRangeMessage($range['start_time'], $range['end_time'], $range['reason']);
-        $this->io->writeln("<comment>$rangeMessage</comment>");
-      }
-
-      // Create single progress bar for entire range (not per-chunk).
-      $rangeOptions = $options;
-      $rangeOptions['time'] = [
-        'start_time' => $range['start_time'],
-        'end_time' => $range['end_time'],
-      ];
-      $progressBar = $this->createSearchProgressBar($rangeOptions);
-
-      // Mark sync as in progress.
-      $this->syncTracking->updateSyncStatus($syncId, 'in_progress');
-
-      // Track malformed JSON entries and progress.
-      $totalFixed = $chunksCompleted = $rangeRecordsInserted = 0;
-
-      // Create save callback to insert each page immediately.
-      $saveCallback = function(array $pageLogs) use (&$totalNewLogs, &$totalFixed, &$rangeRecordsInserted) {
-        $result = $this->databaseService->insertLogs($pageLogs);
-        $totalNewLogs += $result['inserted'];
-        $totalFixed += $result['fixed'];
-        $rangeRecordsInserted += $result['inserted'];
-      };
-
-      // Process each chunk separately (internal optimization).
-      foreach ($chunks as $chunkIndex => $chunk) {
-        // Check for interruption before each chunk.
+      while (TRUE) {
         if (self::isInterrupted()) {
           $interrupted = TRUE;
-          $this->syncTracking->updateSyncStatus($syncId, 'interrupted');
-          $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
           if (!$this->jsonMode) {
             $this->io->writeln('');
             $this->io->warning('Sync interrupted - continuing with partial data');
           }
-          break 2; // Break out of both chunk and range loops.
+          break 2;
         }
+
+        $claim = $this->syncTracking->claimNextChunk($range['start_time'], $range['end_time']);
+        if ($claim === NULL) {
+          break;
+        }
+
+        // Show the range header only when we actually do work here.
+        if (!$rangeMessageShown && $showCacheMessage && !$this->jsonMode) {
+          $this->io->writeln("<comment>$rangeMessage</comment>");
+          $rangeMessageShown = TRUE;
+        }
+
+        $syncId = $claim['id'];
+        $totalFixed = $chunkRecords = 0;
+
+        $saveCallback = function(array $pageLogs) use (&$totalNewLogs, &$totalFixed, &$chunkRecords) {
+          $result = $this->databaseService->insertLogs($pageLogs);
+          $totalNewLogs += $result['inserted'];
+          $totalFixed += $result['fixed'];
+          $chunkRecords += $result['inserted'];
+        };
 
         try {
-          // Fetch chunk data with incremental saving.
-          // Progress bar continues across all chunks showing overall progress.
           $this->apiService->retrieveLogs(
-            $chunk['start'],
-            $chunk['end'],
-            $this->getProgressCallback($progressBar, $rangeOptions, $totalFixed, $chunkIndex + 1, count($chunks)),
+            $claim['start_time'],
+            $claim['end_time'],
+            NULL,  // No within-chunk progress callback; per-chunk messages serve instead.
             NULL,  // No debug callback
-            $saveCallback  // Save each page immediately
+            $saveCallback
           );
 
-          // Chunk completed successfully - update progress.
-          $chunksCompleted++;
-          $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+          $this->syncTracking->updateSyncProgress($syncId, $chunkRecords, 1);
+          $this->syncTracking->updateSyncStatus($syncId, 'completed');
+
+          if (!$this->jsonMode && $showCacheMessage) {
+            $this->io->writeln(sprintf(
+              '  ✓ %s to %s (%s logs)',
+              date('M j, g:ia', $claim['start_time']),
+              date('M j, g:ia', $claim['end_time']),
+              $this->formatNumber($chunkRecords)
+            ));
+          }
         }
         catch (\Exception $e) {
-          $this->finishProgressBar($progressBar);
-
           // Check if this was an interruption - if so, break loop and continue gracefully.
           if (self::isInterrupted()) {
             $interrupted = TRUE;
             $this->syncTracking->updateSyncStatus($syncId, 'interrupted');
-            $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+            $this->syncTracking->updateSyncProgress($syncId, $chunkRecords, 0);
             if (!$this->jsonMode) {
               $this->io->writeln('');
               $this->io->warning('Sync interrupted - continuing with partial data');
             }
-            break 2;  // Break out of both chunk and range loops.
+            break 2;
           }
 
-          // Non-interruption error - mark as failed.
           $this->syncTracking->updateSyncStatus($syncId, 'failed', $e->getMessage());
-          $this->syncTracking->updateSyncProgress($syncId, $rangeRecordsInserted, $chunksCompleted);
+          $this->syncTracking->updateSyncProgress($syncId, $chunkRecords, 0);
 
-          // Report and re-throw.
           if (!$this->jsonMode) {
             $this->io->error(sprintf(
-              'Failed to fetch range %s to %s: %s',
-              $range['start_time'],
-              $range['end_time'],
+              'Failed to fetch chunk %s to %s: %s',
+              date('M j, g:ia', $claim['start_time']),
+              date('M j, g:ia', $claim['end_time']),
               $e->getMessage()
             ));
 
@@ -1688,16 +1680,15 @@ abstract class BaseSolarWindsCommand extends Command
             }
           }
 
-          // Re-throw non-interruption errors to let caller handle them.
           throw $e;
         }
       } // End chunk loop
 
-      // All chunks completed successfully - mark sync as completed.
-      $this->syncTracking->updateSyncStatus($syncId, 'completed');
-
-      // Finish progress bar after all chunks complete.
-      $this->finishProgressBar($progressBar);
+      // If we never showed the range header, the whole range was held by
+      // siblings or already-completed — say so once, then move on.
+      if (!$rangeMessageShown && $showCacheMessage && !$this->jsonMode) {
+        $this->io->writeln('<comment>Range already being synced by another process — skipping</comment>');
+      }
     } // End range loop
 
     // Show sync summary.

@@ -79,7 +79,13 @@ class DatabaseService
       $this->db = new PDO('sqlite:' . $this->dbPath);
       $this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-      // Enable WAL mode for better concurrent access.
+      // Set busy_timeout FIRST so every subsequent PRAGMA, schema-creation,
+      // and query tolerates writer contention from sibling processes. Setting
+      // it after journal_mode would leave a window during init where a busy
+      // database returns SQLITE_BUSY immediately.
+      $this->db->exec('PRAGMA busy_timeout=30000');
+
+      // Enable WAL mode for concurrent readers and a single writer.
       $this->db->exec('PRAGMA journal_mode=WAL');
 
       // Create schema if it doesn't exist.
@@ -566,14 +572,11 @@ SQL;
       return ['inserted' => 0, 'fixed' => 0];
     }
 
-    $this->db->beginTransaction();
+    // Prepare statements once — they persist across transactions on this
+    // connection, so we don't need to re-prepare per batch.
+    $checkStmt = $this->db->prepare('SELECT 1 FROM logs WHERE id = :id LIMIT 1');
 
-    try {
-      // Prepare statement for checking existence (fast PRIMARY KEY lookup)
-      $checkStmt = $this->db->prepare('SELECT 1 FROM logs WHERE id = :id LIMIT 1');
-
-      // Prepare statement for insertion with extracted columns
-      $stmt = $this->db->prepare(<<<'SQL'
+    $stmt = $this->db->prepare(<<<'SQL'
 INSERT OR REPLACE INTO logs (
   id, time, data,
   client_ip, resp_status, req_user_agent, req_uri, orig_host,
@@ -587,18 +590,72 @@ VALUES (
   :program, :message, :url_arguments, :base_path, :cache_status, :region
 )
 SQL
-      );
+    );
 
+    // Batch into smaller transactions to cap how long the writer lock is
+    // held in any one cycle. A single transaction covering thousands of rows
+    // can exceed busy_timeout for a concurrent sync process waiting on the
+    // lock; 500 rows keeps each batch in the ~500ms range.
+    $batchSize = 500;
+    $inserted = $fixed = 0;
+
+    $batches = array_chunk($logs, $batchSize);
+    $lastBatchIndex = count($batches) - 1;
+    foreach ($batches as $i => $batch) {
+      $batchResult = $this->insertLogBatch($batch, $checkStmt, $stmt);
+      $inserted += $batchResult['inserted'];
+      $fixed += $batchResult['fixed'];
+
+      // Yield to other writers between batches. The ~1ms gap between commit
+      // and the next beginTransaction is too brief for SQLite's busy-handler
+      // polling cadence (settles to 25ms intervals) to reliably catch — a
+      // sibling process can spend its entire 30s busy_timeout polling out of
+      // phase. 10ms gives a deterministic release window the busy handler
+      // will see within a single poll. Skip after the last batch.
+      if ($i < $lastBatchIndex) {
+        usleep(10000);
+      }
+    }
+
+    return ['inserted' => $inserted, 'fixed' => $fixed];
+  }
+
+  /**
+   * Insert one batch of logs inside a single transaction.
+   *
+   * Extracted from insertLogs() so the SQLite writer lock is held only for
+   * the duration of one ~500-row batch, allowing concurrent sync processes
+   * to interleave their own writes without exceeding busy_timeout.
+   *
+   * @param array $batch Subset of log entries to insert
+   * @param \PDOStatement $checkStmt Prepared existence-check statement (reused across batches)
+   * @param \PDOStatement $stmt Prepared INSERT statement (reused across batches)
+   * @return array{inserted: int, fixed: int}
+   */
+  protected function insertLogBatch(array $batch, \PDOStatement $checkStmt, \PDOStatement $stmt): array
+  {
+    // Use BEGIN IMMEDIATE (not the default DEFERRED via beginTransaction)
+    // because the first statement in this transaction is a SELECT, which
+    // would otherwise start a read transaction. When a sibling process
+    // holds the writer lock, SQLite refuses to upgrade the read txn to
+    // write (the INSERT step) — it returns SQLITE_BUSY immediately with
+    // no busy_timeout retry, because upgrade-retry could deadlock.
+    // BEGIN IMMEDIATE acquires the writer lock up front, so this whole
+    // batch is a write transaction from the start.
+    $this->db->exec('BEGIN IMMEDIATE');
+    try {
       $inserted = $fixed = 0;
-      foreach ($logs as $log) {
+      foreach ($batch as $log) {
         $logId = $log['id'] ?? '';
 
         // Fast check: does this ID already exist?
         $checkStmt->execute([':id' => $logId]);
         if ($checkStmt->fetchColumn() !== FALSE) {
+          $checkStmt->closeCursor();
           // Already exists - skip expensive JSON processing
           continue;
         }
+        $checkStmt->closeCursor();
 
         $message = $log['message'] ?? '';
 
@@ -784,13 +841,13 @@ SQL
         $inserted++;
       }
 
-      $this->db->commit();
-
-      // Return count of fixed entries for caller to track.
+      // Use exec('COMMIT') to match exec('BEGIN IMMEDIATE') above — PDO's
+      // commit() only knows about transactions started via beginTransaction().
+      $this->db->exec('COMMIT');
       return ['inserted' => $inserted, 'fixed' => $fixed];
     }
     catch (PDOException $e) {
-      $this->db->rollBack();
+      $this->db->exec('ROLLBACK');
       throw new \RuntimeException('Failed to insert logs: ' . $e->getMessage());
     }
   }

@@ -67,31 +67,155 @@ class SyncTrackingService
   }
 
   /**
-   * Create a new sync range tracking entry.
+   * Default chunk size for claimable work units.
    *
-   * Records the start of a sync operation for a specific time range.
-   *
-   * @param string $startTime Start of range (ISO 8601)
-   * @param string $endTime End of range (ISO 8601)
-   * @param int $chunksTotal Total number of chunks to process
-   * @return int Sync range ID
+   * 1 hour is the parallelism granularity: large enough to keep API request
+   * overhead modest on big backfills (336 chunks for a 14-day sync, ~50ms
+   * setup each = ~17s extra total) but small enough that multi-hour gaps
+   * naturally divide across cooperating processes. Smaller would parallelize
+   * more aggressively at the cost of API throughput.
    */
-  public function createSyncRange(int $startTime, int $endTime, int $chunksTotal): int
+  protected const DEFAULT_CHUNK_SECONDS = 3600;
+
+  /**
+   * Atomically claim the next available chunk of work inside [start, end].
+   *
+   * Walks the requested range for the first sub-window that isn't blocked
+   * by an in_progress or completed sync, clips it to chunkSeconds, and
+   * inserts a single sync_ranges row as 'in_progress'. Two concurrent
+   * processes calling this method against the same range will end up
+   * claiming different chunks — the unit of parallelism is the chunk,
+   * not the gap — so a multi-hour gap can be drained cooperatively.
+   *
+   * Returns NULL when no unclaimed work remains in the requested range
+   * (either fully covered by completed syncs or fully held by other
+   * in_progress claims). Caller loops until NULL.
+   *
+   * Runs inside BEGIN IMMEDIATE so the find-and-claim is atomic.
+   *
+   * @param int $rangeStart Outer range start (unix timestamp)
+   * @param int $rangeEnd Outer range end (unix timestamp)
+   * @param int|null $chunkSeconds Max chunk size; defaults to DEFAULT_CHUNK_SECONDS
+   * @return array{id: int, start_time: int, end_time: int}|null
+   */
+  public function claimNextChunk(int $rangeStart, int $rangeEnd, ?int $chunkSeconds = NULL): ?array
   {
-    $stmt = $this->database->prepare(<<<'SQL'
-INSERT INTO sync_ranges (start_time, end_time, status, chunks_total)
-VALUES (:start_time, :end_time, 'pending', :chunks_total)
+    if ($rangeStart >= $rangeEnd) {
+      return NULL;
+    }
+    $chunkSeconds = $chunkSeconds ?? static::DEFAULT_CHUNK_SECONDS;
+
+    // BEGIN IMMEDIATE acquires the writer lock at transaction start; without
+    // it, two concurrent processes could both pass the overlap check before
+    // either insert lands, and both would claim the same range.
+    $this->database->exec('BEGIN IMMEDIATE');
+    try {
+      // Find every in_progress or completed range that overlaps the request.
+      // Including completed ones closes the TOCTOU window where a sync could
+      // complete between detectMissingRanges and claimNextChunk.
+      $stmt = $this->database->prepare(<<<'SQL'
+SELECT start_time, end_time
+FROM sync_ranges
+WHERE status IN ('in_progress', 'completed')
+  AND CAST(start_time AS INTEGER) < :req_end
+  AND CAST(end_time AS INTEGER) > :req_start
+ORDER BY CAST(start_time AS INTEGER) ASC
 SQL
-    );
+      );
+      $stmt->execute([
+        ':req_start' => $rangeStart,
+        ':req_end' => $rangeEnd,
+      ]);
+      $blockers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmt->execute([
-      ':start_time' => $startTime,
-      ':end_time' => $endTime,
-      ':chunks_total' => $chunksTotal,
-    ]);
+      // The first free sub-range is the next chunk's natural home. We take
+      // just the first one rather than claiming everything free — that way a
+      // sibling process can grab the next free piece while we work on this.
+      $subRanges = $this->subtractActiveRanges($rangeStart, $rangeEnd, $blockers);
+      if (empty($subRanges)) {
+        $this->database->exec('COMMIT');
+        return NULL;
+      }
 
-    return (int) $this->database->lastInsertId();
+      [$freeStart, $freeEnd] = $subRanges[0];
+      $chunkEnd = min($freeEnd, $freeStart + $chunkSeconds);
+
+      $insertStmt = $this->database->prepare(<<<'SQL'
+INSERT INTO sync_ranges (start_time, end_time, status, started_at, chunks_total)
+VALUES (:start, :end, 'in_progress', CURRENT_TIMESTAMP, 1)
+SQL
+      );
+      $insertStmt->execute([
+        ':start' => $freeStart,
+        ':end' => $chunkEnd,
+      ]);
+      $id = (int) $this->database->lastInsertId();
+
+      $this->database->exec('COMMIT');
+      return [
+        'id' => $id,
+        'start_time' => $freeStart,
+        'end_time' => $chunkEnd,
+      ];
+    }
+    catch (\Throwable $e) {
+      $this->database->exec('ROLLBACK');
+      throw $e;
+    }
   }
+
+  /**
+   * Compute non-overlapping sub-ranges of [$start, $end] after subtracting
+   * each blocker interval.
+   *
+   * Standard interval-subtraction sweep: walk blockers left-to-right, emit
+   * the free gap before each blocker, advance the cursor past it. Final tail
+   * after the last blocker is emitted as well.
+   *
+   * @param int $start Desired range start
+   * @param int $end Desired range end
+   * @param array<array{start_time: int|string, end_time: int|string}> $blockers
+   *   Blockers as returned by claimNextChunk's overlap query; values are coerced
+   *   to int to handle SQLite TEXT-affinity columns.
+   * @return array<int, array{0: int, 1: int}> Sub-ranges as [start, end] pairs
+   */
+  protected function subtractActiveRanges(int $start, int $end, array $blockers): array
+  {
+    $intervals = [];
+    foreach ($blockers as $b) {
+      $intervals[] = [
+        (int) $b['start_time'],
+        (int) $b['end_time'],
+      ];
+    }
+    usort($intervals, fn($a, $b) => $a[0] <=> $b[0]);
+
+    $result = [];
+    $cursor = $start;
+    foreach ($intervals as [$bStart, $bEnd]) {
+      if ($bEnd <= $cursor) {
+        continue;
+      }
+      if ($bStart >= $end) {
+        break;
+      }
+      if ($bStart > $cursor) {
+        $result[] = [
+          $cursor,
+          $bStart,
+        ];
+      }
+      $cursor = max($cursor, $bEnd);
+    }
+    if ($cursor < $end) {
+      $result[] = [
+        $cursor,
+        $end,
+      ];
+    }
+    return $result;
+  }
+
 
   /**
    * Update sync range status.
@@ -172,18 +296,47 @@ WHERE status = 'in_progress'
 SQL
     );
 
+    // Delete failed/interrupted/in_progress rows whose exact (start_time,
+    // end_time) range already has a completed sibling. Otherwise the
+    // auto-complete UPDATE below would try to flip these to 'completed' and
+    // collide with the unique index on (start_time, end_time, status). This
+    // happens normally whenever a chunk fails and is successfully reclaimed
+    // by a later sync — the old failed row becomes redundant.
+    $this->database->exec(<<<'SQL'
+DELETE FROM sync_ranges
+WHERE status IN ('failed', 'interrupted', 'in_progress')
+  AND EXISTS (
+    SELECT 1 FROM sync_ranges AS done
+    WHERE done.status = 'completed'
+      AND done.start_time = sync_ranges.start_time
+      AND done.end_time = sync_ranges.end_time
+      AND done.id != sync_ranges.id
+  )
+SQL
+    );
+
     // Second, auto-complete incomplete syncs that now have data.
     // Check if the time range has actual log data - if so, mark as completed.
     // This includes 'in_progress' syncs that were filled by subsequent syncs.
+    //
+    // IMPORTANT: drain all SELECT results into arrays BEFORE running the
+    // closing UPDATE. An open cursor holds an implicit read transaction, and
+    // SQLite refuses to upgrade a read txn to a write txn while another
+    // process holds the writer lock — it returns SQLITE_BUSY immediately
+    // (no busy_timeout retry, because retrying could deadlock). The only
+    // way the closing UPDATE can wait on busy_timeout is if no read cursors
+    // are open when it starts.
     $incompleteStmt = $this->database->query(<<<'SQL'
 SELECT id, start_time, end_time FROM sync_ranges
 WHERE status IN ('failed', 'interrupted', 'in_progress')
 ORDER BY started_at DESC
 SQL
     );
+    $incomplete = $incompleteStmt->fetchAll(PDO::FETCH_ASSOC);
+    $incompleteStmt = NULL;
 
     $toComplete = [];
-    while ($sync = $incompleteStmt->fetch(PDO::FETCH_ASSOC)) {
+    foreach ($incomplete as $sync) {
       // Check if this range has any log data
       $checkStmt = $this->database->prepare(<<<'SQL'
 SELECT COUNT(*) as count FROM logs
@@ -196,12 +349,14 @@ SQL
         ':end' => $sync['end_time'],
       ]);
       $result = $checkStmt->fetch(PDO::FETCH_ASSOC);
+      $checkStmt->closeCursor();
 
       // If we have data for this range, mark it for completion
       if ($result['count'] > 0) {
         $toComplete[] = $sync['id'];
       }
     }
+    $checkStmt = NULL;
 
     // Mark all recovered syncs as completed
     if (!empty($toComplete)) {
@@ -235,13 +390,19 @@ SQL
    */
   public function initializeSyncRangesFromData(): void
   {
-    // Get the overall data range
+    // Get the overall data range. Close the cursor explicitly before the
+    // subsequent INSERT — SQLite refuses to upgrade a read txn to a write txn
+    // while another process holds the writer lock (returns SQLITE_BUSY
+    // immediately, no busy_timeout retry), so any open read cursor needs to
+    // be finalized first.
     $stmt = $this->database->query(<<<'SQL'
 SELECT MIN(time) as earliest, MAX(time) as latest, COUNT(*) as count
 FROM logs
 SQL
     );
     $coverage = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+    $stmt = NULL;
 
     if ($coverage['count'] == 0 || $coverage['earliest'] === NULL) {
       // No data to initialize from
