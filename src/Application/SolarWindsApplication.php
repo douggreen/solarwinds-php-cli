@@ -109,6 +109,7 @@ use SolarWinds\Commands\ExploitsCommand;
 use SolarWinds\Commands\SearchCommand;
 use SolarWinds\Commands\StatusCommand;
 use SolarWinds\Commands\SyncCommand;
+use SolarWinds\Commands\SyncStatusCommand;
 use SolarWinds\Commands\AliasCommand;
 use SolarWinds\Services\ConfigurationService;
 
@@ -135,6 +136,7 @@ class SolarWindsApplication extends Application
       new SearchCommand(),
       new StatusCommand(),
       new SyncCommand(),
+      new SyncStatusCommand(),
     ]);
 
     // Register aliases from configuration.
