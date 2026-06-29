@@ -36,6 +36,13 @@ class ArchiveCommand extends Command
   protected ConfigurationService $config;
   protected DatabaseService $database;
 
+  /**
+   * Constructor.
+   *
+   * Initializes configuration and database services. The archive command
+   * doesn't share BaseSolarWindsCommand's API-bound dependencies because
+   * it never talks to SolarWinds.
+   */
   public function __construct()
   {
     $this->config = new ConfigurationService();
@@ -43,6 +50,9 @@ class ArchiveCommand extends Command
     $this->database = new DatabaseService($this->config);
   }
 
+  /**
+   * Register command name, help text, and CLI options.
+   */
   protected function configure(): void
   {
     $this
@@ -65,6 +75,13 @@ class ArchiveCommand extends Command
       ->addOption('json', NULL, InputOption::VALUE_NONE, 'Machine-readable output');
   }
 
+  /**
+   * Execute the archive pipeline.
+   *
+   * Validates configuration and storage availability, computes the cutoff,
+   * iterates per-month archive buckets, and runs VACUUM on the main DB at
+   * the end. Exits early with a friendly message if there's nothing to do.
+   */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
     $io = new SymfonyStyle($input, $output);
@@ -367,6 +384,12 @@ SQL
     $this->database->exec("CREATE INDEX IF NOT EXISTS $alias.idx_client_ip_time ON logs(client_ip, time) WHERE client_ip IS NOT NULL");
   }
 
+  /**
+   * Format a byte count as a human-readable string (e.g., "4.98 GB").
+   *
+   * @param int $bytes Raw byte count
+   * @return string Formatted size with unit suffix
+   */
   protected function humanBytes(int $bytes): string
   {
     $units = [

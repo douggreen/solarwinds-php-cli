@@ -48,6 +48,12 @@ class SyncStatusCommand extends Command
   protected DatabaseService $database;
   protected SyncTrackingService $syncTracking;
 
+  /**
+   * Constructor.
+   *
+   * Initializes configuration, database, and sync-tracking services.
+   * Pure read-only — no API client is created.
+   */
   public function __construct()
   {
     $this->config = new ConfigurationService();
@@ -56,6 +62,10 @@ class SyncStatusCommand extends Command
     $this->syncTracking = new SyncTrackingService($this->config, $this->database);
   }
 
+  /**
+   * Register command name, help text, and CLI options including time-window
+   * shortcut flags listed in TIME_SHORTCUTS.
+   */
   protected function configure(): void
   {
     $this
@@ -85,6 +95,9 @@ class SyncStatusCommand extends Command
     }
   }
 
+  /**
+   * Resolve options, collect status data, and render in the requested format.
+   */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
     $json = (bool) $input->getOption('json');
@@ -248,6 +261,13 @@ SQL
     ];
   }
 
+  /**
+   * Render the full text-mode report with sections for DB info, retention,
+   * coverage gaps, recent sync activity, and the most recent sync row.
+   *
+   * @param SymfonyStyle $io Output styler
+   * @param array $data Structured payload from collect()
+   */
   protected function renderFull(SymfonyStyle $io, array $data): void
   {
     $io->title('SolarWinds Log Database Status');
@@ -319,6 +339,13 @@ SQL
     }
   }
 
+  /**
+   * Render a bare list of gaps, one per line, suitable for piping to other
+   * shell tools. Each line: ISO start, ISO end, duration, reason.
+   *
+   * @param SymfonyStyle $io Output styler
+   * @param array $data Structured payload from collect()
+   */
   protected function renderGapsOnly(SymfonyStyle $io, array $data): void
   {
     $cov = $data['coverage'];
@@ -337,6 +364,12 @@ SQL
     }
   }
 
+  /**
+   * Format a byte count as a human-readable string (e.g., "4.98 GB").
+   *
+   * @param int $bytes Raw byte count
+   * @return string Formatted size with unit suffix
+   */
   protected function humanBytes(int $bytes): string
   {
     $units = [
@@ -355,6 +388,13 @@ SQL
     return sprintf('%.2f %s', $size, $units[$i]);
   }
 
+  /**
+   * Format a duration in seconds as a human-readable string (e.g., "2h 22m",
+   * "1d 7h", "12m 17s").
+   *
+   * @param int $seconds Duration in seconds
+   * @return string Formatted duration
+   */
   protected function humanDuration(int $seconds): string
   {
     if ($seconds < 60) {
