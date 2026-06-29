@@ -18,7 +18,8 @@
         "symfony/config": "^7.0"
     },
     "require-dev": {
-        "phpunit/phpunit": "^10.0"
+        "phpunit/phpunit": "^10.0",
+        "squizlabs/php_codesniffer": "^4.0"
     },
     "autoload": {
         "psr-4": {
@@ -36,7 +37,9 @@
     "scripts": {
         "post-install-cmd": [
             "@php bin/solarwinds list"
-        ]
+        ],
+        "cs": "phpcs",
+        "cbf": "phpcbf"
     },
     "config": {
         "sort-packages": true,

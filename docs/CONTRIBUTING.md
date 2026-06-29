@@ -264,14 +264,17 @@ public function __construct(DatabaseService $database, DisplayService $display)
 - **Single responsibility** - Classes and methods should have one clear purpose
 - **Descriptive naming** - Method and variable names should be self-documenting
 - **Comprehensive validation** - All user inputs must be validated and sanitized
-- **Consistent indentation** - 4 spaces, no tabs
+- **Consistent indentation** - 2 spaces, no tabs
 - **Error handling** - Graceful failure with informative error messages
 
-**Documentation Standards:**
-- **Class-level DocBlocks** with purpose and architectural context
-- **Method documentation** with parameter types, return values, and behavior
-- **Inline comments** for complex logic and design decisions
-- **README updates** for any user-facing changes
+**Documentation Standards (required, not optional):**
+- **Every class** has a docblock at the top describing its purpose and any architectural context (layering rules, single-responsibility scope, etc.)
+- **Every public and protected method** has a docblock with a one-line description, `@param` for each parameter, and `@return` if it returns. Private methods get a docblock when their purpose isn't obvious from the name.
+- **Property docblocks** when the type or purpose isn't self-evident from the property name plus its declared type.
+- **Inline comments** follow the project's general comment policy: default to none; add one only when the WHY is non-obvious (a hidden constraint, a subtle invariant, a workaround for a specific bug, behavior that would surprise a reader). Don't restate what the code already says.
+- **README and EXPLOITS.md updates** are required for any user-facing change.
+
+These rules are enforced by `composer cs` (see Development Workflow below). Run it before submitting changes.
 
 
 ## Development Workflow

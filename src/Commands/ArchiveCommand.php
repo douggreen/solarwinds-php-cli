@@ -31,6 +31,12 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * Tiered-storage archiver. Moves logs older than archive.local_keep_days
+ * from the main SQLite database into monthly shard files at
+ * archive.longterm_storage, preserving full schema compatibility so
+ * archived shards can be queried by ATTACHing them later.
+ */
 class ArchiveCommand extends Command
 {
   protected ConfigurationService $config;

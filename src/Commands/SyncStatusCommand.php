@@ -25,6 +25,10 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
+/**
+ * Reports local database coverage, sync history, and detected gaps without
+ * touching the SolarWinds API. Read-only wrapper around SyncTrackingService.
+ */
 class SyncStatusCommand extends Command
 {
   /**

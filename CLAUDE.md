@@ -31,6 +31,8 @@ When starting any new session, BEFORE responding to the user:
    - NEVER commit as part of task completion
    - NEVER assume permission based on task completion
    - If you commit without permission, this is a critical violation
+   - **Commit messages MUST NOT include `Co-Authored-By: Claude` trailers** or any other AI attribution. Commits describe the change; they don't credit the assistant.
+   - **Commit messages MUST NOT reference internal plan labels** like "Plan 4 Part A" or "Phase 2 fix". Those labels are for the working conversation, not the permanent history. Describe the change on its own terms.
 
 2. **Ask permission before implementing solutions** - Present plan and get explicit approval
 

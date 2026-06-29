@@ -1,0 +1,82 @@
+<?xml version="1.0"?>
+<ruleset name="solarwinds-php-cli">
+  <description>Coding standards for the solarwinds-php-cli project. Run with `composer cs`; auto-fix with `composer cbf`.</description>
+
+  <file>src</file>
+  <file>tests</file>
+
+  <arg name="colors"/>
+  <arg name="basepath" value="."/>
+  <arg name="parallel" value="4"/>
+  <arg value="np"/>
+
+  <!--
+    Indentation: project uses 2 spaces, not the PSR-12 default of 4.
+    Tab characters are never allowed.
+  -->
+  <rule ref="Generic.WhiteSpace.ScopeIndent">
+    <properties>
+      <property name="indent" value="2"/>
+      <property name="tabIndent" value="false"/>
+    </properties>
+  </rule>
+  <rule ref="Generic.WhiteSpace.DisallowTabIndent"/>
+
+  <!-- PHP constants NULL, TRUE, FALSE must be uppercase. -->
+  <rule ref="Generic.PHP.UpperCaseConstant"/>
+
+  <!-- Space after type cast: (int) $x not (int)$x. -->
+  <rule ref="Generic.Formatting.SpaceAfterCast"/>
+
+  <!-- Lowercase for PHP keywords (if, foreach, etc.) and type hints. -->
+  <rule ref="Generic.PHP.LowerCaseKeyword"/>
+  <rule ref="Generic.PHP.LowerCaseType"/>
+
+  <!-- No trailing whitespace on any line. -->
+  <rule ref="Squiz.WhiteSpace.SuperfluousWhitespace">
+    <properties>
+      <property name="ignoreBlankLines" value="false"/>
+    </properties>
+  </rule>
+
+  <!-- Files end with one newline. -->
+  <rule ref="PSR2.Files.EndFileNewline"/>
+
+  <!-- Single space around assignment and comparison operators. -->
+  <rule ref="Squiz.WhiteSpace.OperatorSpacing">
+    <properties>
+      <property name="ignoreNewlines" value="true"/>
+    </properties>
+  </rule>
+
+  <!--
+    Require docblocks on classes and on public/protected methods.
+    Don't enforce that every @param has a comment — the type and name
+    are usually enough.
+  -->
+  <rule ref="PEAR.Commenting.ClassComment">
+    <exclude name="PEAR.Commenting.ClassComment.MissingCategoryTag"/>
+    <exclude name="PEAR.Commenting.ClassComment.MissingPackageTag"/>
+    <exclude name="PEAR.Commenting.ClassComment.MissingLicenseTag"/>
+    <exclude name="PEAR.Commenting.ClassComment.MissingLinkTag"/>
+    <exclude name="PEAR.Commenting.ClassComment.MissingAuthorTag"/>
+  </rule>
+  <rule ref="PEAR.Commenting.FunctionComment">
+    <exclude name="PEAR.Commenting.FunctionComment.MissingParamComment"/>
+    <exclude name="PEAR.Commenting.FunctionComment.MissingParamTag"/>
+    <exclude name="PEAR.Commenting.FunctionComment.SpacingAfterParamType"/>
+    <exclude name="PEAR.Commenting.FunctionComment.SpacingAfterParamName"/>
+    <!--
+      Don't require @return tags. Modern PHP has return type declarations
+      in the signature, so an @return tag is redundant unless adding
+      semantic detail beyond the type.
+    -->
+    <exclude name="PEAR.Commenting.FunctionComment.MissingReturn"/>
+  </rule>
+
+  <!--
+    Private methods are discouraged — use protected for extensibility.
+    No first-party sniff for this; called out in CONTRIBUTING.md as a
+    manual review item.
+  -->
+</ruleset>
