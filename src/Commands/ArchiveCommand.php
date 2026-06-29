@@ -369,7 +369,13 @@ SQL
 
   protected function humanBytes(int $bytes): string
   {
-    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $units = [
+      'B',
+      'KB',
+      'MB',
+      'GB',
+      'TB',
+    ];
     $i = 0;
     $size = (float) $bytes;
     while ($size >= 1024 && $i < count($units) - 1) {

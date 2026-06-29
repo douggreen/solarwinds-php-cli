@@ -27,6 +27,23 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class SyncStatusCommand extends Command
 {
+  /**
+   * Time-shortcut flags exposed as command options (e.g. --1d, --1w).
+   * Matched against TimeSpecifications::convertToTimeRange() at runtime.
+   */
+  protected const TIME_SHORTCUTS = [
+    '15m',
+    '1h',
+    '6h',
+    '1d',
+    '2d',
+    '7d',
+    '1w',
+    '2w',
+    '14d',
+    '1M',
+  ];
+
   protected ConfigurationService $config;
   protected DatabaseService $database;
   protected SyncTrackingService $syncTracking;
@@ -63,7 +80,7 @@ class SyncStatusCommand extends Command
 
     // Allow common --Nd / --Nh / --Nw shortcuts as flags too, matching the
     // rest of the project's commands.
-    foreach (['15m', '1h', '6h', '1d', '2d', '7d', '1w', '2w', '14d', '1M'] as $shortcut) {
+    foreach (static::TIME_SHORTCUTS as $shortcut) {
       $this->addOption($shortcut, NULL, InputOption::VALUE_NONE, "Time shortcut: --$shortcut");
     }
   }
@@ -116,7 +133,7 @@ class SyncStatusCommand extends Command
     $timeArg = $input->getOption('time');
     if ($timeArg === NULL) {
       // Look for shortcut flag.
-      foreach (['15m', '1h', '6h', '1d', '2d', '7d', '1w', '2w', '14d', '1M'] as $shortcut) {
+      foreach (static::TIME_SHORTCUTS as $shortcut) {
         if ($input->getOption($shortcut)) {
           $timeArg = $shortcut;
           break;
@@ -268,7 +285,15 @@ SQL
           $gap['reason'],
         ];
       }
-      $io->table(['Start', 'End', 'Duration', 'Reason'], $rows);
+      $io->table(
+        [
+          'Start',
+          'End',
+          'Duration',
+          'Reason',
+        ],
+        $rows
+      );
     }
 
     $act = $data['activity_last_30_days'];
@@ -314,7 +339,13 @@ SQL
 
   protected function humanBytes(int $bytes): string
   {
-    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $units = [
+      'B',
+      'KB',
+      'MB',
+      'GB',
+      'TB',
+    ];
     $i = 0;
     $size = (float) $bytes;
     while ($size >= 1024 && $i < count($units) - 1) {
