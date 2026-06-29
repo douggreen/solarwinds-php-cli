@@ -584,6 +584,28 @@ class ConfigurationService
   }
 
   /**
+   * Get archive configuration with defaults.
+   *
+   * Archive moves logs older than local_keep_days to monthly SQLite shard
+   * files at longterm_storage. Disabled by default; the rest of the values
+   * only matter when enabled=TRUE.
+   *
+   * @return array{enabled: bool, local_keep_days: int, longterm_storage: string, shard_granularity: string, include_in_queries: bool, fail_on_unavailable: bool}
+   */
+  public function getArchiveConfig(): array
+  {
+    $config = $this->config['archive'] ?? [];
+    return [
+      'enabled' => (bool) ($config['enabled'] ?? FALSE),
+      'local_keep_days' => (int) ($config['local_keep_days'] ?? 60),
+      'longterm_storage' => (string) ($config['longterm_storage'] ?? ''),
+      'shard_granularity' => (string) ($config['shard_granularity'] ?? 'monthly'),
+      'include_in_queries' => (bool) ($config['include_in_queries'] ?? FALSE),
+      'fail_on_unavailable' => (bool) ($config['fail_on_unavailable'] ?? TRUE),
+    ];
+  }
+
+  /**
    * Get API retention limit in seconds.
    *
    * Returns the maximum time range that the SolarWinds API retains data.

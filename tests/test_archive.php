@@ -1,0 +1,189 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Test script for ArchiveCommand
+ *
+ * Verifies the archive pipeline end-to-end:
+ *  1. Logs spanning multiple months are spread to monthly shard files
+ *  2. Main DB has the archived rows removed
+ *  3. archive_files registry has correct entries
+ *  4. Shards are readable and contain the right data
+ *  5. Re-running archive is idempotent (INSERT OR IGNORE handles duplicates)
+ */
+
+require_once __DIR__ . '/../vendor/autoload.php';
+
+use SolarWinds\Services\ConfigurationService;
+use SolarWinds\Services\DatabaseService;
+use SolarWinds\Commands\ArchiveCommand;
+use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\Console\Application;
+
+$testDir = '/tmp/solarwinds-archive-test-' . uniqid();
+mkdir($testDir, 0755, TRUE);
+$testDbPath = "$testDir/main.db";
+$storageDir = "$testDir/storage";
+mkdir($storageDir, 0755, TRUE);
+
+echo "Test dir: $testDir\n\n";
+
+// Mock config with archive enabled and pointing at our temp storage.
+$mockConfig = new class($testDbPath, $storageDir) extends ConfigurationService {
+  protected string $testDbPath;
+  protected string $storageDir;
+
+  public function __construct(string $testDbPath, string $storageDir) {
+    $this->testDbPath = $testDbPath;
+    $this->storageDir = $storageDir;
+  }
+
+  public function getDatabasePath(): string {
+    return $this->testDbPath;
+  }
+
+  public function getApiRetentionLimit(): int {
+    return 14 * 86400;
+  }
+
+  public function getArchiveConfig(): array {
+    return [
+      'enabled' => TRUE,
+      'local_keep_days' => 60,
+      'longterm_storage' => $this->storageDir,
+      'shard_granularity' => 'monthly',
+      'include_in_queries' => FALSE,
+      'fail_on_unavailable' => TRUE,
+    ];
+  }
+};
+
+$db = new DatabaseService($mockConfig);
+
+$assert = function(string $name, bool $cond, string $detail = ''): void {
+  echo ($cond ? "✅ PASS: " : "❌ FAIL: ") . $name . "\n";
+  if ($detail !== '') {
+    echo "   $detail\n";
+  }
+};
+
+// Insert ~9 test logs spanning 3 distinct months that are all OLDER than the
+// 60-day cutoff. We use times anchored 120-200 days ago so they fall safely
+// inside "should be archived" territory.
+$now = time();
+$daysAgo = function(int $d) use ($now): int { return $now - $d * 86400; };
+
+$logs = [];
+$buckets = [
+  ['ts' => $daysAgo(200), 'label' => 'oldest-month'],
+  ['ts' => $daysAgo(199), 'label' => 'oldest-month'],
+  ['ts' => $daysAgo(198), 'label' => 'oldest-month'],
+  ['ts' => $daysAgo(150), 'label' => 'middle-month'],
+  ['ts' => $daysAgo(149), 'label' => 'middle-month'],
+  ['ts' => $daysAgo(148), 'label' => 'middle-month'],
+  ['ts' => $daysAgo(100), 'label' => 'recent-month'],
+  ['ts' => $daysAgo(99),  'label' => 'recent-month'],
+  ['ts' => $daysAgo(98),  'label' => 'recent-month'],
+  // One log INSIDE the keep window — should NOT be archived.
+  ['ts' => $daysAgo(30),  'label' => 'hot'],
+];
+
+foreach ($logs as $_) { }
+foreach ($buckets as $i => $b) {
+  $iso = gmdate('Y-m-d\TH:i:s\Z', $b['ts']);
+  $logs[] = [
+    'id' => "log-$i-{$b['ts']}",
+    'time' => $iso,
+    'message' => json_encode([
+      'client_ip' => '1.2.3.4',
+      'req_uri' => '/test',
+      'time' => $iso,
+    ]),
+  ];
+}
+$result = $db->insertLogs($logs);
+echo "Inserted {$result['inserted']} logs\n\n";
+
+// === Test 1: Dry run reports work without touching anything ===
+echo "=== Test 1: Dry run ===\n";
+$cmd = new class($mockConfig, $db) extends ArchiveCommand {
+  public function __construct(ConfigurationService $config, DatabaseService $database) {
+    parent::__construct();
+    $this->config = $config;
+    $this->database = $database;
+  }
+};
+$app = new Application();
+$app->add($cmd);
+$tester = new CommandTester($cmd);
+$exit = $tester->execute(['--dry-run' => TRUE]);
+$assert('dry-run exits 0', $exit === 0);
+$output = $tester->getDisplay();
+$assert('dry-run mentions Dry run yes', strpos($output, 'Dry run') !== FALSE);
+$mainCount = (int) $db->query('SELECT COUNT(*) FROM logs')->fetchColumn();
+$assert('dry-run leaves all 10 logs in main', $mainCount === 10, "got $mainCount");
+echo "\n";
+
+// === Test 2: Real archive moves the old logs and leaves the hot one ===
+echo "=== Test 2: Real archive ===\n";
+$tester2 = new CommandTester($cmd);
+$exit2 = $tester2->execute([]);
+$assert('archive exits 0', $exit2 === 0);
+$mainCount = (int) $db->query('SELECT COUNT(*) FROM logs')->fetchColumn();
+$assert('main DB now has only the 1 hot log', $mainCount === 1, "got $mainCount");
+
+// Calculate expected shard count from the test data — depends on calendar
+// month boundaries, not on how many "buckets" the test conceptually has.
+$expectedMonths = [];
+foreach ($buckets as $b) {
+  if ($b['label'] !== 'hot') {
+    $expectedMonths[gmdate('Y-m', $b['ts'])] = TRUE;
+  }
+}
+$expectedShardCount = count($expectedMonths);
+
+$shardFiles = glob("$storageDir/logs-*.db");
+$assert("shard files created (expected $expectedShardCount)", count($shardFiles) === $expectedShardCount,
+  'got ' . count($shardFiles) . ': ' . implode(', ', array_map('basename', $shardFiles)));
+
+$registryRows = $db->query('SELECT file_path, record_count FROM archive_files ORDER BY year_month')->fetchAll(PDO::FETCH_ASSOC);
+$assert("archive_files has $expectedShardCount entries", count($registryRows) === $expectedShardCount);
+$totalArchived = array_sum(array_column($registryRows, 'record_count'));
+$assert('archive_files total = 9 rows moved', $totalArchived === 9, "got $totalArchived");
+echo "\n";
+
+// === Test 3: Each shard contains its month's logs and is independently readable ===
+echo "=== Test 3: Shard contents ===\n";
+$shardTotal = 0;
+foreach ($shardFiles as $sf) {
+  $pdo = new PDO("sqlite:$sf");
+  $count = (int) $pdo->query('SELECT COUNT(*) FROM logs')->fetchColumn();
+  $shardTotal += $count;
+}
+$assert('shards together contain 9 logs', $shardTotal === 9, "got $shardTotal");
+echo "\n";
+
+// === Test 4: Re-running archive is idempotent (no errors, no double-move) ===
+echo "=== Test 4: Idempotency ===\n";
+$tester3 = new CommandTester($cmd);
+$exit3 = $tester3->execute([]);
+$assert('second archive exits 0', $exit3 === 0);
+$mainCount = (int) $db->query('SELECT COUNT(*) FROM logs')->fetchColumn();
+$assert('main DB still has just 1 hot log after re-run', $mainCount === 1, "got $mainCount");
+$shardFiles2 = glob("$storageDir/logs-*.db");
+$assert("still $expectedShardCount shard files (no new ones)", count($shardFiles2) === $expectedShardCount);
+echo "\n";
+
+// === Cleanup ===
+echo "=== Cleanup ===\n";
+foreach (glob("$testDir/*") as $f) {
+  if (is_file($f)) @unlink($f);
+}
+foreach (glob("$storageDir/*") as $f) {
+  if (is_file($f)) @unlink($f);
+}
+@rmdir($storageDir);
+@rmdir($testDir);
+echo "Removed test dir.\n";
+
+echo "\n=== archive tests complete ===\n";

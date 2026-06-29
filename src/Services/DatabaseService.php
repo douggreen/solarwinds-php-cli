@@ -170,6 +170,25 @@ SQL;
     $this->db->exec("CREATE INDEX IF NOT EXISTS idx_sync_times ON sync_ranges(start_time, end_time)");
     $this->db->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_range_unique ON sync_ranges(start_time, end_time, status) WHERE status IN ('in_progress', 'completed')");
 
+    // Registry of archive shard files. Each row is one archived month/period
+    // stored at file_path. ArchiveCommand writes here; LogQueryService reads
+    // here to know which shards to ATTACH for a given time-range query.
+    $this->db->exec(<<<'SQL'
+CREATE TABLE IF NOT EXISTS archive_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  file_path TEXT NOT NULL UNIQUE,
+  year_month TEXT NOT NULL,
+  start_time INTEGER NOT NULL,
+  end_time INTEGER NOT NULL,
+  record_count INTEGER NOT NULL,
+  size_bytes INTEGER,
+  archived_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  sha256 TEXT
+);
+SQL
+    );
+    $this->db->exec("CREATE INDEX IF NOT EXISTS idx_archive_files_time ON archive_files(start_time, end_time)");
+
     // Drop and recreate campaign_analysis with new schema.
     // Data loss is acceptable since campaigns can be regenerated.
     // Migration: Check if we need to recreate (missing columns).

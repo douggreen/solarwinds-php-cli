@@ -108,6 +108,7 @@ use SolarWinds\Commands\BotCommand;
 use SolarWinds\Commands\ExploitsCommand;
 use SolarWinds\Commands\SearchCommand;
 use SolarWinds\Commands\StatusCommand;
+use SolarWinds\Commands\ArchiveCommand;
 use SolarWinds\Commands\SyncCommand;
 use SolarWinds\Commands\SyncStatusCommand;
 use SolarWinds\Commands\AliasCommand;
@@ -131,6 +132,7 @@ class SolarWindsApplication extends Application
 
     // Register core commands.
     $this->addCommands([
+      new ArchiveCommand(),
       new BotCommand(),
       new ExploitsCommand(),
       new SearchCommand(),
