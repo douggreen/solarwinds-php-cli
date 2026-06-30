@@ -86,8 +86,8 @@ YAML
     $config2 = new ConfigurationService($emptyConfig);
     $defaults = $config2->getBlockingThresholds();
 
-  if ($defaults['min_requests'] === 100 &&
-        $defaults['min_duration_hours'] === 2 &&
+  if ($defaults['min_requests_per_hour'] === 10 &&
+        $defaults['min_requests_per_day'] === 70 &&
         $defaults['high_confidence_40x_ratio'] === 0.8) {
       echo "✅ PASS: Default thresholds applied\n";
   } else {
