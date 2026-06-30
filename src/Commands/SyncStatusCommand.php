@@ -2,14 +2,13 @@
 
 /**
  * @file SyncStatusCommand.php
- * @brief Reports database coverage, sync history, and detected gaps
+ * @brief Reports database health: coverage span, real gaps, and freshness
  *
  * @class SyncStatusCommand
- * @brief Read-only coverage report wrapping SyncTrackingService
+ * @brief Read-only health check wrapping SyncTrackingService
  *
- * Provides a friendly view of what's in the local SQLite database, what
- * sync ranges have been recorded, and what gaps remain. Pure read-only —
- * does not modify any state.
+ * Answers "what data do I have and is it healthy" — distinct from the sync
+ * engine's "what should I fetch". Pure read-only; modifies no state.
  */
 
 namespace SolarWinds\Commands;
@@ -18,7 +17,6 @@ use PDO;
 use SolarWinds\Services\ConfigurationService;
 use SolarWinds\Services\DatabaseService;
 use SolarWinds\Services\SyncTrackingService;
-use SolarWinds\Services\TimeSpecifications;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -26,28 +24,12 @@ use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Reports local database coverage, sync history, and detected gaps without
- * touching the SolarWinds API. Read-only wrapper around SyncTrackingService.
+ * Reports local database health: coverage span, genuine gaps, and freshness,
+ * without touching the SolarWinds API. Read-only wrapper around
+ * SyncTrackingService::getCoverageSummary().
  */
 class SyncStatusCommand extends Command
 {
-  /**
-   * Time-shortcut flags exposed as command options (e.g. --1d, --1w).
-   * Matched against TimeSpecifications::convertToTimeRange() at runtime.
-   */
-  protected const TIME_SHORTCUTS = [
-    '15m',
-    '1h',
-    '6h',
-    '1d',
-    '2d',
-    '7d',
-    '1w',
-    '2w',
-    '14d',
-    '1M',
-  ];
-
   protected ConfigurationService $config;
   protected DatabaseService $database;
   protected SyncTrackingService $syncTracking;
@@ -67,52 +49,45 @@ class SyncStatusCommand extends Command
   }
 
   /**
-   * Register command name, help text, and CLI options including time-window
-   * shortcut flags listed in TIME_SHORTCUTS.
+   * Configure the command name, description, and options.
    */
   protected function configure(): void
   {
     $this
       ->setName('sync:status')
-      ->setDescription('Show database coverage, sync history, and detected gaps')
+      ->setDescription('Show database health: coverage span, real gaps, and freshness')
       ->setHelp("
-        Reports what's in the local SolarWinds SQLite database without
-        fetching anything from the API.
+        A health check for the local SolarWinds database. Does not touch
+        the API. Reports what data you have, whether it is contiguous, and
+        how current it is.
 
         <comment>Examples:</comment>
-        <info>solarwinds sync:status</info>            # Default: coverage over API retention window
-        <info>solarwinds sync:status --1d</info>       # Coverage over the last day
-        <info>solarwinds sync:status --1w</info>       # Coverage over the last week
-        <info>solarwinds sync:status --full-history</info>  # Coverage over all stored data
-        <info>solarwinds sync:status --gaps-only</info>     # Print just the gap list
-        <info>solarwinds sync:status --json</info>          # Machine-readable output
+        <info>solarwinds sync:status</info>             # Default health check (3-line summary)
+        <info>solarwinds sync:status --gaps-only</info> # Just the real holes, one per line
+        <info>solarwinds sync:status --history</info>   # Add recent sync activity
+        <info>solarwinds sync:status --json</info>      # Machine-readable output
       ")
       ->addOption('json', NULL, InputOption::VALUE_NONE, 'Output as JSON')
-      ->addOption('gaps-only', NULL, InputOption::VALUE_NONE, 'Print only the gap list')
-      ->addOption('full-history', NULL, InputOption::VALUE_NONE, 'Cover all stored data, not just API retention')
-      ->addOption('time', 't', InputOption::VALUE_REQUIRED, 'Time window (e.g., 1d, 1w, 2w)');
-
-    // Allow common --Nd / --Nh / --Nw shortcuts as flags too, matching the
-    // rest of the project's commands.
-    foreach (static::TIME_SHORTCUTS as $shortcut) {
-      $this->addOption($shortcut, NULL, InputOption::VALUE_NONE, "Time shortcut: --$shortcut");
-    }
+      ->addOption('gaps-only', NULL, InputOption::VALUE_NONE, 'Print only genuine holes, one per line')
+      ->addOption('history', NULL, InputOption::VALUE_NONE, 'Include recent sync activity and the latest sync row');
   }
 
   /**
-   * Resolve options, collect status data, and render in the requested format.
+   * Collect the health summary and render in the requested format.
    */
   protected function execute(InputInterface $input, OutputInterface $output): int
   {
     $json = (bool) $input->getOption('json');
     $gapsOnly = (bool) $input->getOption('gaps-only');
-    $fullHistory = (bool) $input->getOption('full-history');
+    $history = (bool) $input->getOption('history');
 
-    // Resolve coverage window. Priority: explicit --time, shortcut flag,
-    // --full-history, default (API retention window).
-    [$windowStart, $windowEnd, $windowLabel] = $this->resolveWindow($input, $fullHistory);
+    // Progress note — the aggregate scan over a large logs table can take a
+    // moment, and silence is confusing (the command looks hung).
+    if (!$json && !$gapsOnly) {
+      $output->writeln('<comment>Analyzing coverage…</comment>');
+    }
 
-    $data = $this->collect($windowStart, $windowEnd, $windowLabel, $fullHistory);
+    $data = $this->collect($history);
 
     if ($json) {
       $output->writeln(json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
@@ -124,93 +99,77 @@ class SyncStatusCommand extends Command
       $this->renderGapsOnly($io, $data);
     }
     else {
-      $this->renderFull($io, $data);
+      $this->renderHealth($io, $data, $history);
     }
     return 0;
   }
 
   /**
-   * Resolve the coverage window from CLI options.
+   * Gather the health payload from SyncTrackingService and the DB.
    *
-   * @return array{0: int, 1: int, 2: string} [start, end, human label]
-   */
-  protected function resolveWindow(InputInterface $input, bool $fullHistory): array
-  {
-    $now = time();
-
-    if ($fullHistory) {
-      $earliestLog = $this->syncTracking->getEarliestLogDate();
-      return [
-        $earliestLog > 0 ? $earliestLog : $now,
-        $now,
-        'full history',
-      ];
-    }
-
-    $timeArg = $input->getOption('time');
-    if ($timeArg === NULL) {
-      // Look for shortcut flag.
-      foreach (static::TIME_SHORTCUTS as $shortcut) {
-        if ($input->getOption($shortcut)) {
-          $timeArg = $shortcut;
-          break;
-        }
-      }
-    }
-
-    if ($timeArg !== NULL) {
-      $range = TimeSpecifications::convertToTimeRange($timeArg);
-      if ($range !== NULL) {
-        // convertToTimeRange returns string time expressions (e.g., "24 hours
-        // ago", "now") in some cases and unix timestamps in others; normalize
-        // to int.
-        return [
-          is_int($range[0]) ? $range[0] : (int) strtotime($range[0]),
-          is_int($range[1]) ? $range[1] : (int) strtotime($range[1]),
-          "last $timeArg",
-        ];
-      }
-    }
-
-    // Default: API retention window.
-    $retention = $this->config->getApiRetentionLimit();
-    return [
-      $now - $retention,
-      $now,
-      sprintf('last %d days (API retention)', (int) ($retention / 86400)),
-    ];
-  }
-
-  /**
-   * Gather all status data from SyncTrackingService and the DB.
-   *
+   * @param bool $history Whether to include recent sync-activity detail
    * @return array Structured payload, also used by JSON output
    */
-  protected function collect(int $windowStart, int $windowEnd, string $windowLabel, bool $fullHistory): array
+  protected function collect(bool $history): array
   {
     $dbPath = $this->config->getDatabasePath();
     $dbSize = is_file($dbPath) ? filesize($dbPath) : 0;
+    $retentionSeconds = $this->config->getApiRetentionLimit();
+    $now = time();
 
-    // Cheap aggregate query.
-    $logs = $this->database->query(
-      'SELECT MIN(time) AS earliest, MAX(time) AS latest, COUNT(*) AS count FROM logs'
-    )->fetch(PDO::FETCH_ASSOC);
+    $summary = $this->syncTracking->getCoverageSummary();
 
-    // Gap detection (read-only) over the requested window.
-    $rangeAnalysis = $this->syncTracking->detectMissingRanges($windowStart, $windowEnd);
-    $gaps = [];
-    foreach ($rangeAnalysis['ranges'] ?? [] as $gap) {
-      $gaps[] = [
-        'start_time' => (int) $gap['start_time'],
-        'end_time' => (int) $gap['end_time'],
-        'start_iso' => gmdate('Y-m-d\TH:i:s\Z', (int) $gap['start_time']),
-        'end_iso' => gmdate('Y-m-d\TH:i:s\Z', (int) $gap['end_time']),
-        'duration_seconds' => (int) $gap['end_time'] - (int) $gap['start_time'],
-        'reason' => $gap['reason'],
+    $holes = [];
+    foreach ($summary['holes'] as $hole) {
+      $holes[] = [
+        'start_time' => $hole['start'],
+        'end_time' => $hole['end'],
+        'start_iso' => gmdate('Y-m-d\TH:i:s\Z', $hole['start']),
+        'end_iso' => gmdate('Y-m-d\TH:i:s\Z', $hole['end']),
+        'duration_seconds' => $hole['seconds'],
+        'refillable' => $hole['refillable'],
       ];
     }
 
-    // Sync activity summary — last 30 days by status.
+    $data = [
+      'database' => [
+        'path' => $dbPath,
+        'size_bytes' => $dbSize,
+        'size_human' => $this->humanBytes($dbSize),
+        'record_count' => $summary['record_count'],
+      ],
+      'coverage' => [
+        'has_data' => $summary['has_data'],
+        'earliest_time' => $summary['earliest'],
+        'earliest_iso' => $summary['earliest'] !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $summary['earliest']) : NULL,
+        'latest_time' => $summary['latest'],
+        'latest_iso' => $summary['latest'] !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $summary['latest']) : NULL,
+        'span_seconds' => ($summary['earliest'] !== NULL) ? $summary['latest'] - $summary['earliest'] : 0,
+        'fresh_seconds' => $summary['fresh_seconds'],
+        'contiguous' => count($holes) === 0,
+        'holes' => $holes,
+      ],
+      'refill' => [
+        'retention_days' => (int) ($retentionSeconds / 86400),
+        'refetchable_after_time' => $now - $retentionSeconds,
+        'refetchable_after_iso' => gmdate('Y-m-d\TH:i:s\Z', $now - $retentionSeconds),
+      ],
+    ];
+
+    if ($history) {
+      $data['history'] = $this->collectHistory();
+    }
+
+    return $data;
+  }
+
+  /**
+   * Gather recent sync-activity detail (only when --history is given).
+   *
+   * @return array Activity counts and the most recent sync row
+   */
+  protected function collectHistory(): array
+  {
     $activity = [];
     $stmt = $this->database->query(<<<'SQL'
 SELECT status, COUNT(*) AS n
@@ -223,11 +182,8 @@ SQL
       $activity[$row['status']] = (int) $row['n'];
     }
 
-    // Most recent sync row.
     $recent = $this->database->query(<<<'SQL'
-SELECT id, status, started_at, completed_at, records_inserted,
-       CAST(start_time AS INTEGER) AS start_time,
-       CAST(end_time AS INTEGER) AS end_time
+SELECT id, status, started_at, completed_at, records_inserted
 FROM sync_ranges
 ORDER BY started_at DESC
 LIMIT 1
@@ -235,103 +191,154 @@ SQL
     )->fetch(PDO::FETCH_ASSOC);
 
     return [
-      'database' => [
-        'path' => $dbPath,
-        'size_bytes' => $dbSize,
-        'size_human' => $this->humanBytes($dbSize),
-        'earliest_log_time' => $logs['earliest'] !== NULL ? (int) $logs['earliest'] : NULL,
-        'earliest_log_iso' => $logs['earliest'] !== NULL ? gmdate('Y-m-d\TH:i:s\Z', (int) $logs['earliest']) : NULL,
-        'latest_log_time' => $logs['latest'] !== NULL ? (int) $logs['latest'] : NULL,
-        'latest_log_iso' => $logs['latest'] !== NULL ? gmdate('Y-m-d\TH:i:s\Z', (int) $logs['latest']) : NULL,
-        'total_records' => (int) $logs['count'],
-      ],
-      'api_retention' => [
-        'days' => (int) ($this->config->getApiRetentionLimit() / 86400),
-        'earliest_available_time' => time() - $this->config->getApiRetentionLimit(),
-        'earliest_available_iso' => gmdate('Y-m-d\TH:i:s\Z', time() - $this->config->getApiRetentionLimit()),
-      ],
-      'coverage' => [
-        'window_label' => $windowLabel,
-        'window_start_time' => $windowStart,
-        'window_start_iso' => gmdate('Y-m-d\TH:i:s\Z', $windowStart),
-        'window_end_time' => $windowEnd,
-        'window_end_iso' => gmdate('Y-m-d\TH:i:s\Z', $windowEnd),
-        'gap_count' => count($gaps),
-        'gaps' => $gaps,
-        'full_history' => $fullHistory,
-      ],
       'activity_last_30_days' => $activity,
       'most_recent_sync' => $recent ?: NULL,
     ];
   }
 
   /**
-   * Render the full text-mode report with sections for DB info, retention,
-   * coverage gaps, recent sync activity, and the most recent sync row.
+   * Render the default health check: a compact summary that stays quiet when
+   * healthy and only gets loud when something is actually wrong.
    *
    * @param SymfonyStyle $io Output styler
    * @param array $data Structured payload from collect()
+   * @param bool $history Whether to also render the history section
    */
-  protected function renderFull(SymfonyStyle $io, array $data): void
+  protected function renderHealth(SymfonyStyle $io, array $data, bool $history): void
   {
     $io->title('SolarWinds Log Database Status');
 
     $db = $data['database'];
-    $io->section('Database');
-    $io->definitionList(
-      ['Path' => $db['path']],
-      ['Size' => $db['size_human']],
-      ['Earliest log' => $db['earliest_log_iso'] ?? '(empty)'],
-      ['Latest log' => $db['latest_log_iso'] ?? '(empty)'],
-      ['Total records' => number_format($db['total_records'])],
-    );
-
-    $ret = $data['api_retention'];
-    $io->section('API retention');
-    $io->definitionList(
-      ['Retention window' => $ret['days'] . ' days'],
-      ['Earliest available from API' => $ret['earliest_available_iso']],
-    );
-
     $cov = $data['coverage'];
-    $io->section('Coverage — ' . $cov['window_label']);
-    $io->text(sprintf('Window: %s → %s', $cov['window_start_iso'], $cov['window_end_iso']));
-    if ($cov['gap_count'] === 0) {
-      $io->success('No gaps detected — full coverage');
+
+    if (!$cov['has_data']) {
+      $io->warning('Database is empty — no logs synced yet.');
+      return;
     }
-    else {
+
+    // Status verdict first — the one thing you actually check at a glance.
+    $io->writeln('  <info>Status</info>   ' . $this->healthLine($cov));
+
+    // Span duration and the human-readable date range, on separate lines.
+    $io->writeln('  <info>Spans</info>    ' . $this->humanDuration($cov['span_seconds']));
+    $io->writeln(sprintf(
+      '  <info>Range</info>    %s → %s',
+      $this->humanDate($cov['earliest_time']),
+      $this->humanDate($cov['latest_time'])
+    ));
+
+    // Volume, each on its own line.
+    $io->writeln('  <info>Records</info>  ' . number_format($db['record_count']));
+    $io->writeln('  <info>Size</info>     ' . $db['size_human']);
+
+    // Only when there are real holes do we list them and explain the refill
+    // window — when data is contiguous, both would just be noise.
+    if (!$cov['contiguous']) {
+      $io->newLine();
       $rows = [];
-      foreach ($cov['gaps'] as $gap) {
+      foreach ($cov['holes'] as $hole) {
         $rows[] = [
-          $gap['start_iso'],
-          $gap['end_iso'],
-          $this->humanDuration($gap['duration_seconds']),
-          $gap['reason'],
+          $this->humanDate($hole['start_time']),
+          $this->humanDate($hole['end_time']),
+          $this->humanDuration($hole['duration_seconds']),
+          $hole['refillable'] ? 'refillable' : 'PERMANENT',
         ];
       }
       $io->table(
         [
-          'Start',
-          'End',
+          'Hole start',
+          'Hole end',
           'Duration',
-          'Reason',
+          'Recoverable?',
+        ],
+        $rows
+      );
+
+      $r = $data['refill'];
+      $io->writeln(sprintf(
+        '  <comment>Refill:</comment> API retains %d days. Missing data after %s can be re-fetched; older holes are permanent.',
+        $r['retention_days'],
+        $this->humanDate($r['refetchable_after_time'])
+      ));
+    }
+
+    if ($history && isset($data['history'])) {
+      $this->renderHistory($io, $data['history']);
+    }
+  }
+
+  /**
+   * Build the one-line health verdict combining contiguity and freshness.
+   *
+   * @param array $cov The 'coverage' sub-array from collect()
+   * @return string A pango-marked-up status string
+   */
+  protected function healthLine(array $cov): string
+  {
+    $parts = [];
+
+    if ($cov['contiguous']) {
+      $parts[] = '<info>✓ contiguous</info>';
+    }
+    else {
+      $permanent = 0;
+      foreach ($cov['holes'] as $h) {
+        if (!$h['refillable']) {
+          $permanent++;
+        }
+      }
+      $n = count($cov['holes']);
+      $tag = $permanent > 0
+        ? sprintf('<error>✗ %d hole%s (%d permanent)</error>', $n, $n === 1 ? '' : 's', $permanent)
+        : sprintf('<comment>⚠ %d hole%s (refillable)</comment>', $n, $n === 1 ? '' : 's');
+      $parts[] = $tag;
+    }
+
+    // Freshness: flag as stale if the latest log is older than ~2 hours
+    // (the hourly cron should keep it well under that).
+    $fresh = $cov['fresh_seconds'];
+    if ($fresh === NULL) {
+      $parts[] = 'freshness unknown';
+    }
+    elseif ($fresh > 7200) {
+      $parts[] = sprintf('<error>⚠ stale — last log %s ago (cron may have failed)</error>', $this->humanDuration($fresh));
+    }
+    else {
+      $parts[] = sprintf('<info>current</info> (last log %s ago)', $this->humanDuration($fresh));
+    }
+
+    return implode(', ', $parts);
+  }
+
+  /**
+   * Render the optional sync-activity section (only with --history).
+   *
+   * @param SymfonyStyle $io Output styler
+   * @param array $history The 'history' sub-array from collect()
+   */
+  protected function renderHistory(SymfonyStyle $io, array $history): void
+  {
+    $act = $history['activity_last_30_days'];
+    if (!empty($act)) {
+      $io->section('Sync activity — last 30 days');
+      $rows = [];
+      foreach ($act as $status => $count) {
+        $rows[] = [
+          $status,
+          number_format($count),
+        ];
+      }
+      $io->table(
+        [
+          'Status',
+          'Count',
         ],
         $rows
       );
     }
 
-    $act = $data['activity_last_30_days'];
-    if (!empty($act)) {
-      $io->section('Sync activity — last 30 days');
-      $rows = [];
-      foreach ($act as $status => $count) {
-        $rows[] = [$status, number_format($count)];
-      }
-      $io->table(['Status', 'Count'], $rows);
-    }
-
-    if ($data['most_recent_sync']) {
-      $r = $data['most_recent_sync'];
+    if ($history['most_recent_sync']) {
+      $r = $history['most_recent_sync'];
       $io->section('Most recent sync');
       $io->definitionList(
         ['ID' => $r['id']],
@@ -344,28 +351,40 @@ SQL
   }
 
   /**
-   * Render a bare list of gaps, one per line, suitable for piping to other
-   * shell tools. Each line: ISO start, ISO end, duration, reason.
+   * Render only genuine holes, one per line, for piping to other tools.
+   * Each line: ISO start, ISO end, duration, recoverable flag.
    *
    * @param SymfonyStyle $io Output styler
    * @param array $data Structured payload from collect()
    */
   protected function renderGapsOnly(SymfonyStyle $io, array $data): void
   {
-    $cov = $data['coverage'];
-    if ($cov['gap_count'] === 0) {
-      $io->writeln('# no gaps in ' . $cov['window_label']);
+    $holes = $data['coverage']['holes'];
+    if (empty($holes)) {
+      $io->writeln('# no holes — data is contiguous');
       return;
     }
-    foreach ($cov['gaps'] as $gap) {
+    foreach ($holes as $hole) {
       $io->writeln(sprintf(
         '%s %s %s %s',
-        $gap['start_iso'],
-        $gap['end_iso'],
-        $this->humanDuration($gap['duration_seconds']),
-        $gap['reason']
+        $hole['start_iso'],
+        $hole['end_iso'],
+        $this->humanDuration($hole['duration_seconds']),
+        $hole['refillable'] ? 'refillable' : 'permanent'
       ));
     }
+  }
+
+  /**
+   * Format a unix timestamp in the project's human date style (local time),
+   * e.g. "Jun 12, 7:00pm". Matches the format used by the sync command.
+   *
+   * @param int $timestamp Unix timestamp
+   * @return string Formatted local date/time
+   */
+  protected function humanDate(int $timestamp): string
+  {
+    return date('M j, g:ia', $timestamp);
   }
 
   /**

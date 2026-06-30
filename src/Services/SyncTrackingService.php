@@ -678,4 +678,107 @@ SQL
 
     return $this->earliestLogDateCache;
   }
+
+  /**
+   * Summarize what data the database actually holds, for status reporting.
+   *
+   * Unlike detectMissingRanges() — which answers "what should I fetch from
+   * the API" — this answers "what do I have and is it healthy". It merges
+   * completed sync ranges into contiguous spans and reports only genuine
+   * holes (absences between covered spans larger than $holeThreshold).
+   * Pre-retention data is treated as covered, and the trailing lag between
+   * the last log and now is reported as freshness, NOT a hole.
+   *
+   * @param int $holeThreshold Seconds; gaps between adjacent spans smaller
+   *                           than this are treated as contiguous (chunk-boundary rounding). Default 120.
+   * @return array{
+   *   has_data: bool,
+   *   earliest: int|null,
+   *   latest: int|null,
+   *   record_count: int,
+   *   fresh_seconds: int|null,
+   *   holes: array<int, array{start: int, end: int, seconds: int, refillable: bool}>
+   * }
+   */
+  public function getCoverageSummary(int $holeThreshold = 120): array
+  {
+    $logs = $this->database->query(
+      'SELECT MIN(time) AS earliest, MAX(time) AS latest, COUNT(*) AS count FROM logs'
+    )->fetch(PDO::FETCH_ASSOC);
+
+    $count = (int) ($logs['count'] ?? 0);
+    if ($count === 0 || $logs['earliest'] === NULL) {
+      return [
+        'has_data' => FALSE,
+        'earliest' => NULL,
+        'latest' => NULL,
+        'record_count' => 0,
+        'fresh_seconds' => NULL,
+        'holes' => [],
+      ];
+    }
+
+    $earliest = (int) $logs['earliest'];
+    $latest = (int) $logs['latest'];
+    $now = time();
+    $retentionStart = $now - $this->config->getApiRetentionLimit();
+
+    // Pull completed sync ranges in order and merge overlapping/adjacent ones
+    // (adjacency tolerance = $holeThreshold) into contiguous spans.
+    $stmt = $this->database->query(<<<'SQL'
+SELECT CAST(start_time AS INTEGER) AS s, CAST(end_time AS INTEGER) AS e
+FROM sync_ranges
+WHERE status = 'completed'
+ORDER BY CAST(start_time AS INTEGER) ASC
+SQL
+    );
+    $ranges = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    $spans = [];
+    foreach ($ranges as $r) {
+      $s = (int) $r['s'];
+      $e = (int) $r['e'];
+      if (empty($spans)) {
+        $spans[] = [$s, $e];
+        continue;
+      }
+      $last = &$spans[count($spans) - 1];
+      if ($s <= $last[1] + $holeThreshold) {
+        // Overlaps or within tolerance — extend the current span.
+        if ($e > $last[1]) {
+          $last[1] = $e;
+        }
+      }
+      else {
+        $spans[] = [$s, $e];
+      }
+      unset($last);
+    }
+
+    // Holes are the gaps between consecutive merged spans.
+    $holes = [];
+    for ($i = 0; $i < count($spans) - 1; $i++) {
+      $holeStart = $spans[$i][1];
+      $holeEnd = $spans[$i + 1][0];
+      if ($holeEnd - $holeStart <= $holeThreshold) {
+        continue;
+      }
+      $holes[] = [
+        'start' => $holeStart,
+        'end' => $holeEnd,
+        'seconds' => $holeEnd - $holeStart,
+        // Refillable only if the whole hole is still inside the API window.
+        'refillable' => $holeStart >= $retentionStart,
+      ];
+    }
+
+    return [
+      'has_data' => TRUE,
+      'earliest' => $earliest,
+      'latest' => $latest,
+      'record_count' => $count,
+      'fresh_seconds' => max(0, $now - $latest),
+      'holes' => $holes,
+    ];
+  }
 }

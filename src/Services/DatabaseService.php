@@ -479,9 +479,15 @@ SQL;
     // Create composite index on (time, req_method) first - this can serve both time-only and time+method queries
     // This is more efficient than separate indexes and dramatically speeds up exploit command queries
     if (in_array('time', $existingColumns) && in_array('req_method', $existingColumns)) {
-      // Drop old idx_time if it exists (redundant with idx_time_method)
-      $this->db->exec("DROP INDEX IF EXISTS idx_time");
       $this->db->exec("CREATE INDEX IF NOT EXISTS idx_time_method ON logs(time, req_method) WHERE req_method IS NOT NULL");
+    }
+
+    // Plain index on time. idx_time_method is PARTIAL (WHERE req_method IS NOT
+    // NULL), so it cannot serve predicates on time alone across all rows — a
+    // COUNT/SELECT filtered purely by time (archive, gap detection, status,
+    // time-windowed search) would otherwise full-scan the whole table.
+    if (in_array('time', $existingColumns)) {
+      $this->db->exec("CREATE INDEX IF NOT EXISTS idx_time ON logs(time)");
     }
 
     // Drop old idx_hostname if it exists (hostname column is unused and being removed)
@@ -494,7 +500,6 @@ SQL;
     }
 
     // Create indexes only for columns that exist.
-    // Note: idx_time is NOT created here since idx_time_method covers time queries
     // Note: idx_req_method IS created for queries that filter only on req_method
     // Note: idx_client_ip is NOT created here since idx_client_ip_time covers client_ip queries
     $indexDefinitions = [
