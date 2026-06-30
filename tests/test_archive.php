@@ -56,6 +56,13 @@ $mockConfig = new class($testDbPath, $storageDir) extends ConfigurationService {
   }
 
   /**
+   * Shard period for this mock (set by the test).
+   *
+   * @var string
+   */
+  public string $shardPeriod = 'monthly';
+
+  /**
    * Return archive config enabled and pointing at the test storage dir.
    */
   public function getArchiveConfig(): array {
@@ -63,7 +70,7 @@ $mockConfig = new class($testDbPath, $storageDir) extends ConfigurationService {
       'enabled' => TRUE,
       'local_keep_days' => 60,
       'longterm_storage' => $this->storageDir,
-      'shard_granularity' => 'monthly',
+      'shard_period' => $this->shardPeriod,
       'include_in_queries' => FALSE,
       'fail_on_unavailable' => TRUE,
     ];
@@ -189,16 +196,69 @@ $shardFiles2 = glob("$storageDir/logs-*.db");
 $assert("still $expectedShardCount shard files (no new ones)", count($shardFiles2) === $expectedShardCount);
 echo "\n";
 
+// === Test 5: Weekly shard period names shards logs-YYYY-Www.db ===
+echo "=== Test 5: Weekly shard period ===\n";
+$weekDir = '/tmp/solarwinds-archive-test-wk-' . uniqid();
+mkdir($weekDir, 0755, TRUE);
+$weekStorage = "$weekDir/storage";
+mkdir($weekStorage, 0755, TRUE);
+$weekDbPath = "$weekDir/main.db";
+$weekConfig = clone $mockConfig;
+// Point the clone at a fresh DB + storage and switch to weekly.
+(function() use ($weekConfig, $weekDbPath, $weekStorage) {
+  $r = new ReflectionObject($weekConfig);
+  $r->getProperty('testDbPath')->setValue($weekConfig, $weekDbPath);
+  $r->getProperty('storageDir')->setValue($weekConfig, $weekStorage);
+})();
+$weekConfig->shardPeriod = 'weekly';
+$weekDb = new DatabaseService($weekConfig);
+// Insert logs in two distinct, fully-aged ISO weeks (~120 and ~127 days ago).
+$weekLogs = [];
+foreach ([120, 127] as $i => $d) {
+  $ts = $now - $d * 86400;
+  $iso = gmdate('Y-m-d\TH:i:s\Z', $ts);
+  $weekLogs[] = [
+    'id' => "wk-$i",
+    'time' => $iso,
+    'message' => json_encode(['client_ip' => '1.2.3.4', 'req_uri' => '/x', 'time' => $iso]),
+  ];
+}
+$weekDb->insertLogs($weekLogs);
+$weekCmd = new class($weekConfig, $weekDb) extends ArchiveCommand {
+  /**
+   * Inject the mocked config and database into the command under test.
+   */
+  public function __construct(ConfigurationService $config, DatabaseService $database) {
+    parent::__construct();
+    $this->config = $config;
+    $this->database = $database;
+  }
+};
+(new CommandTester($weekCmd))->execute([]);
+$weekShards = glob("$weekStorage/logs-*-W*.db");
+$assert('weekly shards named logs-YYYY-Www.db', count($weekShards) === 2,
+  'got ' . count($weekShards) . ': ' . implode(', ', array_map('basename', $weekShards)));
+$weekMain = (int) $weekDb->query('SELECT COUNT(*) FROM logs')->fetchColumn();
+$assert('weekly archive emptied main', $weekMain === 0, "got $weekMain");
+echo "\n";
+
 // === Cleanup ===
 echo "=== Cleanup ===\n";
-foreach (glob("$testDir/*") as $f) {
+foreach (array_merge(glob("$testDir/*"), glob("$testDir/archive-tmp/*")) as $f) {
   if (is_file($f)) @unlink($f);
 }
 foreach (glob("$storageDir/*") as $f) {
   if (is_file($f)) @unlink($f);
 }
+@rmdir("$testDir/archive-tmp");
 @rmdir($storageDir);
 @rmdir($testDir);
-echo "Removed test dir.\n";
+foreach (array_merge(glob("$weekDir/*"), glob("$weekDir/archive-tmp/*"), glob("$weekStorage/*")) as $f) {
+  if (is_file($f)) @unlink($f);
+}
+@rmdir("$weekDir/archive-tmp");
+@rmdir($weekStorage);
+@rmdir($weekDir);
+echo "Removed test dirs.\n";
 
 echo "\n=== archive tests complete ===\n";

@@ -590,16 +590,28 @@ class ConfigurationService
    * files at longterm_storage. Disabled by default; the rest of the values
    * only matter when enabled=TRUE.
    *
-   * @return array{enabled: bool, local_keep_days: int, longterm_storage: string, shard_granularity: string, include_in_queries: bool, fail_on_unavailable: bool}
+   * @return array{enabled: bool, local_keep_days: int, longterm_storage: string, shard_period: string, include_in_queries: bool, fail_on_unavailable: bool}
    */
   public function getArchiveConfig(): array
   {
     $config = $this->config['archive'] ?? [];
+
+    // Shard period controls how data is partitioned into shard files and,
+    // because a period is only archived once it is ENTIRELY older than
+    // local_keep_days, how much extra data is held locally beyond the keep
+    // window (up to one partial period). Weekly keeps a tighter local
+    // footprint; monthly produces fewer, larger files. Only 'weekly' and
+    // 'monthly' are supported; anything else falls back to monthly.
+    $period = (string) ($config['shard_period'] ?? 'monthly');
+    if (!in_array($period, ['weekly', 'monthly'], TRUE)) {
+      $period = 'monthly';
+    }
+
     return [
       'enabled' => (bool) ($config['enabled'] ?? FALSE),
       'local_keep_days' => (int) ($config['local_keep_days'] ?? 60),
       'longterm_storage' => (string) ($config['longterm_storage'] ?? ''),
-      'shard_granularity' => (string) ($config['shard_granularity'] ?? 'monthly'),
+      'shard_period' => $period,
       'include_in_queries' => (bool) ($config['include_in_queries'] ?? FALSE),
       'fail_on_unavailable' => (bool) ($config['fail_on_unavailable'] ?? TRUE),
     ];

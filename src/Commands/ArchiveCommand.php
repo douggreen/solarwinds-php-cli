@@ -28,19 +28,22 @@ use SolarWinds\Services\DatabaseService;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
+use SolarWinds\Services\LockService;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
- * Tiered-storage archiver. Moves logs older than archive.local_keep_days
- * from the main SQLite database into monthly shard files at
- * archive.longterm_storage, preserving full schema compatibility so
- * archived shards can be queried by ATTACHing them later.
+ * Tiered-storage archiver. Moves logs older than archive.local_keep_days from
+ * the main SQLite database into weekly or monthly shard files (per
+ * archive.shard_period) at archive.longterm_storage. Only whole periods that
+ * are entirely past the keep window are archived, so each shard is written
+ * once. Shards keep the logs schema so they can be queried by ATTACHing them.
  */
 class ArchiveCommand extends Command
 {
   protected ConfigurationService $config;
   protected DatabaseService $database;
+  protected LockService $lock;
 
   /**
    * Constructor.
@@ -54,6 +57,7 @@ class ArchiveCommand extends Command
     $this->config = new ConfigurationService();
     parent::__construct();
     $this->database = new DatabaseService($this->config);
+    $this->lock = new LockService($this->config);
   }
 
   /**
@@ -132,10 +136,21 @@ class ArchiveCommand extends Command
       $io->definitionList(
         ['Storage path' => $cfg['longterm_storage']],
         ['Keep days' => $keepDays],
+        ['Shard period' => $cfg['shard_period']],
         ['Cutoff (logs older move)' => $cutoffIso],
-        ['Granularity' => $cfg['shard_granularity']],
         ['Dry run' => $dryRun ? 'yes' : 'no'],
       );
+    }
+
+    // Acquire the exclusive maintenance lock for a real run so the VACUUM
+    // can't collide with a sync. Dry-run is read-only and skips locking.
+    $lockHandle = NULL;
+    if (!$dryRun) {
+      $lockHandle = $this->lock->acquire('db-maintenance', TRUE, 300);
+      if ($lockHandle === NULL) {
+        $io->error('Could not acquire the maintenance lock (a sync or another archive is running). Try again later.');
+        return 1;
+      }
     }
 
     // Find oldest archivable timestamp; if nothing predates the cutoff, exit.
@@ -156,11 +171,11 @@ class ArchiveCommand extends Command
     }
 
     $earliest = (int) $head['earliest'];
-    $months = $this->monthBuckets($earliest, $cutoffTime);
+    $buckets = $this->periodBuckets($earliest, $cutoffTime, $cfg['shard_period']);
 
     $results = [];
-    foreach ($months as $bucket) {
-      $result = $this->archiveMonth($bucket, $cutoffTime, $cfg['longterm_storage'], $dryRun, $io, $json);
+    foreach ($buckets as $bucket) {
+      $result = $this->archivePeriod($bucket, $cfg['longterm_storage'], $dryRun, $io, $json);
       $results[] = $result;
       // Bail on first error.
       if ($result['status'] === 'error') {
@@ -205,25 +220,33 @@ class ArchiveCommand extends Command
   }
 
   /**
-   * Compute the [start, end) bounds for each month containing data between
-   * [earliest, cutoffTime). Capped so the final bucket never extends past
-   * cutoffTime.
+   * Compute [start, end) buckets for each WHOLE period (week or month) that is
+   * entirely older than the cutoff.
    *
-   * @return array<array{year_month: string, start: int, end: int}>
+   * A period is only emitted when its end is at or before the cutoff — so the
+   * current partial period (whose end is still in the future relative to the
+   * cutoff) is never archived. This makes each shard write-once: a period is
+   * built and shipped exactly once, never appended to later.
+   *
+   * @param int $earliest Earliest log timestamp (unix)
+   * @param int $cutoffTime now - keep_days (unix); periods ending after this stay local
+   * @param string $period 'weekly' or 'monthly'
+   * @return array<array{key: string, start: int, end: int}>
    */
-  protected function monthBuckets(int $earliest, int $cutoffTime): array
+  protected function periodBuckets(int $earliest, int $cutoffTime, string $period): array
   {
     $buckets = [];
-    $cursor = (int) gmmktime(0, 0, 0, (int) gmdate('n', $earliest), 1, (int) gmdate('Y', $earliest));
-    while ($cursor < $cutoffTime) {
-      $year = (int) gmdate('Y', $cursor);
-      $month = (int) gmdate('n', $cursor);
-      $next = (int) gmmktime(0, 0, 0, $month + 1, 1, $year);
-      $bucketEnd = min($next, $cutoffTime);
+    $cursor = $this->periodStart($earliest, $period);
+    while (TRUE) {
+      $next = $this->periodNext($cursor, $period);
+      // Stop at the first period that is not entirely older than the cutoff.
+      if ($next > $cutoffTime) {
+        break;
+      }
       $buckets[] = [
-        'year_month' => gmdate('Y-m', $cursor),
+        'key' => $this->periodKey($cursor, $period),
         'start' => $cursor,
-        'end' => $bucketEnd,
+        'end' => $next,
       ];
       $cursor = $next;
     }
@@ -231,16 +254,83 @@ class ArchiveCommand extends Command
   }
 
   /**
-   * Archive a single month bucket. Returns a structured result.
+   * Start (midnight UTC) of the period containing $timestamp.
    *
-   * @return array{year_month: string, status: string, rows_moved: int, shard_path?: string, error?: string}
+   * @param int $timestamp Unix timestamp
+   * @param string $period 'weekly' or 'monthly'
+   * @return int Period start (unix)
    */
-  protected function archiveMonth(array $bucket, int $cutoffTime, string $storage, bool $dryRun, SymfonyStyle $io, bool $jsonMode): array
+  protected function periodStart(int $timestamp, string $period): int
   {
-    $ym = $bucket['year_month'];
+    if ($period === 'weekly') {
+      // ISO week starts Monday. N = 1 (Mon) .. 7 (Sun).
+      $dow = (int) gmdate('N', $timestamp);
+      return (int) gmmktime(
+        0,
+        0,
+        0,
+        (int) gmdate('n', $timestamp),
+        (int) gmdate('j', $timestamp) - ($dow - 1),
+        (int) gmdate('Y', $timestamp)
+      );
+    }
+    return (int) gmmktime(0, 0, 0, (int) gmdate('n', $timestamp), 1, (int) gmdate('Y', $timestamp));
+  }
+
+  /**
+   * Start of the period after $cursor (which must be a period start).
+   *
+   * @param int $cursor A period start (unix)
+   * @param string $period 'weekly' or 'monthly'
+   * @return int Next period start (unix)
+   */
+  protected function periodNext(int $cursor, string $period): int
+  {
+    if ($period === 'weekly') {
+      // Cursor is Monday 00:00 UTC; +7 days is exact in UTC (no DST).
+      return $cursor + 7 * 86400;
+    }
+    return (int) gmmktime(0, 0, 0, (int) gmdate('n', $cursor) + 1, 1, (int) gmdate('Y', $cursor));
+  }
+
+  /**
+   * Shard key for a period start, e.g. "2026-06" (monthly) or "2026-W26"
+   * (weekly). Used in the shard filename logs-{key}.db.
+   *
+   * @param int $cursor Period start (unix)
+   * @param string $period 'weekly' or 'monthly'
+   * @return string Shard key
+   */
+  protected function periodKey(int $cursor, string $period): string
+  {
+    if ($period === 'weekly') {
+      return gmdate('o-\WW', $cursor);
+    }
+    return gmdate('Y-m', $cursor);
+  }
+
+  /**
+   * Archive a single period bucket: build the shard on local disk, copy the
+   * finished file to longterm storage, verify, register, then delete from main.
+   *
+   * The shard is built locally and copied (rather than written directly to
+   * longterm storage) because writing a live SQLite database over a network
+   * mount is extremely slow and lock-prone, whereas a sequential file copy is
+   * not. Rows are not deleted from main until the storage copy is verified.
+   *
+   * @param array{key: string, start: int, end: int} $bucket Period bucket
+   * @param string $storage Longterm storage directory
+   * @param bool $dryRun Report only, change nothing
+   * @param SymfonyStyle $io Output styler
+   * @param bool $jsonMode Suppress human output
+   * @return array{key: string, status: string, rows_moved: int, shard_path?: string, error?: string}
+   */
+  protected function archivePeriod(array $bucket, string $storage, bool $dryRun, SymfonyStyle $io, bool $jsonMode): array
+  {
+    $key = $bucket['key'];
     $start = $bucket['start'];
     $end = $bucket['end'];
-    $shardPath = rtrim($storage, '/') . "/logs-$ym.db";
+    $finalPath = rtrim($storage, '/') . "/logs-$key.db";
 
     // Count what would move.
     $stmt = $this->database->prepare('SELECT COUNT(*) FROM logs WHERE time >= :start AND time < :end');
@@ -251,77 +341,84 @@ class ArchiveCommand extends Command
 
     if ($toMove === 0) {
       return [
-        'year_month' => $ym,
+        'key' => $key,
         'status' => 'empty',
         'rows_moved' => 0,
       ];
     }
 
     if (!$jsonMode) {
-      $io->section("Month $ym");
-      $io->text(sprintf('Shard: %s', $shardPath));
+      $io->section("Period $key");
+      $io->text(sprintf('Shard: %s', $finalPath));
       $io->text(sprintf('Rows to move: %s', number_format($toMove)));
     }
 
     if ($dryRun) {
       return [
-        'year_month' => $ym,
+        'key' => $key,
         'status' => 'dry_run',
         'rows_moved' => 0,
         'rows_would_move' => $toMove,
-        'shard_path' => $shardPath,
+        'shard_path' => $finalPath,
       ];
     }
 
+    // Build on local disk first; stale temp from a prior crash is overwritten.
+    $localTmp = $this->localTmpDir() . "/logs-$key-" . getmypid() . '.db';
+    @unlink($localTmp);
+
     try {
-      // ATTACH the shard (creates the file if missing), ensure schema.
-      $this->database->exec(sprintf("ATTACH DATABASE '%s' AS arc", str_replace("'", "''", $shardPath)));
+      $this->database->exec(sprintf("ATTACH DATABASE '%s' AS arc", str_replace("'", "''", $localTmp)));
       $this->ensureShardSchema('arc');
 
-      // Copy with INSERT OR IGNORE for idempotency.
-      $copyStmt = $this->database->prepare(<<<'SQL'
-INSERT OR IGNORE INTO arc.logs
-SELECT * FROM main.logs WHERE time >= :start AND time < :end
-SQL
-      );
+      // Copy this period's rows into the local shard.
+      $copyStmt = $this->database->prepare('INSERT INTO arc.logs SELECT * FROM main.logs WHERE time >= :start AND time < :end');
       $copyStmt->execute([':start' => $start, ':end' => $end]);
 
-      // Verify shard now has every row from this range. Close cursors
-      // explicitly — leftover prepared statements block VACUUM at the end.
+      // Verify against main and capture the shard's actual data extent.
       $verifyMain = $this->database->prepare('SELECT COUNT(*) FROM main.logs WHERE time >= :start AND time < :end');
       $verifyMain->execute([':start' => $start, ':end' => $end]);
       $mainCount = (int) $verifyMain->fetchColumn();
       $verifyMain->closeCursor();
       $verifyMain = NULL;
 
-      $verifyArc = $this->database->prepare('SELECT COUNT(*) FROM arc.logs WHERE time >= :start AND time < :end');
-      $verifyArc->execute([':start' => $start, ':end' => $end]);
-      $arcCount = (int) $verifyArc->fetchColumn();
-      $verifyArc->closeCursor();
-      $verifyArc = NULL;
-
-      if ($arcCount < $mainCount) {
-        throw new \RuntimeException("Verification failed: shard has $arcCount rows, main has $mainCount");
-      }
-
-      // Register the shard's ACTUAL data extent (not the month-bucket
-      // boundaries) so coverage reporting reflects real data — a shard for
-      // June whose earliest row is June 12 should register June 12, not
-      // June 1. Use the whole shard's min/max since it accumulates the month.
       $extentStmt = $this->database->query('SELECT MIN(time) AS lo, MAX(time) AS hi, COUNT(*) AS n FROM arc.logs');
       $extent = $extentStmt->fetch(PDO::FETCH_ASSOC);
       $extentStmt->closeCursor();
       $extentStmt = NULL;
+      $shardCount = (int) $extent['n'];
       $shardStart = (int) $extent['lo'];
       $shardEnd = (int) $extent['hi'];
-      $shardCount = (int) $extent['n'];
 
-      // Register / update archive_files entry.
-      $sizeBytes = filesize($shardPath) ?: 0;
+      if ($shardCount < $mainCount) {
+        throw new \RuntimeException("Verification failed: local shard has $shardCount rows, main has $mainCount");
+      }
+
+      // Detach so the local shard file is flushed and closed before copying.
+      $this->database->exec('DETACH DATABASE arc');
+
+      // Copy the finished shard to longterm storage and verify the copy.
+      if (!$jsonMode) {
+        $io->text('Copying shard to storage…');
+      }
+      if (!@copy($localTmp, $finalPath)) {
+        throw new \RuntimeException("Failed to copy shard to $finalPath");
+      }
+      $verifyCopy = new \PDO('sqlite:' . $finalPath);
+      $copyCount = (int) $verifyCopy->query('SELECT COUNT(*) FROM logs')->fetchColumn();
+      $verifyCopy = NULL;
+      if ($copyCount !== $shardCount) {
+        throw new \RuntimeException("Copy verification failed: storage shard has $copyCount rows, expected $shardCount");
+      }
+
+      // Register (pointing at the storage path), then it's safe to delete.
+      clearstatcache(TRUE, $finalPath);
+      $sizeBytes = filesize($finalPath) ?: 0;
       $register = $this->database->prepare(<<<'SQL'
 INSERT INTO archive_files (file_path, year_month, start_time, end_time, record_count, size_bytes)
-VALUES (:path, :ym, :start, :end, :count, :size)
+VALUES (:path, :key, :start, :end, :count, :size)
 ON CONFLICT(file_path) DO UPDATE SET
+  year_month = :key,
   start_time = :start,
   end_time = :end,
   record_count = :count,
@@ -330,43 +427,62 @@ ON CONFLICT(file_path) DO UPDATE SET
 SQL
       );
       $register->execute([
-        ':path' => $shardPath,
-        ':ym' => $ym,
+        ':path' => $finalPath,
+        ':key' => $key,
         ':start' => $shardStart,
         ':end' => $shardEnd,
         ':count' => $shardCount,
         ':size' => $sizeBytes,
       ]);
 
-      // Now safe to delete from main.
       $delete = $this->database->prepare('DELETE FROM main.logs WHERE time >= :start AND time < :end');
       $delete->execute([':start' => $start, ':end' => $end]);
 
-      $this->database->exec('DETACH DATABASE arc');
+      @unlink($localTmp);
 
       if (!$jsonMode) {
-        $io->text(sprintf('  ✓ Moved %s rows to %s', number_format($arcCount), basename($shardPath)));
+        $io->text(sprintf('  ✓ Moved %s rows to %s', number_format($shardCount), basename($finalPath)));
       }
 
       return [
-        'year_month' => $ym,
+        'key' => $key,
         'status' => 'archived',
-        'rows_moved' => $arcCount,
-        'shard_path' => $shardPath,
+        'rows_moved' => $shardCount,
+        'shard_path' => $finalPath,
       ];
     }
     catch (\Throwable $e) {
-      try { $this->database->exec('DETACH DATABASE arc'); } catch (\Throwable $ignored) {}
+      try {
+        $this->database->exec('DETACH DATABASE arc');
+      }
+      catch (\Throwable $ignored) {
+      }
+      @unlink($localTmp);
       if (!$jsonMode) {
-        $io->error(sprintf('Failed to archive %s: %s', $ym, $e->getMessage()));
+        $io->error(sprintf('Failed to archive %s: %s', $key, $e->getMessage()));
       }
       return [
-        'year_month' => $ym,
+        'key' => $key,
         'status' => 'error',
         'rows_moved' => 0,
         'error' => $e->getMessage(),
       ];
     }
+  }
+
+  /**
+   * Local scratch directory for building shards before copying to storage.
+   * Lives next to the main DB so it's on fast local disk with room to spare.
+   *
+   * @return string Absolute path to the local temp directory
+   */
+  protected function localTmpDir(): string
+  {
+    $dir = dirname($this->config->getDatabasePath()) . '/archive-tmp';
+    if (!is_dir($dir)) {
+      mkdir($dir, 0755, TRUE);
+    }
+    return $dir;
   }
 
   /**
