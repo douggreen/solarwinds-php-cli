@@ -34,12 +34,141 @@ class LogQueryService
   protected array $lastQueryTiming = [];
 
   /**
+   * Whether queries may span archived shards. On by default — spanning is
+   * automatic and driven by the requested time range, so it only ever
+   * happens when a query actually reaches into archived time (a recent-only
+   * query overlaps no shard and never touches the archive). Set FALSE to
+   * force hot-tier-only regardless of range.
+   *
+   * @var bool
+   */
+  protected bool $includeArchive = TRUE;
+
+  /**
+   * Attached shard aliases for the in-flight query, cleaned up afterward.
+   *
+   * @var array<int, string>
+   */
+  protected array $attachedAliases = [];
+
+  /**
    * Constructor.
    *
    * @param DatabaseService $database Database service for raw SQL execution
    */
   public function __construct(protected DatabaseService $database)
   {
+  }
+
+  /**
+   * Enable or disable spanning archived shards in subsequent queries.
+   *
+   * @param bool $include Whether to include archive shards
+   */
+  public function setIncludeArchive(bool $include): void
+  {
+    $this->includeArchive = $include;
+  }
+
+  /**
+   * Open a logs source for querying, optionally spanning archive shards.
+   *
+   * When archive inclusion is on and shards overlap the requested range,
+   * ATTACHes each shard and creates a TEMP VIEW unioning main + shards;
+   * returns the view name to use in place of "logs". Otherwise returns the
+   * plain "logs" table. Always pair with closeSource().
+   *
+   * @param int|null $since Start of range (unix timestamp) or NULL
+   * @param int|null $until End of range (unix timestamp) or NULL
+   * @return string Table or view name to query ("logs" or "logs_all")
+   */
+  protected function openSource(?int $since, ?int $until): string
+  {
+    $this->attachedAliases = [];
+    if (!$this->includeArchive) {
+      return 'logs';
+    }
+
+    $shards = $this->findShards($since, $until);
+    if (empty($shards)) {
+      return 'logs';
+    }
+
+    $unionParts = ['SELECT * FROM logs'];
+    foreach ($shards as $i => $path) {
+      $alias = 'arc_' . $i;
+      $escaped = str_replace("'", "''", $path);
+      $this->database->exec("ATTACH DATABASE '$escaped' AS $alias");
+      $this->attachedAliases[] = $alias;
+      $unionParts[] = "SELECT * FROM $alias.logs";
+    }
+
+    $this->database->exec('DROP VIEW IF EXISTS logs_all');
+    $this->database->exec('CREATE TEMP VIEW logs_all AS ' . implode(' UNION ALL ', $unionParts));
+    return 'logs_all';
+  }
+
+  /**
+   * Tear down whatever openSource() set up (view + attached shards).
+   */
+  protected function closeSource(): void
+  {
+    if (empty($this->attachedAliases)) {
+      return;
+    }
+    $this->database->exec('DROP VIEW IF EXISTS logs_all');
+    foreach ($this->attachedAliases as $alias) {
+      $this->database->exec("DETACH DATABASE $alias");
+    }
+    $this->attachedAliases = [];
+  }
+
+  /**
+   * Find archive shard file paths whose time range overlaps [since, until].
+   *
+   * Reads the archive_files registry. Silently skips registered shards whose
+   * files are missing (e.g., an unmounted volume) so a query can still run
+   * against whatever is available.
+   *
+   * @param int|null $since Start of range (unix timestamp) or NULL for open
+   * @param int|null $until End of range (unix timestamp) or NULL for open
+   * @return array<int, string> Existing shard file paths, oldest first
+   */
+  protected function findShards(?int $since, ?int $until): array
+  {
+    try {
+      $sql = 'SELECT file_path, start_time, end_time FROM archive_files';
+      $conds = [];
+      $params = [];
+      if ($until !== NULL) {
+        $conds[] = 'start_time <= :until';
+        $params[':until'] = $until;
+      }
+      if ($since !== NULL) {
+        $conds[] = 'end_time >= :since';
+        $params[':since'] = $since;
+      }
+      if (!empty($conds)) {
+        $sql .= ' WHERE ' . implode(' AND ', $conds);
+      }
+      $sql .= ' ORDER BY start_time ASC';
+
+      $stmt = $this->database->prepare($sql);
+      $stmt->execute($params);
+      $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+    }
+    catch (\PDOException $e) {
+      // archive_files table may not exist on older databases.
+      return [];
+    }
+
+    $paths = [];
+    foreach ($rows as $row) {
+      if (is_file($row['file_path'])) {
+        $paths[] = $row['file_path'];
+      }
+    }
+    return $paths;
   }
 
   /**
@@ -51,30 +180,36 @@ class LogQueryService
    */
   public function getLogs(?int $since = NULL, ?int $until = NULL): array
   {
-    $sql = 'SELECT * FROM logs WHERE 1=1';
-    $params = [];
+    $source = $this->openSource($since, $until);
+    try {
+      $sql = "SELECT * FROM $source WHERE 1=1";
+      $params = [];
 
-    if ($since) {
-      $sql .= ' AND time >= :since';
-      $params[':since'] = $since;
+      if ($since) {
+        $sql .= ' AND time >= :since';
+        $params[':since'] = $since;
+      }
+
+      if ($until) {
+        $sql .= ' AND time <= :until';
+        $params[':until'] = $until;
+      }
+
+      $sql .= ' ORDER BY time ASC';
+
+      $stmt = $this->database->prepare($sql);
+      $stmt->execute($params);
+
+      $results = [];
+      while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+        $results[] = $row;
+      }
+
+      return $results;
     }
-
-    if ($until) {
-      $sql .= ' AND time <= :until';
-      $params[':until'] = $until;
+    finally {
+      $this->closeSource();
     }
-
-    $sql .= ' ORDER BY time ASC';
-
-    $stmt = $this->database->prepare($sql);
-    $stmt->execute($params);
-
-    $results = [];
-    while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-      $results[] = $row;
-    }
-
-    return $results;
   }
 
   /**
@@ -93,92 +228,103 @@ class LogQueryService
    */
   public function getLogsWithQuery(?string $whereClause, array $whereParams, ?int $since = NULL, ?int $until = NULL, bool $includeData = FALSE, ?callable $progressCallback = NULL): array
   {
-    // Select STORED columns directly for performance (Phase 1 optimization).
-    // These columns are pre-computed and don't require JSON parsing.
-    // NOTE: data column is optional - only included when $includeData = TRUE for display features that might need it
-    // Use INDEXED BY hint when we have time constraints to force idx_time_method usage
-    // (prevents SQLite from using idx_req_method which causes expensive TEMP B-TREE sorts)
-    // However, don't use hint if there's a custom WHERE clause - let SQLite choose the optimal index
-    $indexHint = (($since || $until) && empty($whereClause)) ? ' INDEXED BY idx_time_method' : '';
+    $source = $this->openSource($since, $until);
+    try {
+      // Select STORED columns directly for performance (Phase 1 optimization).
+      // These columns are pre-computed and don't require JSON parsing.
+      // NOTE: data column is optional - only included when $includeData = TRUE for display features that might need it
+      // Use INDEXED BY hint when we have time constraints to force idx_time_method usage
+      // (prevents SQLite from using idx_req_method which causes expensive TEMP B-TREE sorts)
+      // However, don't use hint if there's a custom WHERE clause - let SQLite choose the optimal index.
+      // The hint only applies to the base logs table; a union-over-archive view cannot be hinted.
+      $indexHint = ($source === 'logs' && ($since || $until) && empty($whereClause)) ? ' INDEXED BY idx_time_method' : '';
 
-    if ($includeData) {
-      $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM logs' . $indexHint . ' WHERE 1=1';
-    }
-    else {
-      $sql = 'SELECT id, time, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM logs' . $indexHint . ' WHERE 1=1';
-    }
-    $params = [];
-
-    if ($since) {
-      $sql .= ' AND time >= :since';
-      $params[':since'] = $since;
-    }
-
-    if ($until) {
-      $sql .= ' AND time <= :until';
-      $params[':until'] = $until;
-    }
-
-    // Add custom WHERE clause if provided
-    if (!empty($whereClause)) {
-      $sql .= ' AND (' . $whereClause . ')';
-      $params = array_merge($params, $whereParams);
-    }
-
-    // First, do a COUNT(*) query to get row count quickly
-    $countSql = 'SELECT COUNT(*) FROM logs WHERE 1=1';
-    if ($since) {
-      $countSql .= ' AND time >= :since';
-    }
-    if ($until) {
-      $countSql .= ' AND time <= :until';
-    }
-    if (!empty($whereClause)) {
-      $countSql .= ' AND (' . $whereClause . ')';
-    }
-
-    $countStart = microtime(TRUE);
-    $countStmt = $this->database->prepare($countSql);
-    $countStmt->execute($params);
-    $rowCount = (int) $countStmt->fetchColumn();
-    $countTime = microtime(TRUE) - $countStart;
-
-    $sql .= ' ORDER BY time ASC';
-
-    // Time the query execution
-    $executeStart = microtime(TRUE);
-    $stmt = $this->database->prepare($sql);
-    $stmt->execute($params);
-    $executeTime = microtime(TRUE) - $executeStart;
-
-    // Time the row fetching
-    $fetchStart = microtime(TRUE);
-    $results = [];
-
-    // Fetch with optional progress callback
-    $fetchedCount = 0;
-    $updateInterval = max(1, (int) ($rowCount / 100)); // Update every 1% for large queries
-    while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-      $results[] = $row;
-      $fetchedCount++;
-
-      // Call progress callback periodically
-      if ($progressCallback && ($fetchedCount % $updateInterval === 0 || $fetchedCount === $rowCount)) {
-        $progressCallback($fetchedCount, $rowCount);
+      if ($includeData) {
+        $sql = "SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM $source" . $indexHint . ' WHERE 1=1';
       }
+      else {
+        $sql = "SELECT id, time, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments FROM $source" . $indexHint . ' WHERE 1=1';
+      }
+      $params = [];
+
+      if ($since) {
+        $sql .= ' AND time >= :since';
+        $params[':since'] = $since;
+      }
+
+      if ($until) {
+        $sql .= ' AND time <= :until';
+        $params[':until'] = $until;
+      }
+
+      // Add custom WHERE clause if provided
+      if (!empty($whereClause)) {
+        $sql .= ' AND (' . $whereClause . ')';
+        $params = array_merge($params, $whereParams);
+      }
+
+      // First, do a COUNT(*) query to get row count quickly
+      $countSql = "SELECT COUNT(*) FROM $source WHERE 1=1";
+      if ($since) {
+        $countSql .= ' AND time >= :since';
+      }
+      if ($until) {
+        $countSql .= ' AND time <= :until';
+      }
+      if (!empty($whereClause)) {
+        $countSql .= ' AND (' . $whereClause . ')';
+      }
+
+      $countStart = microtime(TRUE);
+      $countStmt = $this->database->prepare($countSql);
+      $countStmt->execute($params);
+      $rowCount = (int) $countStmt->fetchColumn();
+      // fetchColumn() leaves the cursor open; close it so the later DETACH in
+      // closeSource() isn't blocked by a lingering read lock on a shard.
+      $countStmt->closeCursor();
+      $countStmt = NULL;
+      $countTime = microtime(TRUE) - $countStart;
+
+      $sql .= ' ORDER BY time ASC';
+
+      // Time the query execution
+      $executeStart = microtime(TRUE);
+      $stmt = $this->database->prepare($sql);
+      $stmt->execute($params);
+      $executeTime = microtime(TRUE) - $executeStart;
+
+      // Time the row fetching
+      $fetchStart = microtime(TRUE);
+      $results = [];
+
+      // Fetch with optional progress callback
+      $fetchedCount = 0;
+      $updateInterval = max(1, (int) ($rowCount / 100)); // Update every 1% for large queries
+      while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+        $results[] = $row;
+        $fetchedCount++;
+
+        // Call progress callback periodically
+        if ($progressCallback && ($fetchedCount % $updateInterval === 0 || $fetchedCount === $rowCount)) {
+          $progressCallback($fetchedCount, $rowCount);
+        }
+      }
+      $fetchTime = microtime(TRUE) - $fetchStart;
+
+      // Store timing info for caller to display
+      $this->lastQueryTiming = [
+        'count' => $countTime,
+        'execute' => $executeTime,
+        'fetch' => $fetchTime,
+        'total' => $countTime + $executeTime + $fetchTime,
+        'row_count' => $rowCount,
+      ];
+
+      return $results;
     }
-    $fetchTime = microtime(TRUE) - $fetchStart;
-
-    // Store timing info for caller to display
-    $this->lastQueryTiming = [
-      'count' => $countTime,
-      'execute' => $executeTime,
-      'fetch' => $fetchTime,
-      'total' => $countTime + $executeTime + $fetchTime,
-      'row_count' => $rowCount,
-    ];
-
-    return $results;
+    finally {
+      $this->closeSource();
+    }
   }
 
   /**
@@ -201,29 +347,35 @@ class LogQueryService
    */
   public function getLogsByIp(string $ip, ?int $since = NULL, ?int $until = NULL): array
   {
-    $sql = 'SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status FROM logs WHERE client_ip = :ip';
-    $params = [':ip' => $ip];
+    $source = $this->openSource($since, $until);
+    try {
+      $sql = "SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status FROM $source WHERE client_ip = :ip";
+      $params = [':ip' => $ip];
 
-    if ($since) {
-      $sql .= ' AND time >= :since';
-      $params[':since'] = $since;
+      if ($since) {
+        $sql .= ' AND time >= :since';
+        $params[':since'] = $since;
+      }
+
+      if ($until) {
+        $sql .= ' AND time <= :until';
+        $params[':until'] = $until;
+      }
+
+      $sql .= ' ORDER BY time ASC';
+
+      $stmt = $this->database->prepare($sql);
+      $stmt->execute($params);
+
+      $results = [];
+      while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
+        $results[] = $row;
+      }
+
+      return $results;
     }
-
-    if ($until) {
-      $sql .= ' AND time <= :until';
-      $params[':until'] = $until;
+    finally {
+      $this->closeSource();
     }
-
-    $sql .= ' ORDER BY time ASC';
-
-    $stmt = $this->database->prepare($sql);
-    $stmt->execute($params);
-
-    $results = [];
-    while ($row = $stmt->fetch(\PDO::FETCH_ASSOC)) {
-      $results[] = $row;
-    }
-
-    return $results;
   }
 }

@@ -144,10 +144,11 @@ class SyncStatusCommand extends Command
         'earliest_iso' => $summary['earliest'] !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $summary['earliest']) : NULL,
         'latest_time' => $summary['latest'],
         'latest_iso' => $summary['latest'] !== NULL ? gmdate('Y-m-d\TH:i:s\Z', $summary['latest']) : NULL,
-        'span_seconds' => ($summary['earliest'] !== NULL) ? $summary['latest'] - $summary['earliest'] : 0,
+        'span_seconds' => ($summary['earliest'] !== NULL && $summary['latest'] !== NULL) ? $summary['latest'] - $summary['earliest'] : 0,
         'fresh_seconds' => $summary['fresh_seconds'],
         'contiguous' => count($holes) === 0,
         'holes' => $holes,
+        'archived_count' => $summary['archived']['record_count'] ?? 0,
       ],
       'refill' => [
         'retention_days' => (int) ($retentionSeconds / 86400),
@@ -227,8 +228,12 @@ SQL
       $this->humanDate($cov['latest_time'])
     ));
 
-    // Volume, each on its own line.
-    $io->writeln('  <info>Records</info>  ' . number_format($db['record_count']));
+    // Volume, each on its own line. Note how much of the total is archived.
+    $recordsLine = number_format($db['record_count']);
+    if (($cov['archived_count'] ?? 0) > 0) {
+      $recordsLine .= sprintf('  (%s archived)', number_format($cov['archived_count']));
+    }
+    $io->writeln('  <info>Records</info>  ' . $recordsLine);
     $io->writeln('  <info>Size</info>     ' . $db['size_human']);
 
     // Only when there are real holes do we list them and explain the refill

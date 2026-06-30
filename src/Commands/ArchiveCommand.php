@@ -304,14 +304,26 @@ SQL
         throw new \RuntimeException("Verification failed: shard has $arcCount rows, main has $mainCount");
       }
 
+      // Register the shard's ACTUAL data extent (not the month-bucket
+      // boundaries) so coverage reporting reflects real data — a shard for
+      // June whose earliest row is June 12 should register June 12, not
+      // June 1. Use the whole shard's min/max since it accumulates the month.
+      $extentStmt = $this->database->query('SELECT MIN(time) AS lo, MAX(time) AS hi, COUNT(*) AS n FROM arc.logs');
+      $extent = $extentStmt->fetch(PDO::FETCH_ASSOC);
+      $extentStmt->closeCursor();
+      $extentStmt = NULL;
+      $shardStart = (int) $extent['lo'];
+      $shardEnd = (int) $extent['hi'];
+      $shardCount = (int) $extent['n'];
+
       // Register / update archive_files entry.
       $sizeBytes = filesize($shardPath) ?: 0;
       $register = $this->database->prepare(<<<'SQL'
 INSERT INTO archive_files (file_path, year_month, start_time, end_time, record_count, size_bytes)
 VALUES (:path, :ym, :start, :end, :count, :size)
 ON CONFLICT(file_path) DO UPDATE SET
-  start_time = MIN(start_time, :start),
-  end_time = MAX(end_time, :end),
+  start_time = :start,
+  end_time = :end,
   record_count = :count,
   size_bytes = :size,
   archived_at = CURRENT_TIMESTAMP
@@ -320,9 +332,9 @@ SQL
       $register->execute([
         ':path' => $shardPath,
         ':ym' => $ym,
-        ':start' => $start,
-        ':end' => $end,
-        ':count' => $arcCount,
+        ':start' => $shardStart,
+        ':end' => $shardEnd,
+        ':count' => $shardCount,
         ':size' => $sizeBytes,
       ]);
 

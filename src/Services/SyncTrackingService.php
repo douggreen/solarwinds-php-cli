@@ -706,8 +706,15 @@ SQL
       'SELECT MIN(time) AS earliest, MAX(time) AS latest, COUNT(*) AS count FROM logs'
     )->fetch(PDO::FETCH_ASSOC);
 
-    $count = (int) ($logs['count'] ?? 0);
-    if ($count === 0 || $logs['earliest'] === NULL) {
+    // Fold in archived data — those rows left the logs table but are still
+    // part of the coverage story (in shards). Without this, the report would
+    // under-state the earliest date and total record count.
+    $archive = $this->getArchiveCoverage();
+
+    $hotCount = (int) ($logs['count'] ?? 0);
+    $totalCount = $hotCount + $archive['record_count'];
+
+    if ($totalCount === 0) {
       return [
         'has_data' => FALSE,
         'earliest' => NULL,
@@ -715,11 +722,18 @@ SQL
         'record_count' => 0,
         'fresh_seconds' => NULL,
         'holes' => [],
+        'archived' => $archive,
       ];
     }
 
-    $earliest = (int) $logs['earliest'];
-    $latest = (int) $logs['latest'];
+    // Earliest spans both tiers; latest comes from the hot tier (archives are
+    // always older). Guard the NULLs when one tier is empty.
+    $hotEarliest = $logs['earliest'] !== NULL ? (int) $logs['earliest'] : NULL;
+    $hotLatest = $logs['latest'] !== NULL ? (int) $logs['latest'] : NULL;
+    $candidates = array_filter([$hotEarliest, $archive['earliest']], fn($v) => $v !== NULL);
+    $earliest = !empty($candidates) ? min($candidates) : NULL;
+    $latest = $hotLatest ?? $archive['latest'];
+    $count = $totalCount;
     $now = time();
     $retentionStart = $now - $this->config->getApiRetentionLimit();
 
@@ -777,8 +791,42 @@ SQL
       'earliest' => $earliest,
       'latest' => $latest,
       'record_count' => $count,
-      'fresh_seconds' => max(0, $now - $latest),
+      'fresh_seconds' => $latest !== NULL ? max(0, $now - $latest) : NULL,
       'holes' => $holes,
+      'archived' => $archive,
+    ];
+  }
+
+  /**
+   * Summarize archived (shard) coverage from the archive_files registry.
+   *
+   * Returns zeros when nothing has been archived or the table doesn't exist.
+   *
+   * @return array{record_count: int, earliest: int|null, latest: int|null}
+   */
+  protected function getArchiveCoverage(): array
+  {
+    try {
+      $row = $this->database->query(<<<'SQL'
+SELECT COALESCE(SUM(record_count), 0) AS count,
+       MIN(start_time) AS earliest,
+       MAX(end_time) AS latest
+FROM archive_files
+SQL
+      )->fetch(PDO::FETCH_ASSOC);
+    }
+    catch (\PDOException $e) {
+      return [
+        'record_count' => 0,
+        'earliest' => NULL,
+        'latest' => NULL,
+      ];
+    }
+
+    return [
+      'record_count' => (int) ($row['count'] ?? 0),
+      'earliest' => $row['earliest'] !== NULL ? (int) $row['earliest'] : NULL,
+      'latest' => $row['latest'] !== NULL ? (int) $row['latest'] : NULL,
     ];
   }
 }
