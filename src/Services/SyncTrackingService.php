@@ -793,6 +793,11 @@ SQL
       'record_count' => $count,
       'fresh_seconds' => $latest !== NULL ? max(0, $now - $latest) : NULL,
       'holes' => $holes,
+      'local' => [
+        'record_count' => $hotCount,
+        'earliest' => $hotEarliest,
+        'latest' => $hotLatest,
+      ],
       'archived' => $archive,
     ];
   }
@@ -809,6 +814,7 @@ SQL
     try {
       $row = $this->database->query(<<<'SQL'
 SELECT COALESCE(SUM(record_count), 0) AS count,
+       COUNT(*) AS files,
        MIN(start_time) AS earliest,
        MAX(end_time) AS latest
 FROM archive_files
@@ -818,6 +824,7 @@ SQL
     catch (\PDOException $e) {
       return [
         'record_count' => 0,
+        'file_count' => 0,
         'earliest' => NULL,
         'latest' => NULL,
       ];
@@ -825,6 +832,7 @@ SQL
 
     return [
       'record_count' => (int) ($row['count'] ?? 0),
+      'file_count' => (int) ($row['files'] ?? 0),
       'earliest' => $row['earliest'] !== NULL ? (int) $row['earliest'] : NULL,
       'latest' => $row['latest'] !== NULL ? (int) $row['latest'] : NULL,
     ];

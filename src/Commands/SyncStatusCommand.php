@@ -148,7 +148,12 @@ class SyncStatusCommand extends Command
         'fresh_seconds' => $summary['fresh_seconds'],
         'contiguous' => count($holes) === 0,
         'holes' => $holes,
+        'local_count' => $summary['local']['record_count'] ?? 0,
         'archived_count' => $summary['archived']['record_count'] ?? 0,
+        'archived_files' => $summary['archived']['file_count'] ?? 0,
+        'archived_earliest_time' => $summary['archived']['earliest'] ?? NULL,
+        'archived_latest_time' => $summary['archived']['latest'] ?? NULL,
+        'archive_path' => $this->config->getArchiveConfig()['longterm_storage'],
       ],
       'refill' => [
         'retention_days' => (int) ($retentionSeconds / 86400),
@@ -228,13 +233,31 @@ SQL
       $this->humanDate($cov['latest_time'])
     ));
 
-    // Volume, each on its own line. Note how much of the total is archived.
+    // Volume. When some data is archived, split the total into local vs
+    // archived so it's clear what lives where.
     $recordsLine = number_format($db['record_count']);
     if (($cov['archived_count'] ?? 0) > 0) {
-      $recordsLine .= sprintf('  (%s archived)', number_format($cov['archived_count']));
+      $recordsLine .= sprintf(
+        '  (%s local · %s archived)',
+        number_format($cov['local_count']),
+        number_format($cov['archived_count'])
+      );
     }
     $io->writeln('  <info>Records</info>  ' . $recordsLine);
-    $io->writeln('  <info>Size</info>     ' . $db['size_human']);
+    $io->writeln('  <info>Size</info>     ' . $db['size_human'] . ' local');
+
+    // When archived, a line showing how many shards, the archived span, and
+    // where they live.
+    if (($cov['archived_count'] ?? 0) > 0) {
+      $io->writeln(sprintf(
+        '  <info>Archive</info>  %d shard%s, %s → %s, in %s',
+        $cov['archived_files'],
+        $cov['archived_files'] === 1 ? '' : 's',
+        $this->humanDate($cov['archived_earliest_time']),
+        $this->humanDate($cov['archived_latest_time']),
+        $cov['archive_path']
+      ));
+    }
 
     // Only when there are real holes do we list them and explain the refill
     // window — when data is contiguous, both would just be noise.
