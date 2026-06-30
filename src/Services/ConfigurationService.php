@@ -653,6 +653,15 @@ class ConfigurationService
         'recency' => 0.20,
         'server_impact' => 0.05,
       ],
+      // Gate the final score by volume so a small, slow probe can't ride the
+      // ratio factors (origin/severity/recency) into a block recommendation.
+      // The gate saturates to 1.0 once a campaign clears EITHER threshold, so
+      // high-rate bursts and sustained campaigns keep their full score and only
+      // low-count-and-low-rate one-offs are discounted.
+      'volume_gate' => [
+        'count_saturation' => 30,
+        'rate_saturation' => 100,
+      ],
       'origin_impact' => [
         'edge_blocked_100' => 0,
         'edge_blocked_high' => 20,

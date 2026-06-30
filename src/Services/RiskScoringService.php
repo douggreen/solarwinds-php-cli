@@ -103,7 +103,7 @@ class RiskScoringService
     $serverScore = $this->calculateServerImpactScore($campaign, $riskConfig);
 
     // Calculate weighted total
-    $totalScore = (
+    $weightedScore = (
       ($originScore * $weights['origin_impact']) +
       ($volumeScore * $weights['volume_rate']) +
       ($severityScore * $weights['attack_severity']) +
@@ -111,12 +111,20 @@ class RiskScoringService
       ($serverScore * $weights['server_impact'])
     );
 
+    // Gate the weighted score by volume: a small, slow probe can't ride the
+    // ratio factors into a block recommendation. The gate saturates to 1.0
+    // once the campaign clears either the count or rate threshold.
+    $volumeGate = $this->calculateVolumeGate($campaign, $riskConfig);
+    $totalScore = $weightedScore * $volumeGate;
+
     // Classify risk level
     $riskLevel = $this->config->classifyRiskScore($totalScore);
 
     return [
       'score' => round($totalScore, 1),
       'level' => $riskLevel,
+      'volume_gate' => round($volumeGate, 2),
+      'pre_gate_score' => round($weightedScore, 1),
       'breakdown' => [
         'origin_impact' => [
           'score' => $originScore,
@@ -145,6 +153,31 @@ class RiskScoringService
         ],
       ],
     ];
+  }
+
+  /**
+   * Compute the volume gate (0.0-1.0) applied to the weighted score.
+   *
+   * Saturate to 1.0 once the campaign clears EITHER the count threshold (a
+   * sustained campaign) or the rate threshold (a high-rate burst); ramp down
+   * proportionally only when both are low, so genuine attacks keep their full
+   * score and low-count-and-low-rate one-off probes are discounted to noise.
+   *
+   * @param array $campaign Metrics including total_requests and requests_per_hour
+   * @param array $config Risk scoring config containing volume_gate thresholds
+   *
+   * @return float Gate multiplier in the range 0.0-1.0
+   */
+  protected function calculateVolumeGate(array $campaign, array $config): float
+  {
+    $gate = $config['volume_gate'] ?? ['count_saturation' => 30, 'rate_saturation' => 100];
+    $countSaturation = max(1, (int) ($gate['count_saturation'] ?? 30));
+    $rateSaturation = max(1, (int) ($gate['rate_saturation'] ?? 100));
+
+    $count = (float) ($campaign['total_requests'] ?? 0);
+    $rate = (float) ($campaign['requests_per_hour'] ?? 0);
+
+    return min(1.0, max($count / $countSaturation, $rate / $rateSaturation));
   }
 
   /**
