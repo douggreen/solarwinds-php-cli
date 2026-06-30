@@ -91,6 +91,7 @@ use SolarWinds\Services\ConfigurationService;
 use SolarWinds\Services\ApiService;
 use SolarWinds\Services\DisplayService;
 use SolarWinds\Services\DatabaseService;
+use SolarWinds\Services\LockService;
 use SolarWinds\Services\LogQueryService;
 use SolarWinds\Services\SyncTrackingService;
 use SolarWinds\Services\TimeSpecifications;
@@ -109,6 +110,7 @@ abstract class BaseSolarWindsCommand extends Command
   protected DatabaseService $databaseService;
   protected LogQueryService $logQuery;
   protected SyncTrackingService $syncTracking;
+  protected LockService $lockService;
   protected SymfonyStyle $io;
 
   // Default values that child classes can override.
@@ -148,6 +150,7 @@ abstract class BaseSolarWindsCommand extends Command
     $this->databaseService = new DatabaseService($this->config);
     $this->logQuery = new LogQueryService($this->databaseService);
     $this->syncTracking = new SyncTrackingService($this->config, $this->databaseService);
+    $this->lockService = new LockService($this->config);
   }
 
   /**
@@ -1547,6 +1550,19 @@ abstract class BaseSolarWindsCommand extends Command
           }
         }
       }
+    }
+
+    // Coordinate with the archive command: take a SHARED maintenance lock so
+    // this sync can't run during the archive's exclusive VACUUM window. Many
+    // syncs share this lock; only an archive (exclusive) blocks us. The handle
+    // releases automatically when this method returns. If an archive holds the
+    // lock past the timeout, skip — the gap fills on a later run.
+    $syncLock = $this->lockService->acquire('db-maintenance', FALSE, 120);
+    if ($syncLock === NULL) {
+      if ($showCacheMessage && !$this->jsonMode) {
+        $this->io->writeln('<comment>Skipping sync — database maintenance (archive) in progress.</comment>');
+      }
+      return;
     }
 
     // Get time range as unix timestamps.
