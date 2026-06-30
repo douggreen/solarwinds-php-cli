@@ -174,9 +174,15 @@ class ArchiveCommand extends Command
         $io->section('Reclaiming space');
         $io->text('Running VACUUM on main DB…');
       }
-      $sizeBefore = filesize($this->config->getDatabasePath());
+      $dbPath = $this->config->getDatabasePath();
+      clearstatcache(TRUE, $dbPath);
+      $sizeBefore = filesize($dbPath);
       $this->database->exec('VACUUM');
-      $sizeAfter = filesize($this->config->getDatabasePath());
+      // PHP caches stat() results per path; without clearing, filesize() would
+      // return the pre-VACUUM size and report "saved 0 B" even when the file
+      // shrank substantially.
+      clearstatcache(TRUE, $dbPath);
+      $sizeAfter = filesize($dbPath);
       if (!$json) {
         $io->text(sprintf('Main DB: %s → %s (saved %s)',
           $this->humanBytes($sizeBefore),
