@@ -56,6 +56,20 @@ class BotIpService
 
     // Applebot - official Apple source (different format)
     'applebot' => 'https://search.developer.apple.com/applebot.json',
+
+    // Recognize CDN edge IPs (not bots): never recommend blocking the CDN and
+    // flag traffic whose client_ip is an edge as having a masked real client.
+    // CloudFlare publishes its ranges as plain text, one CIDR per line.
+    'cloudflare' => 'https://www.cloudflare.com/ips-v4',
+  ];
+
+  /**
+   * Source names in botSources that are CDN edge networks, not bots.
+   *
+   * @var array<int, string>
+   */
+  protected array $cdnProviders = [
+    'cloudflare',
   ];
 
   /**
@@ -192,6 +206,27 @@ class BotIpService
     }
 
     return ['verified' => FALSE, 'method' => 'none', 'ttl' => NULL, 'hostname' => NULL, 'cidr_range' => NULL];
+  }
+
+  /**
+   * Identify whether an IP is a known CDN edge (e.g. CloudFlare).
+   *
+   * Used to recognize that client_ip is a CDN edge rather than a real
+   * visitor — such IPs should never be recommended for blocking, and the
+   * traffic should be flagged as having a masked real client.
+   *
+   * @param string $ip IP address to check
+   *
+   * @return string|null CDN provider name (e.g. 'cloudflare') or NULL
+   */
+  public function getCdnProvider(string $ip): ?string
+  {
+    foreach ($this->cdnProviders as $provider) {
+      if ($this->findMatchingCidrRange($ip, $provider) !== NULL) {
+        return $provider;
+      }
+    }
+    return NULL;
   }
 
   /**

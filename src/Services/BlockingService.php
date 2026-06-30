@@ -36,6 +36,22 @@ class BlockingService
   }
 
   /**
+   * Identify whether an IP is a known CDN edge (e.g. CloudFlare).
+   *
+   * A CDN edge is not a real visitor — the true client is masked behind it —
+   * so it must never be recommended for blocking. Delegates to BotIpService;
+   * returns NULL when no bot/CDN service is wired in.
+   *
+   * @param string $ip IP address to check
+   *
+   * @return string|null CDN provider name (e.g. 'cloudflare') or NULL
+   */
+  public function getCdnEdgeProvider(string $ip): ?string
+  {
+    return $this->botIpService?->getCdnProvider($ip);
+  }
+
+  /**
    * Check if an IP address is in the allowlist.
    *
    * Supports both individual IPs and CIDR ranges.
