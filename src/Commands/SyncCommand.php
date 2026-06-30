@@ -27,6 +27,9 @@ class SyncCommand extends BaseSolarWindsCommand
 {
   protected string $defaultTime = '1h';
 
+  /**
+   * Configure the command name, description, arguments, and options.
+   */
   protected function configure(): void
   {
     $this

@@ -129,6 +129,9 @@ class BotCommand extends BaseSolarWindsCommand
     'total' => 0,
   ];
 
+  /**
+   * Configure the command name, description, arguments, and options.
+   */
   protected function configure(): void
   {
     $this

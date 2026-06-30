@@ -24,10 +24,16 @@ echo "Test database: $testDbPath\n\n";
 $mockConfig = new class($testDbPath) extends ConfigurationService {
   private string $testDbPath;
 
+  /**
+   * Capture the test database path.
+   */
   public function __construct(string $testDbPath) {
     $this->testDbPath = $testDbPath;
   }
 
+  /**
+   * Return the test database path.
+   */
   public function getDatabasePath(): string {
     return $this->testDbPath;
   }
@@ -35,7 +41,9 @@ $mockConfig = new class($testDbPath) extends ConfigurationService {
 
 $db = new DatabaseService($mockConfig);
 
-// Helper to simulate data sync
+/**
+ * Helper to simulate a data sync over a requested time range.
+ */
 function simulateSync(DatabaseService $db, string $requestedStart, string $requestedEnd, string $label): array {
   echo "--- {$label}: Sync from {$requestedStart} to {$requestedEnd} ---\n";
 

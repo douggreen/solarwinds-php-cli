@@ -333,7 +333,7 @@ class ApiService
    *
    * Parses natural language time expressions and converts to API-compatible format.
    *
-   * @param string $timeString Human-readable time string (e.g., "1 hour ago", "now")
+   * @param int|string $time Human-readable time string (e.g., "1 hour ago", "now") or unix timestamp
    * @return string ISO-8601 formatted timestamp
    * @throws \InvalidArgumentException If time string cannot be parsed
    */

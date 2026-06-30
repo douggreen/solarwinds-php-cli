@@ -1876,7 +1876,7 @@ HELP;
    * SQL execution.
    *
    * @param array $options Parsed command options containing sites array
-   * @param array &$params Reference to params array to populate with PDO bindings
+   * @param array $params Reference to params array to populate with PDO bindings
    * @param int $startIndex Starting index for parameter naming (default: 0)
    * @return string SQL condition string or empty string if no sites specified
    */
@@ -1959,7 +1959,7 @@ HELP;
    * appropriate SQL conditions with PDO parameter bindings.
    *
    * @param string $statusFilter Status filter value (1-3 digits)
-   * @param array &$params Reference to params array to populate with PDO bindings
+   * @param array $params Reference to params array to populate with PDO bindings
    * @return string SQL condition
    * @throws \InvalidArgumentException If status filter format or range is invalid
    */
@@ -2008,7 +2008,7 @@ HELP;
    * typically served from the /sites/default/files directory in Drupal.
    * Useful for focusing analysis on dynamic page requests.
    *
-   * @param array &$params Reference to params array to populate with PDO bindings
+   * @param array $params Reference to params array to populate with PDO bindings
    * @return string SQL condition
    */
   protected function excludeStaticFiles(array &$params): string

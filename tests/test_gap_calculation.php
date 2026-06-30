@@ -22,11 +22,17 @@ echo "Test Database: $testDbPath\n\n";
 $mockConfig = new class($testDbPath) extends ConfigurationService {
   private string $testDbPath;
 
+  /**
+   * Capture the test database path.
+   */
   public function __construct(string $testDbPath) {
     $this->testDbPath = $testDbPath;
     // Don't call parent constructor
   }
 
+  /**
+   * Return the test database path.
+   */
   public function getDatabasePath(): string {
     return $this->testDbPath;
   }

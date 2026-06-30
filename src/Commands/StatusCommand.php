@@ -150,6 +150,9 @@ class StatusCommand extends BaseSolarWindsCommand
   protected string $defaultTime = '1d';
   protected array $defaultDisplayOptions = ['host', 'status'];
 
+  /**
+   * Configure the command name, description, arguments, and options.
+   */
   protected function configure(): void
   {
     $this

@@ -20,14 +20,23 @@ echo "Test Database: $testDbPath\n\n";
 $mockConfig = new class($testDbPath) extends ConfigurationService {
   protected string $testDbPath;
 
+  /**
+   * Capture the test database path.
+   */
   public function __construct(string $testDbPath) {
     $this->testDbPath = $testDbPath;
   }
 
+  /**
+   * Return the test database path.
+   */
   public function getDatabasePath(): string {
     return $this->testDbPath;
   }
 
+  /**
+   * Return a fixed retention window for testing.
+   */
   public function getApiRetentionLimit(): int {
     return 14 * 86400;
   }

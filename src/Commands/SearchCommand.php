@@ -115,6 +115,9 @@ class SearchCommand extends BaseSolarWindsCommand
   protected string $defaultTime = 'day';
   protected array $defaultDisplayOptions = ['host'];
 
+  /**
+   * Configure the command name, description, arguments, and options.
+   */
   protected function configure(): void
   {
     $this

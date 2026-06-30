@@ -33,19 +33,31 @@ $mockConfig = new class($testDbPath, $storageDir) extends ConfigurationService {
   protected string $testDbPath;
   protected string $storageDir;
 
+  /**
+   * Capture the test database path and archive storage directory.
+   */
   public function __construct(string $testDbPath, string $storageDir) {
     $this->testDbPath = $testDbPath;
     $this->storageDir = $storageDir;
   }
 
+  /**
+   * Return the test database path.
+   */
   public function getDatabasePath(): string {
     return $this->testDbPath;
   }
 
+  /**
+   * Return a fixed retention window for testing.
+   */
   public function getApiRetentionLimit(): int {
     return 14 * 86400;
   }
 
+  /**
+   * Return archive config enabled and pointing at the test storage dir.
+   */
   public function getArchiveConfig(): array {
     return [
       'enabled' => TRUE,
@@ -107,6 +119,9 @@ echo "Inserted {$result['inserted']} logs\n\n";
 // === Test 1: Dry run reports work without touching anything ===
 echo "=== Test 1: Dry run ===\n";
 $cmd = new class($mockConfig, $db) extends ArchiveCommand {
+  /**
+   * Inject the mocked config and database into the command under test.
+   */
   public function __construct(ConfigurationService $config, DatabaseService $database) {
     parent::__construct();
     $this->config = $config;

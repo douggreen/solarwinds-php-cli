@@ -169,8 +169,8 @@ class QueryTranslator
    * Parse a single token into SQL condition.
    *
    * @param string $token Token to parse
-   * @param array &$params PDO parameters array (passed by reference)
-   * @param int &$paramCounter Parameter counter (passed by reference)
+   * @param array $params PDO parameters array (passed by reference)
+   * @param int $paramCounter Parameter counter (passed by reference)
    * @return string|null SQL condition or NULL if token is invalid
    */
   protected function parseToken(string $token, array &$params, int &$paramCounter): ?string
@@ -224,8 +224,8 @@ class QueryTranslator
    *
    * @param string $field Field name (without json. prefix)
    * @param string $value Field value or pattern
-   * @param array &$params PDO parameters array
-   * @param int &$paramCounter Parameter counter
+   * @param array $params PDO parameters array
+   * @param int $paramCounter Parameter counter
    * @return string SQL condition
    */
   protected function buildFieldCondition(string $field, string $value, array &$params, int &$paramCounter): string
