@@ -997,8 +997,21 @@ SQL
 
     // Extract and parse query parameters.
     if (isset($parts['query']) && !empty($parts['query'])) {
-      parse_str($parts['query'], $params);
-      $result['url_arguments'] = $params;
+      // parse_str() honors PHP's max_input_vars (default 1000): a request with
+      // more parameters truncates silently AND emits a warning per row. A
+      // parameter-enumeration attack does exactly this. Count the parameters
+      // first; skip the full parse for pathological requests to avoid the
+      // warning flood, and record the count so the flood stays visible as a
+      // signal. The 900 threshold leaves headroom under the 1000 cap for
+      // nested params that inflate the real count.
+      $paramCount = substr_count($parts['query'], '&') + 1;
+      if ($paramCount >= 900) {
+        $result['url_arguments'] = ['__param_flood__' => $paramCount];
+      }
+      else {
+        parse_str($parts['query'], $params);
+        $result['url_arguments'] = $params;
+      }
     }
 
     return $result;
