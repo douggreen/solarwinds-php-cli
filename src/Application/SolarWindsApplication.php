@@ -164,7 +164,7 @@ class SolarWindsApplication extends Application
    * @param OutputInterface|null $output Output interface
    * @return int Exit code
    */
-  public function run(InputInterface $input = NULL, OutputInterface $output = NULL): int
+  public function run(?InputInterface $input = NULL, ?OutputInterface $output = NULL): int
   {
     // Transform shorthand time options to --time=value.
     if ($input === NULL && isset($_SERVER['argv'])) {
