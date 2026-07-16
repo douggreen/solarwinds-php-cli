@@ -544,7 +544,10 @@ SQL;
       $existingColumns[] = $row['name'];
     }
 
-    // List of new columns to add.
+    // List of new columns to add. These are denormalized out of the data JSON
+    // as VIRTUAL generated columns: computed on read, self-maintaining on sync,
+    // and instant to add to an existing table (no backfill). Indexed ones below
+    // give fast lookups; the correlation queries also ride idx_client_ip_time.
     $newColumns = [
       'program' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.program')) VIRTUAL",
       'orig_host' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.orig_host')) VIRTUAL",
@@ -552,6 +555,19 @@ SQL;
       'country' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.country_code2'), json_extract(data, '\$.geoip.country_name'), json_extract(data, '\$.country'), json_extract(data, '\$.geo.country'))) VIRTUAL",
       'city' => "TEXT GENERATED ALWAYS AS (COALESCE(json_extract(data, '\$.geoip.city_name'), json_extract(data, '\$.city'), json_extract(data, '\$.geo.city'))) VIRTUAL",
       'base_path' => "TEXT GENERATED ALWAYS AS (json_extract(data, '\$.base_path')) VIRTUAL",
+      // Drupal watchdog identity fields (login events carry the acting user).
+      // Guarded with json_valid so occasional empty/malformed data rows yield
+      // NULL instead of throwing during index builds or queries.
+      'drupal_user' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.user') END) VIRTUAL",
+      'uid' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.uid') END) VIRTUAL",
+      'email' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.post.name') END) VIRTUAL",
+      'site' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.site') END) VIRTUAL",
+      // Request/edge fields useful for detection and correlation.
+      'ja3_md5' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.tls_client_ja3_md5') END) VIRTUAL",
+      'referer' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN COALESCE(json_extract(data, '\$.referer'), json_extract(data, '\$.req_referer')) END) VIRTUAL",
+      'datacenter' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.datacenter') END) VIRTUAL",
+      'final_host' => "TEXT GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.final_host') END) VIRTUAL",
+      'time_elapsed' => "INTEGER GENERATED ALWAYS AS (CASE WHEN json_valid(data) THEN json_extract(data, '\$.time_elapsed') END) VIRTUAL",
     ];
 
     // Add missing columns.
@@ -575,6 +591,13 @@ SQL;
       'idx_country' => 'country',
       'idx_city' => 'city',
       'idx_base_path' => 'base_path',
+      'idx_drupal_user' => 'drupal_user',
+      'idx_uid' => 'uid',
+      'idx_email' => 'email',
+      'idx_site' => 'site',
+      // ja3_md5 is denormalized as a column but left unindexed: it spans
+      // millions of access-log rows (a very expensive index) and the
+      // fingerprint queries already run over the narrowed exploit set.
     ];
 
     foreach ($indexes as $indexName => $columnName) {
