@@ -441,6 +441,19 @@ class ConfigurationService
   }
 
   /**
+   * Get the ring-of-trust configuration.
+   *
+   * Returns the raw trust config (levels + ordered rings) for TrustService,
+   * or an empty array when no trust gradient is configured.
+   *
+   * @return array Trust configuration ('levels' and 'rings'), possibly empty.
+   */
+  public function getTrustConfig(): array
+  {
+    return $this->config['trust'] ?? [];
+  }
+
+  /**
    * Get CMS type for a specific hostname.
    *
    * Checks site-specific configuration first, then falls back to global default.

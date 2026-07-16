@@ -244,10 +244,10 @@ class LogQueryService
       // and needed for fingerprint-based campaign analysis.
       $ja3Col = ", json_extract(data, '$.tls_client_ja3_md5') AS tls_client_ja3_md5";
       if ($includeData) {
-        $sql = "SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments$ja3Col FROM $source" . $indexHint . ' WHERE 1=1';
+        $sql = "SELECT id, time, data, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, city, url_arguments$ja3Col FROM $source" . $indexHint . ' WHERE 1=1';
       }
       else {
-        $sql = "SELECT id, time, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, url_arguments$ja3Col FROM $source" . $indexHint . ' WHERE 1=1';
+        $sql = "SELECT id, time, client_ip, resp_status, req_user_agent, req_uri, orig_host, country, req_method, cache_status, region, city, url_arguments$ja3Col FROM $source" . $indexHint . ' WHERE 1=1';
       }
       $params = [];
 
