@@ -193,7 +193,7 @@ SQL
     // Data loss is acceptable since campaigns can be regenerated.
     // Migration: Check if we need to recreate (missing columns).
     try {
-      $result = $this->db->query("SELECT campaign_severity, attack_severity, targeted_sites, risk_inputs FROM campaign_analysis LIMIT 1");
+      $result = $this->db->query("SELECT campaign_severity, attack_severity, targeted_sites, risk_inputs, ja3 FROM campaign_analysis LIMIT 1");
     }
     catch (\PDOException $e) {
       // Table doesn't exist or missing columns - drop and recreate.
@@ -251,6 +251,10 @@ CREATE TABLE IF NOT EXISTS campaign_analysis (
 
   -- Deep dive flag
   from_deep_dive INTEGER DEFAULT 0,
+
+  -- TLS fingerprint (dominant JA3 md5 and count of distinct fingerprints)
+  ja3 TEXT,
+  ja3_count INTEGER,
 
   UNIQUE(ip, time_start, time_end)
 );

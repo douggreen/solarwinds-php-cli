@@ -444,6 +444,8 @@ class CampaignAnalysisService
         ],
         'user_agent' => $row['user_agent'],
         'bot_name' => $row['bot_name'],
+        'ja3' => $row['ja3'] ?? '',
+        'ja3_count' => $row['ja3_count'] ?? 0,
         'volume_analysis' => [
           'total_requests' => $row['total_requests'],
           'requests_per_hour' => $row['request_rate'],
@@ -493,7 +495,8 @@ INSERT OR REPLACE INTO campaign_analysis (
   should_block, confidence, block_reasons,
   risk_inputs,
   user_agent, bot_name, total_volume, ratio_edge_blocked,
-  from_deep_dive, targeted_sites, run_id
+  from_deep_dive, targeted_sites, run_id,
+  ja3, ja3_count
 ) VALUES (
   :ip, :country,
   :time_start, :time_end, :time_range, CURRENT_TIMESTAMP,
@@ -503,7 +506,8 @@ INSERT OR REPLACE INTO campaign_analysis (
   :should_block, :confidence, :block_reasons,
   :risk_inputs,
   :user_agent, :bot_name, :total_volume, :ratio_edge_blocked,
-  :from_deep_dive, :targeted_sites, :run_id
+  :from_deep_dive, :targeted_sites, :run_id,
+  :ja3, :ja3_count
 )
 SQL
     );
@@ -542,6 +546,8 @@ SQL
       ':from_deep_dive' => $fromDeepDive ? 1 : 0,
       ':targeted_sites' => json_encode($campaign['targeted_sites'] ?? []),
       ':run_id' => $runId,
+      ':ja3' => $campaign['ja3'] ?? '',
+      ':ja3_count' => $campaign['ja3_count'] ?? 0,
     ]);
 
     return (int) $this->database->lastInsertId();
