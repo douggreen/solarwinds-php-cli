@@ -298,6 +298,9 @@ abstract class BaseSolarWindsCommand extends Command
       'display' => $this->parseDisplayOptions($input),
       'filters' => $this->parseFilterOptions($input),
       'script_specific' => $this->parseScriptSpecificOptions($input),
+      // --raw prints whole entries, so the full data blob must be selected
+      // (the default projection is HTTP-centric and omits Drupal/JSON payloads).
+      'raw' => $input->hasOption('raw') && $input->getOption('raw'),
     ];
 
     return $options;
@@ -573,6 +576,18 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function parseDisplayOptions(InputInterface $input): array
   {
+    // --raw prints individual log entries instead of grouped counts. Mark the
+    // display as raw and carry the --drupal signal so the renderers can choose
+    // per-entry JSON (plain --raw) or a substituted Drupal message stream
+    // (--raw --drupal). See DisplayService::displayResults / formatResultsForJson.
+    if ($input->hasOption('raw') && $input->getOption('raw')) {
+      return [
+        '_raw' => TRUE,
+        'drupal' => (bool) $input->getOption('drupal'),
+        '_explicit' => [],
+      ];
+    }
+
     $display = [];
     $explicitOptions = []; // Track which options were explicitly set by user.
 
@@ -919,7 +934,7 @@ abstract class BaseSolarWindsCommand extends Command
     if (!$this->jsonMode) {
       $this->io->writeln('<comment>Reading logs from database...</comment>');
     }
-    $results = $this->queryDatabase($options, $sqlQuery['where'], $sqlQuery['params']);
+    $results = $this->queryDatabase($options, $sqlQuery['where'], $sqlQuery['params'], $options['raw'] ?? FALSE);
 
     // Apply client-side filters.
     $originalCount = count($results);

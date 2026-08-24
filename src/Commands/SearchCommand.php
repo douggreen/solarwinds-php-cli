@@ -137,6 +137,7 @@ class SearchCommand extends BaseSolarWindsCommand
         ')
       ->addArgument('search_term', InputArgument::OPTIONAL, 'Text pattern to search for in logs')
       ->addOption('sql-where', NULL, InputOption::VALUE_REQUIRED, 'Direct SQL WHERE clause (advanced)')
+      ->addOption('raw', NULL, InputOption::VALUE_NONE, 'Print each matching log entry as JSON instead of grouped counts (overrides --cols, --drupal, --vars)')
     ;
 
     // Call parent to set up common options.

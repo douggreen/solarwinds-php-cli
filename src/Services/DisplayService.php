@@ -347,10 +347,29 @@ class DisplayService
       ];
     }
 
-    // If no specific display options are set, return raw logs.
+    // --raw: per-entry items (data decoded). With --drupal, also attach the
+    // substituted message so JSON consumers get the human-readable line.
+    if (!empty($displayOptions['_raw'])) {
+      $drupal = !empty($displayOptions['drupal']);
+      $items = array_map(function ($log) use ($drupal) {
+        $item = $this->decodeDataField($log);
+        if ($drupal) {
+          $item['message_rendered'] = $this->renderDrupalStreamLine($log)['message'];
+        }
+        return $item;
+      }, $logs);
+      return [
+        'items' => $items,
+        'grouping' => [],
+        'totals' => ['count' => count($logs), 'groups' => 0]
+      ];
+    }
+
+    // If no specific display options are set, return raw logs (with the data
+    // blob decoded so the entry's payload is nested, not an escaped string).
     if (empty(array_filter($displayOptions))) {
       return [
-        'items' => $logs,
+        'items' => array_map([$this, 'decodeDataField'], $logs),
         'grouping' => [],
         'totals' => ['count' => count($logs), 'groups' => 0]
       ];
@@ -701,6 +720,18 @@ class DisplayService
       $io->newLine();
     }
 
+    // --raw: per-entry output. With --drupal, render a substituted message
+    // stream (one readable line per entry); otherwise dump each entry as JSON.
+    if (!empty($displayOptions['_raw'])) {
+      if (!empty($displayOptions['drupal'])) {
+        $this->displayDrupalStream($logs, $io);
+      }
+      else {
+        $this->displayRawJson($logs, $io);
+      }
+      return;
+    }
+
     // If no specific display options are set, show raw JSON.
     if (empty(array_filter($displayOptions))) {
       $this->displayRawJson($logs, $io);
@@ -736,8 +767,95 @@ class DisplayService
   protected function displayRawJson(array $logs, SymfonyStyle $io): void
   {
     foreach ($logs as $log) {
-      $io->writeln(json_encode($log, JSON_PRETTY_PRINT));
+      $io->writeln(json_encode($this->decodeDataField($log), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
+  }
+
+  /**
+   * Decode a raw log's `data` field from a JSON string to a nested structure.
+   *
+   * The database stores the original log payload as a JSON string in `data`.
+   * For raw per-entry output that blob is the useful part (Drupal message,
+   * variables, etc.), so nest it instead of emitting an escaped string. Rows
+   * without a `data` string (or with a non-JSON one) are returned unchanged.
+   *
+   * @param array $log A single log row.
+   * @return array The row with `data` decoded when it is valid JSON.
+   */
+  protected function decodeDataField(array $log): array
+  {
+    if (isset($log['data']) && is_string($log['data'])) {
+      $decoded = json_decode($log['data'], TRUE);
+      if ($decoded !== NULL) {
+        $log['data'] = $decoded;
+      }
+    }
+    return $log;
+  }
+
+  /**
+   * Render each entry as one substituted Drupal message line (--raw --drupal).
+   *
+   * Ungrouped counterpart to displayDrupalErrors: for every log row it resolves
+   * the message template and fills its @/%-placeholders from data.variables,
+   * prefixing time, id, and severity so a specific entry can be looked up
+   * (e.g. search --sql-where="id='...'" --raw).
+   *
+   * @param array $logs Log entries.
+   * @param SymfonyStyle $io Console I/O.
+   */
+  protected function displayDrupalStream(array $logs, SymfonyStyle $io): void
+  {
+    $lastId = '';
+    foreach ($logs as $log) {
+      $line = $this->renderDrupalStreamLine($log);
+      $io->writeln(sprintf(
+        '%s  %s  [%s]  %s',
+        $line['time'],
+        $line['id'],
+        $line['severity'],
+        $line['message']
+      ));
+      if ($line['id'] !== '') {
+        $lastId = $line['id'];
+      }
+    }
+
+    // The middle column is the entry id; show how to expand one to its full
+    // record (all fields + the decoded data blob), using a real id as example.
+    if ($lastId !== '') {
+      $io->writeln('');
+      $io->writeln(sprintf(
+        '<comment>Detail:</comment> expand one entry with <info>solarwinds search --sql-where="id=\'%s\'" --raw</info>',
+        $lastId
+      ));
+    }
+  }
+
+  /**
+   * Resolve one log row to its stream fields (time, id, severity, message).
+   *
+   * The message template lives in the message column; its values live in
+   * data.variables. Substitution turns "... in @elapsed s" into "... in 1.94 s".
+   *
+   * @param array $log A single log row.
+   * @return array The row's time (Y-m-d H:i:s), id, severity, and message.
+   */
+  protected function renderDrupalStreamLine(array $log): array
+  {
+    $parsed = $this->parseLogMessage($log);
+    $variables = $parsed['variables'] ?? [];
+    $message = $variables['@message'] ?? $parsed['message'] ?? '';
+    if (is_string($message) && !empty($variables)) {
+      $message = $this->substituteVariables($message, $variables);
+    }
+
+    return [
+      'time' => isset($log['time']) ? date('Y-m-d H:i:s', (int) $log['time']) : 'unknown',
+      'id' => (string) ($log['id'] ?? ''),
+      'severity' => (string) ($log['log_severity'] ?? $parsed['severity'] ?? 'Unknown'),
+      'message' => is_string($message) ? $message : json_encode($message),
+    ];
   }
 
   /**
