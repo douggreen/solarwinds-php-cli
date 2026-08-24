@@ -138,6 +138,7 @@ class SearchCommand extends BaseSolarWindsCommand
       ->addArgument('search_term', InputArgument::OPTIONAL, 'Text pattern to search for in logs')
       ->addOption('sql-where', NULL, InputOption::VALUE_REQUIRED, 'Direct SQL WHERE clause (advanced)')
       ->addOption('raw', NULL, InputOption::VALUE_NONE, 'Print each matching log entry as JSON instead of grouped counts (overrides --cols, --drupal, --vars)')
+      ->addOption('by-id', NULL, InputOption::VALUE_NONE, 'Treat the argument as an exact log id and show that single entry (ignores the time window)')
     ;
 
     // Call parent to set up common options.
@@ -155,7 +156,12 @@ class SearchCommand extends BaseSolarWindsCommand
     $sqlWhere = $input->getOption('sql-where');
     $searchTerm = $input->getArgument('search_term');
 
-    if ($sqlWhere) {
+    // --by-id reinterprets the positional argument as an exact log id.
+    if ($input->getOption('by-id')) {
+      $options['id'] = $searchTerm;
+      $options['query_type'] = 'id';
+    }
+    elseif ($sqlWhere) {
       $options['sql_where'] = $sqlWhere;
       $options['query_type'] = 'sql';
     }
@@ -190,6 +196,18 @@ class SearchCommand extends BaseSolarWindsCommand
 
     if (empty($queryType) && !$hasFilters) {
       throw new \InvalidArgumentException("Search query is required. Provide either a search term argument, --sql-where option, or filter options like --filter-ip, --filter-country, etc.");
+    }
+
+    // Handle exact id lookup (--by-id): the argument is a unique primary key.
+    if ($queryType === 'id') {
+      $id = $options['script_specific']['id'] ?? NULL;
+      if (empty($id)) {
+        throw new \InvalidArgumentException("--by-id requires a log id argument, e.g. 'solarwinds search --by-id 2028542974996185104'.");
+      }
+      return [
+        'where' => 'id = :id',
+        'params' => [':id' => $id],
+      ];
     }
 
     // Handle direct SQL WHERE clause.

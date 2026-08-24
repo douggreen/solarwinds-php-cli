@@ -318,6 +318,17 @@ abstract class BaseSolarWindsCommand extends Command
    */
   protected function parseTimeOptions(InputInterface $input): array
   {
+    // An exact id lookup (--by-id) targets a unique primary key, so it ignores
+    // the time window entirely and never needs a default time flag.
+    if ($input->hasOption('by-id') && $input->getOption('by-id')) {
+      return [
+        'start_time' => NULL,
+        'end_time' => NULL,
+        'human_readable' => 'all time (id lookup)',
+        'time_option' => 'all',
+      ];
+    }
+
     $timeOption = $input->getOption('time');
 
     // Handle time option if provided.
@@ -912,6 +923,11 @@ abstract class BaseSolarWindsCommand extends Command
     // Register signal handlers for graceful interruption.
     $this->registerSignalHandlers();
 
+    // An exact id lookup targets a unique primary key that is already stored,
+    // so it skips the backfill sync (the time window is already bypassed in
+    // parseTimeOptions).
+    $byId = ($options['script_specific']['query_type'] ?? NULL) === 'id';
+
     // Display query information.
     if (!$this->jsonMode) {
       $this->io->section('Searching SolarWinds Logs');
@@ -925,8 +941,9 @@ abstract class BaseSolarWindsCommand extends Command
       $this->io->newLine();
     }
 
-    // Step 1: Sync data to database (skip if already synced during confirmation).
-    if (!$this->syncedInConfirmation) {
+    // Step 1: Sync data to database (skip if already synced during
+    // confirmation, or for an id lookup which reads only what is already stored).
+    if (!$this->syncedInConfirmation && !$byId) {
       $this->syncLogsToDatabase($options);
     }
 
